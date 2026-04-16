@@ -1,5 +1,6 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import axios from 'axios';
+import userService from '../services/userService';
 
 /**
  * Authentication context for managing user authentication state
@@ -16,18 +17,36 @@ export const AuthProvider = ({ children }) => {
   const [tokenType, setTokenType] = useState('Bearer');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
 
   useEffect(() => {
     const storedToken = localStorage.getItem('token');
     const storedTokenType = localStorage.getItem('token_type') || 'Bearer';
-    
-    if (storedToken) {
-      setToken(storedToken);
-      setTokenType(storedTokenType);
-      axios.defaults.headers.common['Authorization'] = `${storedTokenType} ${storedToken}`;
-    }
-    
-    setLoading(false);
+
+    const bootstrapAuth = async () => {
+      if (storedToken) {
+        setToken(storedToken);
+        setTokenType(storedTokenType);
+        axios.defaults.headers.common['Authorization'] = `${storedTokenType} ${storedToken}`;
+
+        try {
+          const profile = await userService.getMe();
+          setCurrentUser(profile);
+        } catch (err) {
+          console.error('Failed to restore session profile:', err);
+          localStorage.removeItem('token');
+          localStorage.removeItem('token_type');
+          delete axios.defaults.headers.common['Authorization'];
+          setToken(null);
+          setTokenType('Bearer');
+          setCurrentUser(null);
+        }
+      }
+
+      setLoading(false);
+    };
+
+    bootstrapAuth();
   }, []);
 
   /**
@@ -58,9 +77,11 @@ export const AuthProvider = ({ children }) => {
       localStorage.setItem('token', access_token);
       localStorage.setItem('token_type', token_type);
       axios.defaults.headers.common['Authorization'] = `${token_type} ${access_token}`;
-      
+      const profile = await userService.getMe();
+
       setToken(access_token);
       setTokenType(token_type);
+      setCurrentUser(profile);
       return access_token;
     } catch (err) {
       console.error('Login failed:', err);
@@ -78,6 +99,7 @@ export const AuthProvider = ({ children }) => {
     delete axios.defaults.headers.common['Authorization'];
     setToken(null);
     setTokenType('Bearer');
+    setCurrentUser(null);
   };
 
   /**
@@ -87,14 +109,10 @@ export const AuthProvider = ({ children }) => {
    * @param {string} tenantId - User's tenant ID
    * @returns {Promise<Object>} - Registration response
    */
-  const register = async (username, password, tenantId) => {
+  const register = async (payload) => {
     setError(null);
     try {
-      const response = await axios.post('/api/v1/auth/register', {
-        username,
-        password,
-        tenant_id: tenantId
-      });
+      const response = await axios.post('/api/v1/auth/register', payload);
       
       return response.data;
     } catch (err) {
@@ -104,15 +122,51 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const refreshCurrentUser = async () => {
+    const profile = await userService.getMe();
+    setCurrentUser(profile);
+    return profile;
+  };
+
+  const updateProfile = async (payload) => {
+    setError(null);
+    try {
+      const profile = await userService.updateMe(payload);
+      setCurrentUser(profile);
+      return profile;
+    } catch (err) {
+      console.error('Profile update failed:', err);
+      setError(err.response?.data?.detail || 'Profile update failed. Please try again.');
+      throw err;
+    }
+  };
+
+  const uploadResume = async (file) => {
+    setError(null);
+    try {
+      const response = await userService.uploadResume(file);
+      await refreshCurrentUser();
+      return response;
+    } catch (err) {
+      console.error('Resume upload failed:', err);
+      setError(err.response?.data?.detail || 'Resume upload failed. Please try again.');
+      throw err;
+    }
+  };
+
   const value = {
     isAuthenticated: !!token,
     token,
     tokenType,
+    currentUser,
     loading,
     error,
     login,
     logout,
     register,
+    refreshCurrentUser,
+    updateProfile,
+    uploadResume,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

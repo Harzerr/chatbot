@@ -52,4 +52,4 @@ async def register_user(
         )
     
     await user_service.create(obj_in=user_in)
-    return {"message": "User registered successfully"}
+    return {"message": "User registered successfully. Please upload your resume in the profile page before starting an interview."}

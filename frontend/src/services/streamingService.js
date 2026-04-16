@@ -12,13 +12,19 @@ const streamingService = {
    * @param {Function} callbacks.onError - Called when an error occurs
    * @returns {Object} - Controller object with abort method
    */
-  startStream: (userMessage, chatId, callbacks) => {
+  startStream: (userMessage, chatId, callbacks, interviewConfig = {}) => {
     const controller = new AbortController();
     const { signal } = controller;
 
     const body = JSON.stringify({
       user_message: userMessage,
-      chat_id: chatId
+      chat_id: chatId,
+      interview_role: interviewConfig.interviewRole,
+      interview_level: interviewConfig.interviewLevel,
+      interview_type: interviewConfig.interviewType,
+      target_company: interviewConfig.targetCompany,
+      jd_content: interviewConfig.jdContent,
+      resume_content: interviewConfig.resumeContent,
     });
 
     const token = localStorage.getItem('token');
@@ -41,9 +47,16 @@ const streamingService = {
         body,
         signal
       })
-      .then(response => {
+      .then(async response => {
         if (!response.ok) {
-          throw new Error(`HTTP error! Status: ${response.status}`);
+          let detail = `HTTP error! Status: ${response.status}`;
+          try {
+            const payload = await response.json();
+            detail = payload?.detail || detail;
+          } catch (e) {
+            console.error('Failed to parse error response:', e);
+          }
+          throw new Error(detail);
         }
 
         const reader = response.body.getReader();

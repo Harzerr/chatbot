@@ -1,12 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.schemas.chat import ChatHistoryResponse, ChatMessage
+from app.schemas.chat import (
+    ChatHistoryResponse,
+    ChatMessage,
+    InterviewReportResponse,
+    VoiceInterviewReportRequest,
+)
+from app.services.interview_report import InterviewReportBuilder
 from app.services.vector_store import MultiTenantVectorStore
 from app.api.deps import get_current_user, get_vector_store
 from app.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 router = APIRouter()
+report_builder = InterviewReportBuilder()
 
 
 @router.get("/chats", response_model=ChatHistoryResponse)
@@ -32,7 +39,7 @@ async def get_user_chats(
             total=len(messages)
         )
     except Exception as e:
-        logger.error(f"Error retrieving chat history: {str(e)}")
+        logger.error(f"Error retrieving chat history: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve chat history")
 
 
@@ -64,5 +71,39 @@ async def get_chat_by_id(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error retrieving chat: {str(e)}")
+        logger.error(f"Error retrieving chat: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve chat")
+
+
+@router.get("/chats/{chat_id}/report", response_model=InterviewReportResponse)
+async def get_chat_report(
+    chat_id: str,
+    current_user=Depends(get_current_user),
+    vector_store: MultiTenantVectorStore = Depends(get_vector_store),
+):
+    try:
+        chat_messages = vector_store.get_chat_by_id(
+            chat_id=chat_id,
+            user_id=current_user.id,
+            tenant_id=current_user.tenant_id,
+            limit=200,
+            offset=0,
+        )
+
+        return report_builder.build(chat_id=chat_id, chat_messages=chat_messages)
+    except Exception as e:
+        logger.error(f"Error generating chat report: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to generate chat report")
+
+
+@router.post("/voice/report", response_model=InterviewReportResponse)
+async def get_voice_interview_report(
+    request: VoiceInterviewReportRequest,
+    current_user=Depends(get_current_user),
+):
+    try:
+        chat_id = request.chat_id or f"voice-{current_user.id}"
+        return report_builder.build_from_transcript(chat_id=chat_id, request=request)
+    except Exception as e:
+        logger.error(f"Error generating voice interview report: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to generate voice interview report")

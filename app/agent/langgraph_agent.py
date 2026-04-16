@@ -1,5 +1,10 @@
 import operator
-from typing import Annotated, TypedDict, Literal, Sequence, List, Required, Optional, Dict
+from typing import Annotated, TypedDict, Literal, Sequence, List, Optional, Dict
+
+try:
+    from typing import Required  # Python 3.11+
+except ImportError:  # pragma: no cover - compatibility for Python <=3.10
+    from typing_extensions import Required
 
 from langchain_core.messages import BaseMessage, AIMessage, SystemMessage
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -12,6 +17,7 @@ from pydantic import BaseModel
 
 from app.core.config import settings
 from app.mcp_client.client import get_mcp_client
+from app.services.skill_registry import SkillRegistry, create_default_skill_registry
 from app.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -81,6 +87,7 @@ class MCPTools:
 
 _graph: CompiledStateGraph | None = None
 _mcp_tools: MCPTools | None = None
+_skill_registry: SkillRegistry | None = None
 
 
 class AgentState(TypedDict):
@@ -90,11 +97,24 @@ class AgentState(TypedDict):
     task_completed: bool
     iterations: int
     max_iterations: int
+    interview_mode: bool
+    active_skill: Optional[str]
+    previous_interviewer_question: Optional[str]
+    relevant_docs: List[dict]
+    context: str
+    interview_role: Optional[str]
+    interview_level: Optional[str]
+    interview_type: Optional[str]
+    target_company: Optional[str]
+    jd_content: Optional[str]
+    resume_content: Optional[str]
+    evaluation: Optional[dict]
+    is_finished: bool
 
 
 class RouteResponse(BaseModel):
     """Response from supervisor agent."""
-    next: str
+    next: Literal["Researcher", "Scrapper", "FINISH"]
     reasoning: str
     response: Optional[str] = None
 
@@ -129,10 +149,38 @@ async def supervisor_agent(state: AgentState) -> Dict:
     iterations = state["iterations"]
     max_iterations = state["max_iterations"]
 
+    if _skill_registry is not None:
+        requested_skill = state.get("active_skill")
+        if isinstance(requested_skill, str) and requested_skill and _skill_registry.get(requested_skill) is None:
+            return {
+                "next": "FINISH",
+                "task_completed": True,
+                "direct_response": f"未找到已注册的 skill：{requested_skill}",
+                "messages": messages + [AIMessage(content=f"未找到已注册的 skill：{requested_skill}", name="Supervisor")],
+            }
+
+        skill_definition = _skill_registry.resolve(state)
+        if skill_definition is not None:
+            logger.info("Supervisor dispatching to registered skill: %s", skill_definition.name)
+            return {
+                "next": "SkillRunner",
+                "active_skill": skill_definition.name,
+                "task_completed": False,
+            }
+
+    if state.get("interview_mode", False):
+        logger.warning("interview_mode requested but interview-skills is not registered")
+        return {
+            "next": "FINISH",
+            "task_completed": True,
+            "direct_response": "面试 skill 暂不可用，请稍后重试。",
+        }
+
     conversation_summary = "\n".join([f"{msg.type}: {msg.content}" for msg in messages[-5:]])
     
     members = ["Researcher", "Scrapper"]
     options = members + ["FINISH"]
+    available_skills = _skill_registry.available_skills_prompt() if _skill_registry else "No registered skills."
     
     system_prompt = f"""You are the Supervisor Agent that coordinates specialized AI agents to answer user queries.
         
@@ -153,6 +201,13 @@ async def supervisor_agent(state: AgentState) -> Dict:
         - Researcher found relevant URLs that need deeper analysis
         - User mentioned specific websites to analyze
         
+        REGISTERED SKILLS:
+        {available_skills}
+
+        WHEN TO USE REGISTERED SKILLS:
+        - Registered skills are handled before this routing prompt when their metadata or trigger words match.
+        - If a user asks for a skill that is not active, ask for the missing setup information or provide a direct response.
+
         WHEN TO FINISH:
         - Question is fully answered with sufficient detail
         - All necessary information has been gathered
@@ -177,6 +232,7 @@ async def supervisor_agent(state: AgentState) -> Dict:
         - If insufficient information exists, choose the most suitable agent
         - If Researcher provided URLs/sources that need detailed analysis, use Scrapper
         - If general information is needed, use Researcher first
+        - If the task matches a registered skill but the skill was not activated, ask for the missing setup information
         - Only FINISH when you have comprehensive information to answer the user
         - Provide clear reasoning for your decision
         - Consider the iteration count to avoid infinite loops
@@ -197,28 +253,46 @@ async def supervisor_agent(state: AgentState) -> Dict:
             4. For simple queries, can you provide a direct response without using specialized agents?
 
             Respond with your decision from: {options}
+            The 'next' field must be exactly one of: Researcher, Scrapper, FINISH.
+            Do not return translated labels, descriptive phrases, or custom route names.
 
             Provide reasoning for your choice and assess the task status.
             If this is a simple query that doesn't require specialized agents, include a direct response.""",
         ),
     ]).partial(options=str(options), members=", ".join(members))
 
-    llm = ChatOpenAI(model="gpt-4.1-mini", temperature=0, api_key=settings.OPENAI_API_KEY)
+    # llm = ChatOpenAI(model="gpt-4.1-mini", temperature=0, api_key=settings.OPENAI_API_KEY)
+    llm = ChatOpenAI(
+        model=settings.LLM_MODEL,
+        temperature=0,
+        api_key=settings.OPENROUTER_API_KEY,
+        base_url=settings.OPENROUTER_API_BASE,
+    )
     supervisor_chain = prompt | llm.with_structured_output(RouteResponse)
     result = await supervisor_chain.ainvoke(state)
 
-    if iterations >= max_iterations and result.next != "FINISH":
+    valid_routes = {"Researcher", "Scrapper", "FINISH"}
+    next_route = result.next if result.next in valid_routes else None
+
+    if next_route is None:
+        logger.warning(
+            "Supervisor returned unexpected route '%s'; falling back safely",
+            result.next,
+        )
+        next_route = "FINISH" if result.response else "Researcher"
+
+    if iterations >= max_iterations and next_route != "FINISH":
         logger.warning(f"Maximum iterations ({max_iterations}) reached, forcing finish")
         return {
             "next": "FINISH",
             "task_completed": True
         }
 
-    logger.info(f"Supervisor decision (iteration {iterations}): {result.next} - {result.reasoning}")
+    logger.info(f"Supervisor decision (iteration {iterations}): {next_route} - {result.reasoning}")
     
     response_dict = {
-        "next": result.next,
-        "task_completed": result.next == "FINISH"
+        "next": next_route,
+        "task_completed": next_route == "FINISH"
     }
 
     if result.response:
@@ -231,7 +305,15 @@ async def supervisor_agent(state: AgentState) -> Dict:
 
 async def create_graph():
     """Create the multi-agent workflow graph."""
-    llm = ChatOpenAI(model="gpt-4.1-mini", temperature=0, api_key=settings.OPENAI_API_KEY)
+    global _skill_registry
+
+    # llm = ChatOpenAI(model="gpt-4.1-mini", temperature=0, api_key=settings.OPENAI_API_KEY)
+    llm = ChatOpenAI(
+        model=settings.LLM_MODEL,
+        temperature=0,
+        api_key=settings.OPENROUTER_API_KEY,
+        base_url=settings.OPENROUTER_API_BASE,
+    )
 
     await _mcp_tools.setup_mcp_tools()
 
@@ -309,17 +391,58 @@ async def create_graph():
     async def scrapper_node(state):
         return await agent_node(state, agent=scrapper_agent, name="Scrapper")
 
+    skill_llm = ChatOpenAI(
+        model=settings.LLM_MODEL,
+        temperature=0.35,
+        api_key=settings.OPENROUTER_API_KEY,
+        base_url=settings.OPENROUTER_API_BASE,
+    )
+    _skill_registry = create_default_skill_registry(skill_llm)
+
+    async def skill_node(state: AgentState):
+        try:
+            if _skill_registry is None:
+                raise RuntimeError("No skill registry has been initialized")
+
+            skill_definition = _skill_registry.resolve(state)
+            if skill_definition is None:
+                raise RuntimeError("No registered skill matched the current request")
+
+            result = await skill_definition.runner.run(state)
+            return {
+                "messages": [AIMessage(content=result.response, name=result.agent_name)],
+                "iterations": state.get("iterations", 0) + 1,
+                "evaluation": result.evaluation,
+                "is_finished": result.is_finished,
+                "task_completed": True,
+                "active_skill": skill_definition.name,
+            }
+        except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            logger.error(f"Error in SkillRunner node: {str(e)}\n{error_details}")
+            return {
+                "messages": [AIMessage(content=f"Skill 执行时出现问题：{str(e)}", name="SkillRunner")],
+                "iterations": state.get("iterations", 0) + 1,
+                "evaluation": None,
+                "is_finished": False,
+                "task_completed": True,
+            }
+
     workflow = StateGraph(AgentState)
 
     workflow.add_node("Researcher", research_node)
     workflow.add_node("Scrapper", scrapper_node)
+    workflow.add_node("SkillRunner", skill_node)
     workflow.add_node("Supervisor", supervisor_agent)
 
     members = ["Researcher", "Scrapper"]
     for member in members:
         workflow.add_edge(member, "Supervisor")
+    workflow.add_edge("SkillRunner", END)
 
     conditional_map = {k: k for k in members}
+    conditional_map["SkillRunner"] = "SkillRunner"
     conditional_map["FINISH"] = END
     workflow.add_conditional_edges("Supervisor", lambda x: x["next"], conditional_map)
 
@@ -330,14 +453,27 @@ async def create_graph():
     return workflow.compile(checkpointer=checkpointer)
 
 
-def create_initial_state(messages: List[BaseMessage], max_iterations: int) -> AgentState:
+def create_initial_state(messages: List[BaseMessage], max_iterations: int, **kwargs) -> AgentState:
     """Create an initial state for the workflow."""
     return {
         "messages": messages,
         "next": "",
         "task_completed": False,
         "iterations": 0,
-        "max_iterations": max_iterations
+        "max_iterations": max_iterations,
+        "interview_mode": kwargs.get("interview_mode", False),
+        "active_skill": kwargs.get("active_skill"),
+        "previous_interviewer_question": kwargs.get("previous_interviewer_question"),
+        "relevant_docs": kwargs.get("relevant_docs", []),
+        "context": kwargs.get("context", ""),
+        "interview_role": kwargs.get("interview_role"),
+        "interview_level": kwargs.get("interview_level"),
+        "interview_type": kwargs.get("interview_type"),
+        "target_company": kwargs.get("target_company"),
+        "jd_content": kwargs.get("jd_content"),
+        "resume_content": kwargs.get("resume_content"),
+        "evaluation": kwargs.get("evaluation"),
+        "is_finished": kwargs.get("is_finished", False),
     }
 
 
@@ -351,7 +487,7 @@ async def initialize_graph():
             MCPConfig(client_name="Scrapper", server_url=f"http://127.0.0.1:7860/sse") # http://127.0.0.1:7860/sse or https://mcp.firecrawl.dev/{settings.FIRECRAWL_API_KEY}/sse
         ])
         _graph = await create_graph()
-        print("✅ LangGraph with MCP tools initialized successfully!")
+        logger.info("LangGraph with MCP tools initialized successfully")
     return _graph
 
 
@@ -360,13 +496,13 @@ async def close_graph():
     global _mcp_tools
     if _mcp_tools is not None:
         await _mcp_tools.cleanup()
-        print("✅ LangGraph with MCP tools closed successfully!")
+        logger.info("LangGraph with MCP tools closed successfully")
 
 
 def get_graph():
     """Get the compiled graph instance."""
     if _graph is None:
-        raise RuntimeError("❌ Graph not initialized. Call initialize_graph() first.")
+        raise RuntimeError("Graph not initialized. Call initialize_graph() first.")
     return _graph
 
 

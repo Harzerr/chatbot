@@ -1,0 +1,487 @@
+[
+  {
+    "role": "Python算法工程师",
+    "rounds": ["一面", "二面"],
+    "title": "两数之和",
+    "difficulty": "简单",
+    "topic": "哈希表",
+    "source_basis": "Hot100",
+    "prompt": "给定整数数组和目标值，请返回两数下标，使得对应元素之和等于目标值。",
+    "input_spec": "输入为整数数组 nums 和整数 target，默认有且仅有一组解。",
+    "output_spec": "返回两个下标，顺序不限，但不能重复使用同一个元素。",
+    "examples": [
+      "nums=[2,7,11,15], target=9 -> [0,1]",
+      "nums=[3,2,4], target=6 -> [1,2]"
+    ],
+    "evaluation_focus": ["哈希表思路", "时间复杂度 O(n)", "重复元素处理", "返回结果正确性"]
+  },
+  {
+    "role": "Python算法工程师",
+    "rounds": ["一面", "二面"],
+    "title": "无重复字符的最长子串",
+    "difficulty": "中等",
+    "topic": "滑动窗口",
+    "source_basis": "Hot100",
+    "prompt": "给定字符串，请返回其中不包含重复字符的最长连续子串长度。",
+    "input_spec": "输入为字符串 s。",
+    "output_spec": "返回一个整数，表示最长无重复子串的长度。",
+    "examples": [
+      "s=\"abcabcbb\" -> 3",
+      "s=\"bbbbb\" -> 1"
+    ],
+    "evaluation_focus": ["滑动窗口维护", "哈希集合或映射", "左右指针更新", "边界条件"]
+  },
+  {
+    "role": "Python算法工程师",
+    "rounds": ["一面", "二面"],
+    "title": "盛最多水的容器",
+    "difficulty": "中等",
+    "topic": "双指针",
+    "source_basis": "Hot100",
+    "prompt": "给定数组表示竖线高度，求两条线与 x 轴组成容器可容纳的最大水量。",
+    "input_spec": "输入为非负整数数组 height。",
+    "output_spec": "输出最大容积。",
+    "examples": [
+      "height=[1,8,6,2,5,4,8,3,7] -> 49"
+    ],
+    "evaluation_focus": ["双指针贪心", "为什么移动短板", "复杂度分析", "边界情况"]
+  },
+  {
+    "role": "Python算法工程师",
+    "rounds": ["一面", "二面"],
+    "title": "三数之和",
+    "difficulty": "中等",
+    "topic": "排序 + 双指针",
+    "source_basis": "Hot100",
+    "prompt": "给定整数数组，请返回所有和为 0 的不重复三元组。",
+    "input_spec": "输入为整数数组 nums。",
+    "output_spec": "输出所有不重复三元组，每个三元组内部按任意顺序即可。",
+    "examples": [
+      "nums=[-1,0,1,2,-1,-4] -> [[-1,-1,2],[-1,0,1]]"
+    ],
+    "evaluation_focus": ["排序去重", "双指针推进", "重复结果消除", "复杂度 O(n^2)"]
+  },
+  {
+    "role": "Python算法工程师",
+    "rounds": ["一面", "二面"],
+    "title": "字母异位词分组",
+    "difficulty": "中等",
+    "topic": "哈希",
+    "source_basis": "Hot100",
+    "prompt": "给定字符串数组，请把互为字母异位词的字符串分到同一组。",
+    "input_spec": "输入为字符串数组 strs。",
+    "output_spec": "返回一个二维数组，每个子数组是一组异位词。",
+    "examples": [
+      "strs=[\"eat\",\"tea\",\"tan\",\"ate\",\"nat\",\"bat\"]"
+    ],
+    "evaluation_focus": ["哈希 key 设计", "排序 key 或计数 key", "输出分组结构", "复杂度"]
+  },
+  {
+    "role": "Python算法工程师",
+    "rounds": ["一面", "二面"],
+    "title": "最长连续序列",
+    "difficulty": "中等",
+    "topic": "哈希集合",
+    "source_basis": "Hot100",
+    "prompt": "给定未排序整数数组，请返回最长连续序列的长度，要求时间复杂度尽量接近 O(n)。",
+    "input_spec": "输入为整数数组 nums。",
+    "output_spec": "返回最长连续数字序列长度。",
+    "examples": [
+      "nums=[100,4,200,1,3,2] -> 4"
+    ],
+    "evaluation_focus": ["哈希集合判起点", "避免重复遍历", "复杂度说明", "空数组处理"]
+  },
+  {
+    "role": "Python算法工程师",
+    "rounds": ["一面", "二面"],
+    "title": "移动零",
+    "difficulty": "简单",
+    "topic": "双指针",
+    "source_basis": "Hot100",
+    "prompt": "请将数组中的 0 移动到末尾，同时保持非零元素相对顺序不变，要求原地操作。",
+    "input_spec": "输入为整数数组 nums。",
+    "output_spec": "原地修改数组，不需要返回值。",
+    "examples": [
+      "nums=[0,1,0,3,12] -> [1,3,12,0,0]"
+    ],
+    "evaluation_focus": ["原地交换", "稳定性", "双指针", "边界处理"]
+  },
+  {
+    "role": "Python算法工程师",
+    "rounds": ["一面", "二面"],
+    "title": "Top K 高频元素",
+    "difficulty": "中等",
+    "topic": "堆 / 桶排序",
+    "source_basis": "Hot100",
+    "prompt": "请返回数组中出现频率最高的前 k 个元素，并说明你的复杂度。",
+    "input_spec": "输入为整数数组 nums 和正整数 k。",
+    "output_spec": "返回前 k 个高频元素，顺序不限。",
+    "examples": [
+      "nums=[1,1,1,2,2,3], k=2 -> [1,2]"
+    ],
+    "evaluation_focus": ["频次统计", "堆或桶排序", "复杂度分析", "边界条件"]
+  },
+  {
+    "role": "Python算法工程师",
+    "rounds": ["二面"],
+    "title": "除自身以外数组的乘积",
+    "difficulty": "中等",
+    "topic": "前后缀",
+    "source_basis": "Hot100",
+    "prompt": "给定数组，请返回新数组，其中每个位置等于除自身以外所有元素的乘积，不能直接用除法。",
+    "input_spec": "输入为整数数组 nums。",
+    "output_spec": "返回乘积数组。",
+    "examples": [
+      "nums=[1,2,3,4] -> [24,12,8,6]"
+    ],
+    "evaluation_focus": ["前缀积后缀积", "空间优化", "0 的情况", "复杂度"]
+  },
+  {
+    "role": "Python算法工程师",
+    "rounds": ["二面"],
+    "title": "滑动窗口最大值",
+    "difficulty": "偏难",
+    "topic": "单调队列",
+    "source_basis": "Hot100",
+    "prompt": "给定数组和窗口大小 k，请返回每个滑动窗口中的最大值。",
+    "input_spec": "输入为整数数组 nums 和窗口大小 k。",
+    "output_spec": "返回长度为 len(nums)-k+1 的数组。",
+    "examples": [
+      "nums=[1,3,-1,-3,5,3,6,7], k=3 -> [3,3,5,5,6,7]"
+    ],
+    "evaluation_focus": ["单调队列维护", "出窗入窗逻辑", "复杂度 O(n)", "边界情况"]
+  },
+  {
+    "role": "Python算法工程师",
+    "rounds": ["二面"],
+    "title": "合并区间",
+    "difficulty": "中等",
+    "topic": "排序",
+    "source_basis": "Hot100",
+    "prompt": "给定若干区间，请合并所有重叠区间。",
+    "input_spec": "输入为二维数组 intervals，每个元素是 [start, end]。",
+    "output_spec": "返回合并后的区间数组。",
+    "examples": [
+      "intervals=[[1,3],[2,6],[8,10],[15,18]] -> [[1,6],[8,10],[15,18]]"
+    ],
+    "evaluation_focus": ["排序后遍历", "合并条件", "输出构造", "边界处理"]
+  },
+  {
+    "role": "Python算法工程师",
+    "rounds": ["二面"],
+    "title": "搜索二维矩阵",
+    "difficulty": "中等",
+    "topic": "二分查找",
+    "source_basis": "Hot100",
+    "prompt": "给定行列有序矩阵和目标值，请判断目标值是否存在。",
+    "input_spec": "矩阵每行递增，且每行首元素大于上一行末元素。",
+    "output_spec": "返回布尔值。",
+    "examples": [
+      "matrix=[[1,3,5],[7,9,11]], target=9 -> true"
+    ],
+    "evaluation_focus": ["二维转一维二分", "索引映射", "边界处理", "复杂度"]
+  },
+  {
+    "role": "C++开发工程师",
+    "rounds": ["一面", "二面"],
+    "title": "反转链表",
+    "difficulty": "简单",
+    "topic": "链表",
+    "source_basis": "Hot100",
+    "prompt": "请实现单链表反转，并说明迭代写法和递归写法的差异。",
+    "input_spec": "输入为链表头节点 head。",
+    "output_spec": "返回反转后的头节点。",
+    "examples": [
+      "1->2->3->4->5 -> 5->4->3->2->1"
+    ],
+    "evaluation_focus": ["指针操作", "空链表处理", "迭代与递归对比", "代码健壮性"]
+  },
+  {
+    "role": "C++开发工程师",
+    "rounds": ["一面", "二面"],
+    "title": "环形链表",
+    "difficulty": "简单",
+    "topic": "快慢指针",
+    "source_basis": "Hot100",
+    "prompt": "请判断链表中是否存在环，并解释为什么快慢指针方法成立。",
+    "input_spec": "输入为链表头节点。",
+    "output_spec": "返回布尔值。",
+    "examples": [
+      "存在回指时返回 true，不存在时返回 false"
+    ],
+    "evaluation_focus": ["快慢指针原理", "边界情况", "空间复杂度", "空指针安全"]
+  },
+  {
+    "role": "C++开发工程师",
+    "rounds": ["一面", "二面"],
+    "title": "二叉树层序遍历",
+    "difficulty": "中等",
+    "topic": "树 / BFS",
+    "source_basis": "Hot100",
+    "prompt": "请返回二叉树的层序遍历结果。",
+    "input_spec": "输入为二叉树根节点 root。",
+    "output_spec": "返回二维数组，每层一组节点值。",
+    "examples": [
+      "root=[3,9,20,null,null,15,7] -> [[3],[9,20],[15,7]]"
+    ],
+    "evaluation_focus": ["队列使用", "层级控制", "空树处理", "复杂度"]
+  },
+  {
+    "role": "C++开发工程师",
+    "rounds": ["一面", "二面"],
+    "title": "路径总和",
+    "difficulty": "简单",
+    "topic": "树 / DFS",
+    "source_basis": "Hot100",
+    "prompt": "请判断二叉树是否存在一条从根到叶子的路径，使路径和等于目标值。",
+    "input_spec": "输入为根节点 root 和目标和 targetSum。",
+    "output_spec": "返回布尔值。",
+    "examples": [
+      "存在符合条件的根到叶路径时返回 true"
+    ],
+    "evaluation_focus": ["DFS 递归", "叶子节点判断", "路径和传递", "边界情况"]
+  },
+  {
+    "role": "C++开发工程师",
+    "rounds": ["二面"],
+    "title": "合并 K 个升序链表",
+    "difficulty": "偏难",
+    "topic": "堆 / 分治",
+    "source_basis": "Hot100",
+    "prompt": "请把多个升序链表合并成一个升序链表，并说明你为什么选择当前方法。",
+    "input_spec": "输入为链表头节点数组 lists。",
+    "output_spec": "返回合并后的链表头节点。",
+    "examples": [
+      "lists=[[1,4,5],[1,3,4],[2,6]] -> [1,1,2,3,4,4,5,6]"
+    ],
+    "evaluation_focus": ["小顶堆或分治", "链表拼接", "复杂度", "空链表处理"]
+  },
+  {
+    "role": "C++开发工程师",
+    "rounds": ["二面"],
+    "title": "LRU 缓存",
+    "difficulty": "中等",
+    "topic": "哈希表 + 双向链表",
+    "source_basis": "Hot100",
+    "prompt": "请实现支持 O(1) get 和 put 的 LRU 缓存。",
+    "input_spec": "初始化时给定容量 capacity，后续接收 get 和 put 操作。",
+    "output_spec": "返回 get 查询结果，并保证 put 会按最近最少使用策略淘汰。",
+    "examples": [
+      "capacity=2 时，插入 1、2，再访问 1，再插入 3，应淘汰 2"
+    ],
+    "evaluation_focus": ["数据结构设计", "双向链表维护", "哈希索引", "复杂度说明"]
+  },
+  {
+    "role": "Java后端工程师",
+    "rounds": ["一面", "二面"],
+    "title": "有效括号",
+    "difficulty": "简单",
+    "topic": "栈",
+    "source_basis": "Hot100",
+    "prompt": "给定只包含括号的字符串，请判断括号是否有效闭合。",
+    "input_spec": "输入为字符串 s。",
+    "output_spec": "返回布尔值。",
+    "examples": [
+      "s=\"()[]{}\" -> true",
+      "s=\"(]\" -> false"
+    ],
+    "evaluation_focus": ["栈使用", "括号匹配逻辑", "空字符串处理", "复杂度"]
+  },
+  {
+    "role": "Java后端工程师",
+    "rounds": ["一面", "二面"],
+    "title": "每日温度",
+    "difficulty": "中等",
+    "topic": "单调栈",
+    "source_basis": "Hot100",
+    "prompt": "给定每日温度数组，请返回距离下一次更高温度还需等待的天数。",
+    "input_spec": "输入为整数数组 temperatures。",
+    "output_spec": "返回同长度数组。",
+    "examples": [
+      "temperatures=[73,74,75,71,69,72,76,73] -> [1,1,4,2,1,1,0,0]"
+    ],
+    "evaluation_focus": ["单调栈", "索引存储", "回填结果", "复杂度 O(n)"]
+  },
+  {
+    "role": "Java后端工程师",
+    "rounds": ["一面", "二面"],
+    "title": "搜索旋转排序数组",
+    "difficulty": "中等",
+    "topic": "二分查找",
+    "source_basis": "Hot100",
+    "prompt": "给定旋转后的升序数组和目标值，请返回目标值下标，不存在返回 -1。",
+    "input_spec": "输入为整数数组 nums 和目标值 target。",
+    "output_spec": "返回整数下标。",
+    "examples": [
+      "nums=[4,5,6,7,0,1,2], target=0 -> 4"
+    ],
+    "evaluation_focus": ["二分判定有序区间", "边界处理", "复杂度 O(log n)", "代码清晰度"]
+  },
+  {
+    "role": "Java后端工程师",
+    "rounds": ["二面"],
+    "title": "最小覆盖子串",
+    "difficulty": "偏难",
+    "topic": "滑动窗口",
+    "source_basis": "Hot100",
+    "prompt": "给定两个字符串 s 和 t，请返回 s 中包含 t 所有字符的最短子串。",
+    "input_spec": "输入为字符串 s 和 t，若不存在返回空串。",
+    "output_spec": "返回最短覆盖子串。",
+    "examples": [
+      "s=\"ADOBECODEBANC\", t=\"ABC\" -> \"BANC\""
+    ],
+    "evaluation_focus": ["窗口收缩与扩张", "计数维护", "有效窗口判定", "复杂度分析"]
+  },
+  {
+    "role": "Java后端工程师",
+    "rounds": ["二面"],
+    "title": "合并区间",
+    "difficulty": "中等",
+    "topic": "排序",
+    "source_basis": "Hot100",
+    "prompt": "给定多个区间，请合并所有重叠区间。",
+    "input_spec": "输入为二维数组 intervals。",
+    "output_spec": "返回合并后的区间。",
+    "examples": [
+      "[[1,3],[2,6],[8,10],[15,18]] -> [[1,6],[8,10],[15,18]]"
+    ],
+    "evaluation_focus": ["排序", "区间合并", "结果构造", "边界条件"]
+  },
+  {
+    "role": "Java后端工程师",
+    "rounds": ["二面"],
+    "title": "课程表",
+    "difficulty": "中等",
+    "topic": "图 / 拓扑排序",
+    "source_basis": "Hot100",
+    "prompt": "给定课程数量和先修关系，请判断是否能完成所有课程。",
+    "input_spec": "输入为课程数 numCourses 和二维数组 prerequisites。",
+    "output_spec": "返回布尔值。",
+    "examples": [
+      "numCourses=2, prerequisites=[[1,0]] -> true",
+      "numCourses=2, prerequisites=[[1,0],[0,1]] -> false"
+    ],
+    "evaluation_focus": ["拓扑排序", "入度统计", "队列或 DFS 判环", "图建模"]
+  },
+  {
+    "role": "Web前端工程师",
+    "rounds": ["一面", "二面"],
+    "title": "实现 debounce",
+    "difficulty": "简单",
+    "topic": "函数式 / 定时器",
+    "source_basis": "Hot100-inspired Frontend",
+    "prompt": "请用 JavaScript 实现一个 debounce 函数，支持 delay 和 immediate 两种模式。",
+    "input_spec": "输入为函数 fn、延迟 delay 和布尔值 immediate。",
+    "output_spec": "返回包装后的函数，并保证 this 与参数透传。",
+    "examples": [
+      "连续触发时，只在停顿后执行一次",
+      "immediate=true 时第一次立即执行"
+    ],
+    "evaluation_focus": ["闭包", "定时器清理", "this/args 透传", "边界处理"]
+  },
+  {
+    "role": "Web前端工程师",
+    "rounds": ["一面", "二面"],
+    "title": "实现 throttle",
+    "difficulty": "简单",
+    "topic": "函数式 / 定时器",
+    "source_basis": "Hot100-inspired Frontend",
+    "prompt": "请用 JavaScript 实现 throttle 函数，限制高频函数调用频率。",
+    "input_spec": "输入为函数 fn 和时间间隔 delay。",
+    "output_spec": "返回节流后的函数。",
+    "examples": [
+      "滚动事件高频触发时，每隔 delay 最多执行一次"
+    ],
+    "evaluation_focus": ["时间窗口控制", "leading/trailing 理解", "实现正确性", "可读性"]
+  },
+  {
+    "role": "Web前端工程师",
+    "rounds": ["一面", "二面"],
+    "title": "数组扁平化",
+    "difficulty": "简单",
+    "topic": "递归 / 栈",
+    "source_basis": "Hot100-inspired Frontend",
+    "prompt": "请实现一个 flatten 函数，把多层嵌套数组拍平成一维数组。",
+    "input_spec": "输入为任意层级嵌套数组。",
+    "output_spec": "返回一维数组。",
+    "examples": [
+      "[1,[2,[3,4]],5] -> [1,2,3,4,5]"
+    ],
+    "evaluation_focus": ["递归或栈", "边界条件", "可读性", "时间空间复杂度"]
+  },
+  {
+    "role": "Web前端工程师",
+    "rounds": ["二面"],
+    "title": "Promise.all",
+    "difficulty": "中等",
+    "topic": "异步控制",
+    "source_basis": "Hot100-inspired Frontend",
+    "prompt": "请实现一个简化版 Promise.all，要求全部成功时按顺序返回，任一失败时立刻 reject。",
+    "input_spec": "输入可能是 Promise 数组，也可能包含普通值。",
+    "output_spec": "返回新的 Promise。",
+    "examples": [
+      "[Promise.resolve(1), 2] -> [1,2]"
+    ],
+    "evaluation_focus": ["异步收集", "顺序保证", "失败短路", "边界处理"]
+  },
+  {
+    "role": "Web前端工程师",
+    "rounds": ["二面"],
+    "title": "LRU 缓存",
+    "difficulty": "中等",
+    "topic": "Map / 双向链表",
+    "source_basis": "Hot100",
+    "prompt": "请用 JavaScript 实现一个支持 get 和 put 的 LRU 缓存。",
+    "input_spec": "初始化时给定容量 capacity。",
+    "output_spec": "要求平均时间复杂度接近 O(1)。",
+    "examples": [
+      "容量为 2 时，访问过的 key 应更新最近使用顺序"
+    ],
+    "evaluation_focus": ["数据结构设计", "Map 使用或链表设计", "淘汰逻辑", "复杂度"]
+  },
+  {
+    "role": "测试工程师",
+    "rounds": ["一面", "二面"],
+    "title": "合并区间",
+    "difficulty": "中等",
+    "topic": "排序",
+    "source_basis": "Hot100",
+    "prompt": "请实现合并区间函数，并说明你会如何为它设计测试用例。",
+    "input_spec": "输入为二维数组 intervals。",
+    "output_spec": "返回合并后的区间数组。",
+    "examples": [
+      "[[1,3],[2,6],[8,10],[15,18]] -> [[1,6],[8,10],[15,18]]"
+    ],
+    "evaluation_focus": ["算法正确性", "边界值测试", "空输入与单区间", "测试意识"]
+  },
+  {
+    "role": "测试工程师",
+    "rounds": ["一面", "二面"],
+    "title": "搜索二维矩阵",
+    "difficulty": "中等",
+    "topic": "二分查找",
+    "source_basis": "Hot100",
+    "prompt": "请实现矩阵搜索，并补充你认为最容易漏测的几个场景。",
+    "input_spec": "矩阵满足行递增且每行首元素大于上一行末元素。",
+    "output_spec": "返回目标是否存在。",
+    "examples": [
+      "matrix=[[1,3,5],[7,9,11]], target=7 -> true"
+    ],
+    "evaluation_focus": ["算法思路", "测试场景补充", "边界处理", "空矩阵处理"]
+  },
+  {
+    "role": "测试工程师",
+    "rounds": ["二面"],
+    "title": "字符串解码校验",
+    "difficulty": "中等",
+    "topic": "栈 / 解析",
+    "source_basis": "Hot100-inspired QA",
+    "prompt": "请实现一个简化版字符串解码函数，并说明你会如何验证嵌套与异常输入。",
+    "input_spec": "输入形如 k[encoded_string]，可存在嵌套。",
+    "output_spec": "返回解码后的字符串。",
+    "examples": [
+      "\"3[a2[c]]\" -> \"accaccacc\""
+    ],
+    "evaluation_focus": ["栈或递归解析", "测试设计", "异常输入考虑", "实现正确性"]
+  }
+]

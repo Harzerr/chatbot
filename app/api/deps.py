@@ -1,3 +1,4 @@
+import asyncio
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, status
@@ -7,6 +8,7 @@ from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.chat_agent import AISupport
+from app.agent.langgraph_agent import get_graph, initialize_graph
 from app.core.config import settings
 from app.core.security import ALGORITHM
 from app.db.session import get_db
@@ -15,10 +17,13 @@ from app.schemas.token import TokenPayload
 from app.services.streaming import StreamingService
 from app.services.user import UserService
 from app.services.vector_store import MultiTenantVectorStore
+from app.utils.logger import setup_logger
 
 reusable_oauth2 = OAuth2PasswordBearer(
     tokenUrl=f"{settings.API_V1_STR}/auth/login"
 )
+logger = setup_logger(__name__)
+_graph_init_lock = asyncio.Lock()
 
 
 async def get_user_service(
@@ -29,7 +34,25 @@ async def get_user_service(
 def get_vector_store() -> MultiTenantVectorStore:
     return MultiTenantVectorStore()
 
-def get_ai_support(vector_store: Annotated[MultiTenantVectorStore, Depends(get_vector_store)]) -> AISupport:
+
+async def _ensure_graph_initialized() -> None:
+    try:
+        get_graph()
+        return
+    except RuntimeError:
+        pass
+
+    async with _graph_init_lock:
+        try:
+            get_graph()
+            return
+        except RuntimeError:
+            logger.warning("LangGraph is not initialized, attempting lazy initialization before serving chat")
+            await initialize_graph()
+
+
+async def get_ai_support(vector_store: Annotated[MultiTenantVectorStore, Depends(get_vector_store)]) -> AISupport:
+    await _ensure_graph_initialized()
     return AISupport(vector_store)
 
 def get_streaming_service(support_agent: Annotated[AISupport, Depends(get_ai_support)]) -> StreamingService:

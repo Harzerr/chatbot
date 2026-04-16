@@ -30,7 +30,14 @@ def format_chat_results(points) -> List[Dict[str, Any]]:
             "assistant_message": assistant_msg,
             "timestamp": metadata.get("timestamp", ""),
             "chat_id": metadata.get("chat_id", ""),
-            "user_id": metadata.get("user_id", "")
+            "user_id": metadata.get("user_id", ""),
+            "interview_role": metadata.get("interview_role"),
+            "interview_level": metadata.get("interview_level"),
+            "interview_type": metadata.get("interview_type"),
+            "target_company": metadata.get("target_company"),
+            "jd_content": metadata.get("jd_content"),
+            "resume_content": metadata.get("resume_content"),
+            "evaluation": metadata.get("evaluation"),
         }
         results.append(chat_msg)
 

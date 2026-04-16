@@ -12,19 +12,8 @@ logger = setup_logger(__name__)
 
 
 class UserService:
-    _instance = None
-
-    def __new__(cls, db: AsyncSession):
-        if cls._instance is None:
-            cls._instance = super(UserService, cls).__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
     def __init__(self, db: AsyncSession):
-        if self._initialized:
-            return
         self.db = db
-        self._initialized = True
 
     async def get(self, user_id: int) -> Optional[User]:
         query = select(User).where(User.id == user_id)
@@ -48,6 +37,11 @@ class UserService:
         await self.db.refresh(user)
 
         return user
+
+    async def username_exists_for_other_user(self, username: str, user_id: int) -> bool:
+        query = select(User).where(User.username == username, User.id != user_id)
+        result = await self.db.execute(query)
+        return result.scalars().first() is not None
     
     async def update(
         self, *, db_obj: User, obj_in: Union[UserUpdate, dict]

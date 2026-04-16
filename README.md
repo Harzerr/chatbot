@@ -204,8 +204,22 @@ QDRANT_PORT=6333
 
 # LiveKit settings
 LIVEKIT_URL=your_livekit_url_here
+LIVEKIT_INTERNAL_URL=
+LIVEKIT_PUBLIC_URL=
 LIVEKIT_API_KEY=your_livekit_api_key_here
 LIVEKIT_API_SECRET=your_livekit_api_secret_here
+LIVEKIT_API_HTTP_PROXY=
+LIVEKIT_AGENT_HTTP_PROXY=
+LIVEKIT_AGENT_RTC_RELAY_ONLY=false
+LIVEKIT_ENABLE_TURN_DETECTION=false
+DEEPGRAM_API_KEY=your_deepgram_api_key_here
+DEEPGRAM_LANGUAGE=zh-CN
+STT_CONNECT_TIMEOUT=30
+STT_CONNECT_MAX_RETRIES=3
+STT_CONNECT_RETRY_INTERVAL=2
+CARTESIA_API_KEY=your_cartesia_api_key_here
+CARTESIA_VOICE_ID=4f8651b0-bbbd-46ac-8b37-5168c5923303
+CARTESIA_LANGUAGE=zh
 
 # LangSmith (optional, for tracing)
 LANGCHAIN_TRACING_V2=true
@@ -247,11 +261,63 @@ python -m app.mcp_server.web_scrapping_server
 python app.py
 ```
 
-3. Start the LiveKit voice assistant
+3. (Optional) Start a local self-hosted LiveKit server on this machine
+
+```bash
+# start
+./scripts/livekit_local_up.sh
+
+# stop
+./scripts/livekit_local_down.sh
+```
+
+If you already have a preloaded image tar, point to it explicitly:
+
+```bash
+LIVEKIT_IMAGE_TAR=/home/yons/DATA/yql_3/livekit-server-latest.tar ./scripts/livekit_local_up.sh
+```
+
+The startup script pulls LiveKit from this mirror and tags it to the official image name:
+
+```bash
+docker pull swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/livekit/livekit-server:latest
+docker tag swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/livekit/livekit-server:latest docker.io/livekit/livekit-server:latest
+```
+
+For cloud deployment, open these ports in your security group / firewall:
+- TCP `7880` (LiveKit API + WebSocket)
+- TCP `7881` (ICE TCP fallback)
+- UDP `7882` (WebRTC media, single UDP port mode)
+
+Use this `.env` mapping when backend/worker run on the same host:
+
+```env
+LIVEKIT_URL=wss://<your-public-livekit-domain-or-ip>
+LIVEKIT_INTERNAL_URL=ws://127.0.0.1:7880
+LIVEKIT_PUBLIC_URL=wss://<your-public-livekit-domain-or-ip>
+LIVEKIT_API_KEY=devkey
+LIVEKIT_API_SECRET=secret
+```
+
+4. Start the LiveKit voice assistant
 
 ```bash
 python app/agent/livekit_agent.py dev
 ```
+
+### LiveKit Voice Demo
+
+Use the minimal demo to isolate LiveKit connectivity before debugging the full interview flow.
+
+```bash
+# Terminal 1: start a tiny voice agent named voice-demo
+python scripts/livekit_voice_demo_agent.py dev
+
+# Terminal 2: create a demo room, dispatch the demo agent, and print a browser token
+python scripts/livekit_voice_demo_token.py
+```
+
+If direct access to LiveKit Cloud is blocked, either set `LIVEKIT_API_HTTP_PROXY` / `LIVEKIT_AGENT_HTTP_PROXY`, or export standard `http_proxy` / `https_proxy`. For restrictive networks, `LIVEKIT_AGENT_RTC_RELAY_ONLY=true` can force relay ICE candidates, but the worker host still needs TURN/WebRTC connectivity to LiveKit Cloud.
 
 ### Starting the Frontend
 

@@ -21,6 +21,12 @@ const Register = () => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [tenantId, setTenantId] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [targetRole, setTargetRole] = useState('');
+  const [yearsOfExperience, setYearsOfExperience] = useState('');
+  const [bio, setBio] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [validationError, setValidationError] = useState('');
   const { register, error } = useAuth();
@@ -33,8 +39,8 @@ const Register = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!username.trim() || !password.trim() || !confirmPassword.trim() || !tenantId.trim()) {
-      setValidationError('All fields are required');
+    if (!username.trim() || !password.trim() || !confirmPassword.trim() || !tenantId.trim() || !fullName.trim() || !email.trim() || !phone.trim() || !targetRole.trim() || yearsOfExperience === '') {
+      setValidationError('请完整填写注册信息');
       return;
     }
     
@@ -47,11 +53,21 @@ const Register = () => {
     setIsSubmitting(true);
     
     try {
-      await register(username, password, tenantId);
+      await register({
+        username,
+        password,
+        tenant_id: tenantId,
+        full_name: fullName,
+        email,
+        phone,
+        target_role: targetRole,
+        years_of_experience: Number(yearsOfExperience),
+        bio,
+      });
       navigate('/login', { 
         state: { 
           registrationSuccess: true,
-          message: 'Registration successful! Please login with your credentials.' 
+          message: '注册成功，请登录后先完善个人档案并上传简历。' 
         } 
       });
     } catch (err) {
@@ -96,6 +112,82 @@ const Register = () => {
           )}
           
           <Box component="form" onSubmit={handleSubmit} noValidate>
+            <TextField
+              margin="normal"
+              required
+              fullWidth
+              id="fullName"
+              label="姓名"
+              name="fullName"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              disabled={isSubmitting}
+            />
+
+            <TextField
+              margin="normal"
+              required
+              fullWidth
+              id="email"
+              label="邮箱"
+              name="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              disabled={isSubmitting}
+            />
+
+            <TextField
+              margin="normal"
+              required
+              fullWidth
+              id="phone"
+              label="手机号"
+              name="phone"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              disabled={isSubmitting}
+            />
+
+            <TextField
+              margin="normal"
+              required
+              fullWidth
+              id="targetRole"
+              label="目标岗位"
+              name="targetRole"
+              value={targetRole}
+              onChange={(e) => setTargetRole(e.target.value)}
+              disabled={isSubmitting}
+            />
+
+            <TextField
+              margin="normal"
+              required
+              fullWidth
+              id="yearsOfExperience"
+              label="工作年限"
+              name="yearsOfExperience"
+              type="number"
+              inputProps={{ min: 0, max: 50 }}
+              value={yearsOfExperience}
+              onChange={(e) => setYearsOfExperience(e.target.value)}
+              disabled={isSubmitting}
+            />
+
+            <TextField
+              margin="normal"
+              fullWidth
+              id="bio"
+              label="个人简介"
+              name="bio"
+              multiline
+              minRows={3}
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+              disabled={isSubmitting}
+            />
+
             <TextField
               margin="normal"
               required
@@ -156,7 +248,18 @@ const Register = () => {
               fullWidth
               variant="contained"
               sx={{ mt: 3, mb: 2 }}
-              disabled={isSubmitting || !username.trim() || !password.trim() || !confirmPassword.trim() || !tenantId.trim()}
+              disabled={
+                isSubmitting
+                || !username.trim()
+                || !password.trim()
+                || !confirmPassword.trim()
+                || !tenantId.trim()
+                || !fullName.trim()
+                || !email.trim()
+                || !phone.trim()
+                || !targetRole.trim()
+                || yearsOfExperience === ''
+              }
             >
               {isSubmitting ? <CircularProgress size={24} /> : 'Register'}
             </Button>

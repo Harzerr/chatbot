@@ -10,7 +10,395 @@ import { useAuth } from '../contexts/AuthContext';
 import { RoomEvent } from 'livekit-client';
 import { RoomContext, RoomAudioRenderer, StartAudio } from '@livekit/components-react';
 
-const VoiceAssistant = () => {
+const safeParseJson = (rawText) => {
+  if (!rawText || typeof rawText !== 'string') {
+    return null;
+  }
+  try {
+    return JSON.parse(rawText);
+  } catch {
+    return null;
+  }
+};
+
+const getHostFromUrl = (url) => {
+  if (!url || typeof url !== 'string') {
+    return '';
+  }
+  try {
+    return new URL(url).hostname || '';
+  } catch {
+    return '';
+  }
+};
+
+const isLoopbackHost = (host) => host === 'localhost' || host === '127.0.0.1' || host === '::1';
+
+const MIC_SAMPLE_DURATION_MS = 3500;
+const MIC_SIGNAL_RMS_THRESHOLD = 0.015;
+const MIC_SIGNAL_PEAK_THRESHOLD = 0.05;
+
+const formatAudioLevel = (value) => `${Math.round(Math.min(Math.max(value, 0), 1) * 100)}%`;
+
+const getPreferredAudioMimeType = () => {
+  if (!window.MediaRecorder?.isTypeSupported) {
+    return '';
+  }
+  return [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/ogg;codecs=opus',
+    'audio/mp4'
+  ].find((mimeType) => window.MediaRecorder.isTypeSupported(mimeType)) || '';
+};
+
+const formatDeviceError = (error) => {
+  if (!error) {
+    return '未知错误';
+  }
+  if (error?.name === 'NotFoundError' || error?.message?.includes('Requested device not found')) {
+    return '未检测到可用麦克风，请检查设备连接。';
+  }
+  if (error?.name === 'NotAllowedError') {
+    return '麦克风权限被拒绝，请在浏览器中允许访问麦克风。';
+  }
+  if (error?.name === 'NotReadableError') {
+    return '麦克风可能被其他应用占用，请关闭冲突应用后重试。';
+  }
+  return error?.message || String(error);
+};
+
+export const DeviceCheckPanel = () => {
+  const [isChecking, setIsChecking] = useState(false);
+  const [checkResult, setCheckResult] = useState(null);
+  const [isRecordingSample, setIsRecordingSample] = useState(false);
+  const [audioTestResult, setAudioTestResult] = useState(null);
+  const sampleAudioUrlRef = useRef(null);
+
+  const revokeSampleAudioUrl = () => {
+    if (sampleAudioUrlRef.current) {
+      URL.revokeObjectURL(sampleAudioUrlRef.current);
+      sampleAudioUrlRef.current = null;
+    }
+  };
+
+  useEffect(() => () => {
+    revokeSampleAudioUrl();
+  }, []);
+
+  const runCheck = async () => {
+    setIsChecking(true);
+    setAudioTestResult(null);
+    revokeSampleAudioUrl();
+    const result = {
+      checkedAt: new Date().toISOString(),
+      permissionState: 'unknown',
+      secureContext: window.isSecureContext,
+      audioInputCount: 0,
+      audioOutputCount: 0,
+      inputs: [],
+      outputs: [],
+      error: '',
+    };
+
+    let stream = null;
+    try {
+      if (!navigator.mediaDevices?.getUserMedia || !navigator.mediaDevices?.enumerateDevices) {
+        throw new Error('当前浏览器不支持设备检测 API（getUserMedia / enumerateDevices）。');
+      }
+
+      if (navigator.permissions?.query) {
+        try {
+          const status = await navigator.permissions.query({ name: 'microphone' });
+          result.permissionState = status.state || 'unknown';
+        } catch {
+          result.permissionState = 'unavailable';
+        }
+      }
+
+      const devicesBeforeGrant = await navigator.mediaDevices.enumerateDevices();
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const devicesAfterGrant = await navigator.mediaDevices.enumerateDevices();
+      const devices = devicesAfterGrant.length > 0 ? devicesAfterGrant : devicesBeforeGrant;
+
+      const inputs = devices.filter((device) => device.kind === 'audioinput');
+      const outputs = devices.filter((device) => device.kind === 'audiooutput');
+
+      result.audioInputCount = inputs.length;
+      result.audioOutputCount = outputs.length;
+      result.inputs = inputs.map((device, index) => device.label || `麦克风 ${index + 1}`);
+      result.outputs = outputs.map((device, index) => device.label || `扬声器 ${index + 1}`);
+
+      if (result.audioInputCount === 0) {
+        throw new Error('未检测到可用麦克风，请检查设备连接与系统权限。');
+      }
+    } catch (err) {
+      result.error = `设备检测失败：${formatDeviceError(err)}`;
+    } finally {
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+      }
+      setCheckResult(result);
+      setIsChecking(false);
+    }
+  };
+
+  const runMicSampleCheck = async () => {
+    if (isRecordingSample) {
+      return;
+    }
+
+    setIsRecordingSample(true);
+    setAudioTestResult(null);
+    revokeSampleAudioUrl();
+
+    let stream = null;
+    let audioContext = null;
+    let sourceNode = null;
+    let animationFrameId = null;
+    const levels = { peak: 0, rmsTotal: 0, samples: 0 };
+
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error('当前浏览器不支持麦克风访问。');
+      }
+      if (!window.MediaRecorder) {
+        throw new Error('当前浏览器不支持录音回放检测。');
+      }
+
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextCtor) {
+        throw new Error('当前浏览器不支持实时音量分析。');
+      }
+
+      audioContext = new AudioContextCtor();
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 2048;
+      const timeDomainData = new Uint8Array(analyser.fftSize);
+
+      sourceNode = audioContext.createMediaStreamSource(stream);
+      sourceNode.connect(analyser);
+
+      const sampleAudioLevel = () => {
+        analyser.getByteTimeDomainData(timeDomainData);
+        let peak = 0;
+        let sumSquares = 0;
+        for (let i = 0; i < timeDomainData.length; i += 1) {
+          const normalized = (timeDomainData[i] - 128) / 128;
+          const amplitude = Math.abs(normalized);
+          peak = Math.max(peak, amplitude);
+          sumSquares += normalized * normalized;
+        }
+        levels.peak = Math.max(levels.peak, peak);
+        levels.rmsTotal += Math.sqrt(sumSquares / timeDomainData.length);
+        levels.samples += 1;
+        animationFrameId = window.requestAnimationFrame(sampleAudioLevel);
+      };
+      sampleAudioLevel();
+
+      const chunks = [];
+      const preferredMimeType = getPreferredAudioMimeType();
+      const recorderOptions = preferredMimeType ? { mimeType: preferredMimeType } : undefined;
+      const recorder = new MediaRecorder(stream, recorderOptions);
+
+      await new Promise((resolve, reject) => {
+        let stopTimer = null;
+        recorder.ondataavailable = (event) => {
+          if (event.data?.size > 0) {
+            chunks.push(event.data);
+          }
+        };
+        recorder.onerror = (event) => {
+          if (stopTimer) {
+            window.clearTimeout(stopTimer);
+          }
+          reject(event.error || new Error('录音过程中发生异常。'));
+        };
+        recorder.onstop = () => {
+          if (stopTimer) {
+            window.clearTimeout(stopTimer);
+          }
+          resolve();
+        };
+        recorder.start();
+        stopTimer = window.setTimeout(() => {
+          if (recorder.state !== 'inactive') {
+            recorder.stop();
+          }
+        }, MIC_SAMPLE_DURATION_MS);
+      });
+
+      if (chunks.length === 0) {
+        throw new Error('未录到可回放的音频片段。');
+      }
+
+      const audioBlob = new Blob(chunks, { type: preferredMimeType || chunks[0]?.type || 'audio/webm' });
+      const audioUrl = URL.createObjectURL(audioBlob);
+      sampleAudioUrlRef.current = audioUrl;
+
+      const rms = levels.samples > 0 ? levels.rmsTotal / levels.samples : 0;
+      const hasVoice = levels.peak >= MIC_SIGNAL_PEAK_THRESHOLD || rms >= MIC_SIGNAL_RMS_THRESHOLD;
+
+      setAudioTestResult({
+        checkedAt: new Date().toISOString(),
+        peak: levels.peak,
+        rms,
+        hasVoice,
+        audioUrl,
+        error: '',
+      });
+
+      const playback = new Audio(audioUrl);
+      playback.play().catch(() => {
+        // user gesture might be required; audio control remains available in UI.
+      });
+    } catch (err) {
+      setAudioTestResult({
+        checkedAt: new Date().toISOString(),
+        peak: 0,
+        rms: 0,
+        hasVoice: false,
+        audioUrl: '',
+        error: `麦克风录音检测失败：${formatDeviceError(err)}`,
+      });
+    } finally {
+      if (animationFrameId) {
+        window.cancelAnimationFrame(animationFrameId);
+      }
+      if (sourceNode) {
+        sourceNode.disconnect();
+      }
+      if (audioContext && audioContext.state !== 'closed') {
+        await audioContext.close().catch(() => {});
+      }
+      if (stream) {
+        stream.getTracks().forEach((track) => track.stop());
+      }
+      setIsRecordingSample(false);
+    }
+  };
+
+  return (
+    <Paper
+      elevation={0}
+      sx={{
+        p: 3,
+        minHeight: 380,
+        border: '1px solid rgba(148,163,184,0.18)',
+        borderRadius: 2.5,
+        background: 'linear-gradient(180deg, rgba(15,23,42,0.88) 0%, rgba(6,13,24,0.96) 100%)'
+      }}
+    >
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.4 }}>
+        <Box component="div" sx={{ typography: 'h6', color: '#f8fafc' }}>
+          面试前设备自检
+        </Box>
+       
+      </Box>
+      <Box sx={{ display: 'flex', gap: 1 ,mt:3}}>
+          <Button
+            variant="outlined"
+            onClick={runMicSampleCheck}
+            disabled={isRecordingSample}
+            sx={{
+              borderRadius: 2,
+              borderColor: 'rgba(148,163,184,0.45)',
+              color: '#dbeafe',
+              '&:hover': { borderColor: '#93c5fd', backgroundColor: 'rgba(37,99,235,0.12)' }
+            }}
+          >
+            {isRecordingSample ? '录音中...' : '麦克风录音检测'}
+          </Button>
+          <Button
+            variant="contained"
+            onClick={runCheck}
+            disabled={isChecking}
+            sx={{ borderRadius: 2 }}
+          >
+            {isChecking ? '检测中...' : '开始设备检测'}
+          </Button>
+        </Box>
+
+      {!checkResult && !audioTestResult && (
+        <Box component="div" sx={{ typography: 'body2', color: '#cbd5e1', lineHeight: 1.8 , mt:4}}>
+          点击上方按钮后，系统会请求麦克风权限、检测本地音频设备，并可录制一段 3.5 秒音频用于回放确认。
+        </Box>
+      )}
+
+      {checkResult && (
+        <Box
+          sx={{
+            mt: 1,
+            p: 1.5,
+            borderRadius: 2,
+            backgroundColor: checkResult.error ? 'rgba(248,113,113,0.10)' : 'rgba(30,41,59,0.55)',
+            border: `1px solid ${checkResult.error ? 'rgba(248,113,113,0.22)' : 'rgba(148,163,184,0.18)'}`,
+            color: '#dbeafe'
+          }}
+        >
+          <Box component="div" sx={{ typography: 'body2', lineHeight: 1.8 }}>
+            <div>检测时间：{new Date(checkResult.checkedAt).toLocaleString('zh-CN', { hour12: false })}</div>
+            <div>安全上下文：{checkResult.secureContext ? '是' : '否'}</div>
+            <div>麦克风权限：{checkResult.permissionState}</div>
+            <div>音频输入设备：{checkResult.audioInputCount} 个</div>
+            <div>音频输出设备：{checkResult.audioOutputCount} 个</div>
+            {checkResult.inputs.length > 0 && <div>输入设备：{checkResult.inputs.join(' / ')}</div>}
+            {checkResult.outputs.length > 0 && <div>输出设备：{checkResult.outputs.join(' / ')}</div>}
+          </Box>
+          {checkResult.error && (
+            <Box component="div" sx={{ mt: 1, typography: 'body2', color: '#fecaca' }}>
+              {checkResult.error}
+            </Box>
+          )}
+        </Box>
+      )}
+
+      {audioTestResult && (
+        <Box
+          sx={{
+            mt: 1.2,
+            p: 1.5,
+            borderRadius: 2,
+            backgroundColor: audioTestResult.error
+              ? 'rgba(248,113,113,0.10)'
+              : audioTestResult.hasVoice
+                ? 'rgba(34,197,94,0.10)'
+                : 'rgba(234,179,8,0.12)',
+            border: `1px solid ${
+              audioTestResult.error
+                ? 'rgba(248,113,113,0.22)'
+                : audioTestResult.hasVoice
+                  ? 'rgba(34,197,94,0.22)'
+                  : 'rgba(234,179,8,0.24)'
+            }`,
+            color: '#dbeafe'
+          }}
+        >
+          {audioTestResult.error ? (
+            <Box component="div" sx={{ typography: 'body2', color: '#fecaca' }}>
+              {audioTestResult.error}
+            </Box>
+          ) : (
+            <Box component="div" sx={{ typography: 'body2', lineHeight: 1.8 }}>
+              <div>录音检测结果：{audioTestResult.hasVoice ? '检测到有效声音' : '声音偏弱，请靠近麦克风再试'}</div>
+              <div>峰值音量：{formatAudioLevel(audioTestResult.peak)}</div>
+              <div>平均能量：{formatAudioLevel(audioTestResult.rms)}</div>
+              {audioTestResult.audioUrl && (
+                <Box component="audio" controls src={audioTestResult.audioUrl} sx={{ mt: 1.1, width: '100%' }} />
+              )}
+            </Box>
+          )}
+        </Box>
+      )}
+    </Paper>
+  );
+};
+const VoiceAssistant = ({
+  interviewContext = null,
+  onMessagesChange,
+}) => {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [response, setResponse] = useState('');
@@ -19,6 +407,8 @@ const VoiceAssistant = () => {
   const [messages, setMessages] = useState([]);
   const [textInput, setTextInput] = useState('');
   const messagesEndRef = useRef(null);
+  const seenFinalTranscriptionKeysRef = useRef(new Set());
+  const seenAssistantChatKeysRef = useRef(new Set());
   const { 
     room, 
     isConnected, 
@@ -36,7 +426,7 @@ const VoiceAssistant = () => {
 
   const handleDisconnect = async () => {
     try {
-      console.log('🔴 Disconnecting from LiveKit room...');
+      console.log('棣冩暥 Disconnecting from LiveKit room...');
 
       if (room && room.localParticipant) {
         await room.localParticipant.setMicrophoneEnabled(false);
@@ -48,20 +438,22 @@ const VoiceAssistant = () => {
       setTranscript('');
       setResponse('');
       setIsSpeaking(false);
+      seenFinalTranscriptionKeysRef.current.clear();
+      seenAssistantChatKeysRef.current.clear();
 
       setMessages(prevMessages => [
         ...prevMessages,
         {
           id: `system-${Date.now()}`,
-          text: 'Voice call ended',
+          text: '语音通话已结束',
           isSystem: true,
           timestamp: new Date().toISOString()
         }
       ]);
       
-      console.log('✅ Voice call ended');
+      console.log('Voice call ended');
     } catch (error) {
-      console.error('❌ Error disconnecting:', error);
+      console.error('Error disconnecting:', error);
     }
   };
 
@@ -73,6 +465,7 @@ const VoiceAssistant = () => {
           id: `user-${Date.now()}`,
           text: textInput,
           isUser: true,
+          role: 'candidate',
           timestamp: new Date().toISOString()
         }
       ]);
@@ -86,46 +479,80 @@ const VoiceAssistant = () => {
   const toggleMicrophone = async () => {
     if (!isConnected) {
       try {
+        const resolvedToken = authToken || localStorage.getItem('token');
+        if (!resolvedToken) {
+          setError('登录状态已失效，请重新登录后再开始语音面试。');
+          return;
+        }
+
         setError(null);
         
-        console.log('🎤️ Starting LiveKit connection process');
+        console.log('Starting LiveKit connection process');
         setIsLoading(true);
 
-        console.log('🔑 Fetching token from backend...');
+        console.log('Fetching token from backend...');
         const response = await fetch('/api/v1/livekit/generate_token', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `${tokenType} ${authToken}`
-          }
+            'Authorization': `${tokenType || 'Bearer'} ${resolvedToken}`
+          },
+          body: JSON.stringify({
+            chat_id: interviewContext?.chatId || null,
+            interview_role: interviewContext?.interviewRole || null,
+            interview_level: interviewContext?.interviewLevel || null,
+            interview_type: interviewContext?.interviewType || null,
+            target_company: interviewContext?.targetCompany || null,
+            jd_content: interviewContext?.jdContent || null,
+          }),
         });
         
         if (!response.ok) {
           const errorText = await response.text();
-          console.error('❌ Failed to fetch token:', response.status, errorText);
-          setError(`Failed to get LiveKit token: ${response.status}`);
+          console.error('Failed to fetch token:', response.status, errorText);
+          const parsedError = safeParseJson(errorText);
+          const detail = parsedError?.detail;
+          const backendMessage = typeof detail === 'string' ? detail : errorText;
+          setError(backendMessage || `获取 LiveKit token 失败：${response.status}`);
           setIsLoading(false);
           return;
         }
         
         const data = await response.json();
-        console.log('📦 Received from backend:', {
+        console.log('棣冩憹 Received from backend:', {
           hasToken: !!data.token,
           tokenLength: data.token ? data.token.length : 0,
-          roomName: data.room_name
+          roomName: data.room_name,
+          liveKitUrl: data.livekit_url
         });
 
-        const liveKitUrl = process.env.REACT_APP_LIVEKIT_URL;
-        console.log('🌐 LiveKit URL from env:', liveKitUrl);
+        const liveKitUrl = data.livekit_url || process.env.REACT_APP_LIVEKIT_URL;
+        console.log('棣冨 LiveKit URL from env:', liveKitUrl);
         
         if (!liveKitUrl) {
-          console.error('❌ LiveKit URL not found in environment variables');
-          setError('LiveKit URL not configured');
+          console.error('LiveKit URL not found in environment variables');
+          setError('LiveKit 地址未配置');
           setIsLoading(false);
           return;
         }
 
-        console.log('🔄 Connecting to LiveKit room:', {
+        const pageHost = window.location.hostname;
+        const liveKitHost = getHostFromUrl(liveKitUrl);
+        if (liveKitHost && isLoopbackHost(liveKitHost) && !isLoopbackHost(pageHost)) {
+          const mismatchHint = `当前页面主机是 ${pageHost}，但 LiveKit 地址主机是 ${liveKitHost}。如果你是远程访问，请把 LIVEKIT_PUBLIC_URL 改为客户端可达地址。`;
+          setMessages(prevMessages => [
+            ...prevMessages,
+            {
+              id: `error-${Date.now()}`,
+              text: mismatchHint,
+              isSystem: true,
+              isError: true,
+              timestamp: new Date().toISOString()
+            }
+          ]);
+        }
+
+        console.log('棣冩敡 Connecting to LiveKit room:', {
           url: liveKitUrl,
           roomName: data.room_name,
           hasToken: !!data.token
@@ -134,17 +561,17 @@ const VoiceAssistant = () => {
         const connectedRoom = await connect(liveKitUrl, data.token);
         
         if (!connectedRoom) {
-          console.error('❌ Failed to connect to LiveKit room');
-          setError('Failed to connect to LiveKit room');
+          console.error('Failed to connect to LiveKit room');
+          setError(error || '连接 LiveKit 房间失败');
           setIsLoading(false);
           return;
         }
         
-        console.log('✅ Connected to LiveKit room:', connectedRoom.name);
+        console.log('Connected to LiveKit room:', connectedRoom.name);
 
         if (connectedRoom.localParticipant) {
-          console.log('🎤️ Enabling microphone...');
-          console.log('🔍 Room state:', {
+          console.log('Enabling microphone...');
+          console.log('棣冩敵 Room state:', {
             name: connectedRoom.name,
             sid: connectedRoom.sid,
             connectionState: connectedRoom.connectionState,
@@ -152,31 +579,32 @@ const VoiceAssistant = () => {
           });
           
           await connectedRoom.localParticipant.setMicrophoneEnabled(true);
-          console.log('✅ Microphone enabled successfully');
+          console.log('Microphone enabled successfully');
           setIsListening(true);
 
           setMessages(prevMessages => [
             ...prevMessages,
             {
               id: `system-${Date.now()}`,
-              text: 'Voice call connected',
+              text: '语音通话已连接',
               isSystem: true,
               timestamp: new Date().toISOString()
             }
           ]);
         } else {
-          console.error('❌ Room object not available after connection');
-          setError('Failed to initialize voice call room');
+          console.error('Room object not available after connection');
+          setError('语音房间初始化失败');
         }
       } catch (error) {
-        console.error('❌ Error connecting to LiveKit room:', error);
-        setError(`Connection error: ${error.message}. Please try again.`);
+        console.error('Error connecting to LiveKit room:', error);
+        const message = error?.message || `连接异常：${String(error)}`;
+        setError(message);
 
         setMessages(prevMessages => [
           ...prevMessages,
           {
             id: `error-${Date.now()}`,
-            text: `Connection error: ${error.message}. Please try again.`,
+            text: message,
             isSystem: true,
             isError: true,
             timestamp: new Date().toISOString()
@@ -207,43 +635,116 @@ const VoiceAssistant = () => {
   }, [messages]);
 
   useEffect(() => {
+    if (typeof onMessagesChange === 'function') {
+      onMessagesChange(messages);
+    }
+  }, [messages, onMessagesChange]);
+
+  useEffect(() => {
     if (transcriptions.length > 0) {
       const latestTranscription = transcriptions[transcriptions.length - 1];
-      console.log('🎤 Received transcription:', latestTranscription);
+      console.log('Received transcription:', latestTranscription);
 
-      setMessages(prevMessages => [
-        ...prevMessages,
-        {
-          id: `transcription-${Date.now()}`,
-          text: latestTranscription.text || latestTranscription.message,
-          isUser: true,
-          timestamp: latestTranscription.timestamp || new Date().toISOString()
+      const text = String(latestTranscription.text || latestTranscription.message || '').trim();
+      if (!text) {
+        return;
+      }
+
+      // Only render final transcription bubbles to avoid repeated partial updates.
+      const isFinal = latestTranscription.isFinal === undefined ? true : Boolean(latestTranscription.isFinal);
+      if (!isFinal) {
+        return;
+      }
+
+      const normalizedRole =
+        latestTranscription.role === 'assistant' || latestTranscription.role === 'interviewer'
+          ? 'interviewer'
+          : 'candidate';
+      const dedupeKey = [
+        'transcription',
+        normalizedRole,
+        latestTranscription.participantIdentity || '',
+        latestTranscription.id || '',
+        text,
+      ].join('|');
+      if (seenFinalTranscriptionKeysRef.current.has(dedupeKey)) {
+        return;
+      }
+      seenFinalTranscriptionKeysRef.current.add(dedupeKey);
+
+      setMessages(prevMessages => {
+        const lastMessage = prevMessages[prevMessages.length - 1];
+        if (
+          lastMessage &&
+          !lastMessage.isSystem &&
+          lastMessage.role === normalizedRole &&
+          String(lastMessage.text || '').trim() === text
+        ) {
+          return prevMessages;
         }
-      ]);
+        return [
+          ...prevMessages,
+          {
+            id: `transcription-${latestTranscription.id || Date.now()}`,
+            text,
+            isUser: normalizedRole === 'candidate',
+            role: normalizedRole,
+            timestamp: latestTranscription.timestamp || new Date().toISOString()
+          }
+        ];
+      });
     }
   }, [transcriptions]);
 
   useEffect(() => {
     if (chatMessages.length > 0) {
       const latestMessage = chatMessages[chatMessages.length - 1];
-      console.log('💬 Received chat message:', latestMessage);
+      console.log('Received chat message:', latestMessage);
 
       if (latestMessage.sender !== 'user') {
-        setMessages(prevMessages => [
-          ...prevMessages,
-          {
-            id: `chat-${Date.now()}`,
-            text: latestMessage.message,
-            isUser: false,
-            timestamp: latestMessage.timestamp || new Date().toISOString()
+        const text = String(latestMessage.message || '').trim();
+        if (!text) {
+          return;
+        }
+        const dedupeKey = [
+          'assistant-chat',
+          latestMessage.sender || '',
+          latestMessage.id || '',
+          latestMessage.timestamp || '',
+          text,
+        ].join('|');
+        if (seenAssistantChatKeysRef.current.has(dedupeKey)) {
+          return;
+        }
+        seenAssistantChatKeysRef.current.add(dedupeKey);
+
+        setMessages(prevMessages => {
+          const lastMessage = prevMessages[prevMessages.length - 1];
+          if (
+            lastMessage &&
+            !lastMessage.isSystem &&
+            lastMessage.role === 'interviewer' &&
+            String(lastMessage.text || '').trim() === text
+          ) {
+            return prevMessages;
           }
-        ]);
+          return [
+            ...prevMessages,
+            {
+              id: `chat-${Date.now()}`,
+              text,
+              isUser: false,
+              role: 'interviewer',
+              timestamp: latestMessage.timestamp || new Date().toISOString()
+            }
+          ];
+        });
       }
     }
   }, [chatMessages]);
 
   useEffect(() => {
-    console.log('🤖 Agent state updated:', agentState);
+    console.log('Agent state updated:', agentState);
     setIsSpeaking(agentState === 'speaking');
     setIsListening(agentState === 'listening' || isListening);
   }, [agentState, isListening]);
@@ -253,15 +754,48 @@ const VoiceAssistant = () => {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
+  const resolveMessageRole = (message) => {
+    if (message.role === 'candidate' || message.role === 'interviewer') {
+      return message.role;
+    }
+    return message.isUser ? 'candidate' : 'interviewer';
+  };
+
+  const getMessageStyle = (role) => {
+    if (role === 'candidate') {
+      return {
+        label: '\u5019\u9009\u4eba',
+        justifyContent: 'flex-end',
+        alignItems: 'flex-end',
+        bubbleBg: '#dbeafe',
+        bubbleText: '#111111',
+        metaText: '#111111',
+        borderColor: 'rgba(30,64,175,0.25)',
+        tailSide: 'right',
+      };
+    }
+
+    return {
+      label: '\u9762\u8bd5\u5b98',
+      justifyContent: 'flex-start',
+      alignItems: 'flex-start',
+      bubbleBg: '#ccfbf1',
+      bubbleText: '#111111',
+      metaText: '#111111',
+      borderColor: 'rgba(13,148,136,0.28)',
+      tailSide: 'left',
+    };
+  };
+
   const renderMessage = (message) => {
     if (message.isSystem) {
       if (message.isError) {
         return (
-          <Box 
-            key={message.id} 
-            sx={{ 
-              textAlign: 'center', 
-              py: 1.5, 
+          <Box
+            key={message.id}
+            sx={{
+              textAlign: 'center',
+              py: 1.5,
               my: 2,
               borderTop: '1px dashed rgba(92, 107, 192, 0.3)',
               borderBottom: '1px dashed rgba(92, 107, 192, 0.3)',
@@ -269,9 +803,9 @@ const VoiceAssistant = () => {
               borderRadius: 1
             }}
           >
-            <Box 
-              component="div" 
-              sx={{ 
+            <Box
+              component='div'
+              sx={{
                 fontStyle: 'italic',
                 display: 'flex',
                 alignItems: 'center',
@@ -281,24 +815,24 @@ const VoiceAssistant = () => {
                 color: '#5C6BC0'
               }}
             >
-              <span role="img" aria-label="Error">⚠️</span> {message.text}
+              [Error] {message.text}
             </Box>
           </Box>
         );
       }
 
       return (
-        <Box 
-          key={message.id} 
-          sx={{ 
-            textAlign: 'center', 
-            py: 1.5, 
+        <Box
+          key={message.id}
+          sx={{
+            textAlign: 'center',
+            py: 1.5,
             my: 2,
             borderTop: '1px dashed rgba(0, 0, 0, 0.1)',
             borderBottom: '1px dashed rgba(0, 0, 0, 0.1)'
           }}
         >
-          <Box component="div" sx={{ 
+          <Box component='div' sx={{
             fontStyle: 'italic',
             typography: 'caption',
             color: 'text.secondary'
@@ -309,130 +843,111 @@ const VoiceAssistant = () => {
       );
     }
 
+    const role = resolveMessageRole(message);
+    const style = getMessageStyle(role);
+
     return (
-      <Box 
-        key={message.id} 
+      <Box
+        key={message.id}
         sx={{
           display: 'flex',
-          flexDirection: 'column',
-          alignItems: message.isUser ? 'flex-end' : 'flex-start',
-          mb: 2.5,
-          maxWidth: '85%',
-          alignSelf: message.isUser ? 'flex-end' : 'flex-start',
+          justifyContent: style.justifyContent,
+          width: '100%',
+          px: { xs: 0.5, sm: 1 },
+          mb: 2,
         }}
       >
-        <Box sx={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          mb: 0.5,
-          ml: message.isUser ? 0 : 1,
-          mr: message.isUser ? 1 : 0
-        }}>
-          <Box component="span" sx={{ fontWeight: 'medium', typography: 'caption', color: 'text.secondary' }}>
-            {message.isUser ? 'You' : 'Assistant'}
-          </Box>
-          <Box component="span" sx={{ ml: 1, opacity: 0.8, typography: 'caption', color: 'text.secondary' }}>
-            {formatTime(message.timestamp)}
-          </Box>
-        </Box>
-        <Paper 
-          elevation={message.isUser ? 1 : 2} 
+        <Box
           sx={{
-            p: 2,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: style.alignItems,
+            maxWidth: { xs: '92%', sm: '82%' },
             width: 'fit-content',
-            maxWidth: '100%',
-            bgcolor: message.isUser ? 'grey.100' : 'primary.light',
-            color: message.isUser ? 'text.primary' : 'primary.contrastText',
-            borderRadius: message.isUser ? '16px 16px 4px 16px' : '16px 16px 16px 4px',
-            position: 'relative',
-            '&::after': message.isUser ? {
-              content: '""',
-              position: 'absolute',
-              bottom: 0,
-              right: -8,
-              width: 15,
-              height: 15,
-              backgroundColor: 'grey.100',
-              borderBottomLeftRadius: '50%',
-              transform: 'translateY(30%)'
-            } : {
-              content: '""',
-              position: 'absolute',
-              bottom: 0,
-              left: -8,
-              width: 15,
-              height: 15,
-              backgroundColor: 'primary.light',
-              borderBottomRightRadius: '50%',
-              transform: 'translateY(30%)'
-            }
           }}
         >
-          <Box component="div" sx={{ 
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
-            lineHeight: 1.5
-          }}>
-            {message.text}
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              mb: 0.5,
+              px: 0.4,
+              gap: 0.8,
+              color: style.metaText,
+            }}
+          >
+            <Box component='span' sx={{ fontWeight: 700, typography: 'caption' }}>
+              {style.label}
+            </Box>
+            <Box component='span' sx={{ opacity: 0.9, typography: 'caption' }}>
+              {formatTime(message.timestamp)}
+            </Box>
           </Box>
-        </Paper>
+          <Paper
+            elevation={0}
+            sx={{
+              p: 2,
+              width: 'fit-content',
+              maxWidth: '100%',
+              bgcolor: style.bubbleBg,
+              color: style.bubbleText,
+              borderRadius: style.tailSide === 'right' ? '16px 16px 6px 16px' : '16px 16px 16px 6px',
+              border: '1px solid ' + style.borderColor,
+              position: 'relative',
+              boxShadow: '0 6px 20px rgba(2, 6, 23, 0.22)',
+              '&::after': style.tailSide === 'right'
+                ? {
+                    content: '" "',
+                    position: 'absolute',
+                    bottom: 0,
+                    right: -8,
+                    width: 15,
+                    height: 15,
+                    backgroundColor: style.bubbleBg,
+                    borderBottomLeftRadius: '50%',
+                    transform: 'translateY(30%)',
+                    borderRight: '1px solid ' + style.borderColor,
+                    borderBottom: '1px solid ' + style.borderColor,
+                  }
+                : {
+                    content: '" "',
+                    position: 'absolute',
+                    bottom: 0,
+                    left: -8,
+                    width: 15,
+                    height: 15,
+                    backgroundColor: style.bubbleBg,
+                    borderBottomRightRadius: '50%',
+                    transform: 'translateY(30%)',
+                    borderLeft: '1px solid ' + style.borderColor,
+                    borderBottom: '1px solid ' + style.borderColor,
+                  },
+            }}
+          >
+            <Box component='div' sx={{
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              lineHeight: 1.5
+            }}>
+              {message.text}
+            </Box>
+          </Paper>
+        </Box>
       </Box>
     );
   };
-
   useEffect(() => {
     if (!room) return;
 
-    const handleDataReceived = (payload, participant) => {
+    const handleDataReceived = (payload) => {
       try {
         const data = JSON.parse(new TextDecoder().decode(payload));
-        console.log('📥 Received data message:', data);
-        
-        if (data.type === 'transcript') {
-          setTranscript(data.text);
+        console.log('Received data message:', data);
 
-          if (data.text && data.text.trim() !== '') {
-            const newMessage = {
-              id: `transcript-${Date.now()}`,
-              text: data.text,
-              isUser: true,
-              timestamp: new Date().toISOString()
-            };
-            
-            setMessages(prevMessages => {
-              const lastMessage = prevMessages[prevMessages.length - 1];
-              if (lastMessage && lastMessage.isUser) {
-                return [...prevMessages.slice(0, -1), newMessage];
-              }
-              return [...prevMessages, newMessage];
-            });
-          }
-        } else if (data.type === 'response') {
-          setResponse(data.text);
-          setIsSpeaking(true);
-
-          if (data.text && data.text.trim() !== '') {
-            const newMessage = {
-              id: `response-${Date.now()}`,
-              text: data.text,
-              isUser: false,
-              timestamp: new Date().toISOString()
-            };
-            
-            setMessages(prevMessages => {
-              const lastMessage = prevMessages[prevMessages.length - 1];
-              if (lastMessage && !lastMessage.isUser) {
-                return [...prevMessages.slice(0, -1), newMessage];
-              }
-              return [...prevMessages, newMessage];
-            });
-          }
-        } else if (data.type === 'speaking_started') {
-          setIsSpeaking(true);
-        } else if (data.type === 'speaking_finished') {
-          setIsSpeaking(false);
-        } else if (data.type === 'error') {
-          console.error('❌ Error from LiveKit agent:', data.text);
+        // transcript/response are handled via LiveKitContext -> transcriptions/chatMessages.
+        // Keep only error handling here to avoid duplicate bubbles.
+        if (data.type === 'error') {
+          console.error('Error from LiveKit agent:', data.text);
           setError(data.text);
 
           const errorMessage = {
@@ -442,16 +957,16 @@ const VoiceAssistant = () => {
             isError: true,
             timestamp: new Date().toISOString()
           };
-          
+
           setMessages(prevMessages => [...prevMessages, errorMessage]);
 
-          if (room && room.localParticipant) {
+          if (room.localParticipant) {
             room.localParticipant.setMicrophoneEnabled(false);
             setIsListening(false);
           }
         }
       } catch (error) {
-        console.error('❌ Error parsing data message:', error);
+        console.error('Error parsing data message:', error);
       }
     };
 
@@ -460,7 +975,7 @@ const VoiceAssistant = () => {
     return () => {
       room.off(RoomEvent.DataReceived, handleDataReceived);
     };
-  }, [room]);
+  }, [room, setError]);
 
   useEffect(() => {
     return () => {
@@ -474,7 +989,7 @@ const VoiceAssistant = () => {
       {isConnected && room && (
         <RoomContext.Provider value={room}>
           <RoomAudioRenderer />
-          <StartAudio label="Start Audio" />
+          <StartAudio label="开启音频" />
         </RoomContext.Provider>
       )}
       
@@ -491,9 +1006,7 @@ const VoiceAssistant = () => {
           borderRadius: 2
         }}
       >
-      <Box component="div" sx={{ typography: 'h5', mb: 2 }}>
-        Voice Assistant
-      </Box>
+     
       
       {isConnected ? (
         <>
@@ -524,12 +1037,12 @@ const VoiceAssistant = () => {
               }}>
                 <MicIcon sx={{ fontSize: 48, color: 'primary.main', opacity: 0.6, mb: 2 }} />
                 <Box component="div" sx={{ fontWeight: 'medium', mb: 1, textAlign: 'center', typography: 'body1', color: 'text.primary' }}>
-                  Voice Assistant Ready
+                  语音助手已就绪
                 </Box>
                 <Box component="div" sx={{ maxWidth: '80%', textAlign: 'center', typography: 'body2', color: 'text.secondary' }}>
-                  Your conversation will appear here.
+                  你的语音面试对话会显示在这里。
                   <br />
-                  Click the microphone button below to start speaking.
+                  点击下方麦克风按钮即可开始作答。
                 </Box>
               </Box>
             </Box>
@@ -599,7 +1112,7 @@ const VoiceAssistant = () => {
                 transition: 'all 0.2s ease'
               }}
             >
-              End Call
+              结束通话
             </Button>
           </Box>
         </>
@@ -615,7 +1128,7 @@ const VoiceAssistant = () => {
           <Box sx={{ textAlign: 'center', mb: 2 }}>
             <MicIcon sx={{ fontSize: 64, color: error ? 'error.main' : 'primary.main', opacity: 0.8, mb: 2 }} />
             <Box component="div" sx={{ typography: 'h6', textAlign: 'center', mb: 1 }}>
-              Voice Assistant
+              语音面试助手
             </Box>
             <Box component="div" sx={{ typography: 'body1', textAlign: 'center', color: 'text.secondary', maxWidth: '80%', mx: 'auto' }}>
               {error ? (
@@ -624,12 +1137,12 @@ const VoiceAssistant = () => {
                     {error}
                   </Box>
                   <Box component="div" sx={{ typography: 'body2', color: 'text.secondary' }}>
-                    Please try again or check your connection
+                    请稍后重试，或检查网络与服务连接
                   </Box>
                 </Box>
               ) : (
                 <Box component="div" sx={{ typography: 'body1', textAlign: 'center', color: 'text.secondary' }}>
-                  Start a voice conversation with the AI assistant
+                  开始与 AI 面试官进行语音面试
                 </Box>
               )}
             </Box>
@@ -654,26 +1167,12 @@ const VoiceAssistant = () => {
             }}
             startIcon={<MicIcon />}
           >
-            {isLoading ? <CircularProgress size={24} /> : "Start Voice Call"}
+            {isLoading ? <CircularProgress size={24} /> : '开始语音面试'}
           </Button>
         </Box>
       )}
       
-      <Box 
-        component="div"
-        sx={{ 
-          mt: 2, 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'center', 
-          gap: 0.5,
-          typography: 'caption',
-          color: 'text.secondary',
-          textAlign: 'center'
-        }}
-      >
-        Powered by <span style={{ fontWeight: 'bold' }}>LiveKit</span> Cloud
-      </Box>
+      
     </Paper>
     </>
   );

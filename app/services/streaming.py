@@ -40,7 +40,14 @@ class StreamingService:
                     question=request.user_message,
                     user_id=str(current_user.id),
                     chat_id=request.chat_id,
-                    tenant_id=current_user.tenant_id
+                    tenant_id=current_user.tenant_id,
+                    skill_name=request.skill_name,
+                    interview_role=request.interview_role,
+                    interview_level=request.interview_level,
+                    interview_type=request.interview_type,
+                    target_company=request.target_company,
+                    jd_content=request.jd_content,
+                    resume_content=request.resume_content,
                 )
                 
                 if "messages" in response and response["messages"]:
