@@ -1,0 +1,44 @@
+﻿{
+    "session_name":  "chatbot_stack_win",
+    "started_at":  "2026-04-16T21:13:08",
+    "project_dir":  "E:\\paper_with_code\\fastapi-langgraph-chatbot-with-vector-store-memory-mcp-tools-and-voice-mode",
+    "conda_env":  "chatbot",
+    "log_dir":  "E:\\paper_with_code\\fastapi-langgraph-chatbot-with-vector-store-memory-mcp-tools-and-voice-mode\\logs\\2026-04-16_21-12-45",
+    "processes":  [
+                      {
+                          "name":  "mcp_search",
+                          "pid":  13416,
+                          "command":  "python -m app.mcp_server.search_server",
+                          "workdir":  "E:\\paper_with_code\\fastapi-langgraph-chatbot-with-vector-store-memory-mcp-tools-and-voice-mode",
+                          "logfile":  "E:\\paper_with_code\\fastapi-langgraph-chatbot-with-vector-store-memory-mcp-tools-and-voice-mode\\logs\\2026-04-16_21-12-45\\mcp_search.log"
+                      },
+                      {
+                          "name":  "mcp_scrape",
+                          "pid":  13800,
+                          "command":  "python -m app.mcp_server.web_scrapping_server",
+                          "workdir":  "E:\\paper_with_code\\fastapi-langgraph-chatbot-with-vector-store-memory-mcp-tools-and-voice-mode",
+                          "logfile":  "E:\\paper_with_code\\fastapi-langgraph-chatbot-with-vector-store-memory-mcp-tools-and-voice-mode\\logs\\2026-04-16_21-12-45\\mcp_scrape.log"
+                      },
+                      {
+                          "name":  "backend",
+                          "pid":  1708,
+                          "command":  "$env:UVICORN_PORT=\u00278010\u0027; python app.py",
+                          "workdir":  "E:\\paper_with_code\\fastapi-langgraph-chatbot-with-vector-store-memory-mcp-tools-and-voice-mode",
+                          "logfile":  "E:\\paper_with_code\\fastapi-langgraph-chatbot-with-vector-store-memory-mcp-tools-and-voice-mode\\logs\\2026-04-16_21-12-45\\backend.log"
+                      },
+                      {
+                          "name":  "livekit",
+                          "pid":  27400,
+                          "command":  "python app/agent/livekit_agent.py dev",
+                          "workdir":  "E:\\paper_with_code\\fastapi-langgraph-chatbot-with-vector-store-memory-mcp-tools-and-voice-mode",
+                          "logfile":  "E:\\paper_with_code\\fastapi-langgraph-chatbot-with-vector-store-memory-mcp-tools-and-voice-mode\\logs\\2026-04-16_21-12-45\\livekit.log"
+                      },
+                      {
+                          "name":  "frontend",
+                          "pid":  25228,
+                          "command":  "Remove-Item Env:HOST -ErrorAction SilentlyContinue; Remove-Item Env:WDS_SOCKET_HOST -ErrorAction SilentlyContinue; $env:DANGEROUSLY_DISABLE_HOST_CHECK=\u0027true\u0027; npm start",
+                          "workdir":  "E:\\paper_with_code\\fastapi-langgraph-chatbot-with-vector-store-memory-mcp-tools-and-voice-mode\\frontend",
+                          "logfile":  "E:\\paper_with_code\\fastapi-langgraph-chatbot-with-vector-store-memory-mcp-tools-and-voice-mode\\logs\\2026-04-16_21-12-45\\frontend.log"
+                      }
+                  ]
+}

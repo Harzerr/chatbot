@@ -75,6 +75,40 @@ const getMessageContent = (message = {}) => (
   message.content || message.assistant_message || message.user_message || ''
 );
 
+const normalizeText = (value = '') => String(value || '').replace(/\s+/g, '');
+
+const interviewEndMarkers = [
+  '本场面试已结束',
+  '本次面试已结束',
+  '本场面试结束',
+  '本次面试结束',
+  '面试已结束',
+  '面试到此结束',
+  '本场面试到此结束',
+  '本次面试到此结束',
+  '面试环节结束',
+];
+
+const includesInterviewEndMarker = (content = '') => {
+  const normalized = normalizeText(content);
+  return interviewEndMarkers.some((marker) => normalized.includes(marker));
+};
+
+const isFinishedInterviewStatus = (status = '') => {
+  const normalized = normalizeText(status).toLowerCase();
+  if (!normalized) return false;
+  return [
+    '已完成',
+    '已结束',
+    '待复盘',
+    'completed',
+    'complete',
+    'finished',
+    'done',
+    'closed',
+  ].some((marker) => normalized.includes(marker));
+};
+
 const looksLikeCodingQuestion = (content = '') => {
   const lower = content.toLowerCase();
   return (
@@ -90,8 +124,11 @@ const looksLikeCodingQuestion = (content = '') => {
 };
 
 const hasInterviewEnded = (messageList = []) => messageList.some((message) => {
+  if (isManualFinishCommand(message.user_message || message.content || '')) {
+    return true;
+  }
   const isAssistantMessage = message.role === 'assistant' || !!message.assistant_message;
-  return isAssistantMessage && getMessageContent(message).includes('本场面试已结束');
+  return isAssistantMessage && includesInterviewEndMarker(getMessageContent(message));
 });
 
 const getMessageTimestamp = (message = {}) => {
@@ -109,13 +146,20 @@ const getInterviewStartedAt = (chat = {}) => {
 };
 
 const getInterviewEndedAt = (chat = {}) => {
-  if (!hasInterviewEnded(chat.messages || [])) return null;
-
   const messageTimes = (chat.messages || [])
     .map(getMessageTimestamp)
     .filter(Boolean);
   const lastMessageTime = messageTimes.length ? Math.max(...messageTimes) : null;
-  return lastMessageTime ? new Date(lastMessageTime).toISOString() : chat.timestamp;
+  const fallbackEndedAt = lastMessageTime ? new Date(lastMessageTime).toISOString() : chat.timestamp || null;
+
+  if (chat.endedAt) {
+    return chat.endedAt;
+  }
+  if (hasInterviewEnded(chat.messages || []) || isFinishedInterviewStatus(chat.status)) {
+    return fallbackEndedAt;
+  }
+
+  return null;
 };
 
 const getElapsedInterviewMinutes = (startedAt, endedAt = null, fallbackNow = Date.now()) => {
@@ -1164,7 +1208,7 @@ const Chat = () => {
         });
 
       setMessages(formattedMessages);
-      if (formattedMessages.some((message) => message.role === 'assistant' && message.content?.includes('本场面试已结束'))) {
+      if (formattedMessages.some((message) => message.role === 'assistant' && includesInterviewEndMarker(message.content))) {
         fetchInterviewReport(chatId);
       }
     } catch (err) {
@@ -1360,7 +1404,7 @@ const Chat = () => {
 
     try {
       const finishResponse = await finishInterviewAndPersist(currentChat);
-      if (!finishResponse.includes('本场面试已结束')) {
+      if (!includesInterviewEndMarker(finishResponse)) {
         throw new Error('结束面试失败，请稍后重试。');
       }
 
@@ -1452,7 +1496,7 @@ const Chat = () => {
                 },
               ]);
 
-              if (finalContent.includes('本场面试已结束')) {
+              if (includesInterviewEndMarker(finalContent)) {
                 fetchInterviewReport(chatId);
               }
             } else {

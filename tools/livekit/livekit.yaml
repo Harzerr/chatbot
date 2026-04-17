@@ -1,0 +1,16 @@
+# Single-node local LiveKit server config.
+# Use this on the same host as backend/worker for quick self-host deployment.
+
+port: 7880
+
+rtc:
+  # TCP fallback for restrictive client networks.
+  tcp_port: 7881
+  # Single UDP media port (easier firewall/security-group setup than 50000-60000).
+  udp_port: 7882
+  # Let LiveKit discover and advertise external IP for WebRTC candidates.
+  use_external_ip: true
+
+keys:
+  # Change these before production use.
+  devkey: secret
