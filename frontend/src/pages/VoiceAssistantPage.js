@@ -17,6 +17,7 @@ import MicRoundedIcon from '@mui/icons-material/MicRounded';
 import PsychologyAltRoundedIcon from '@mui/icons-material/PsychologyAltRounded';
 import QueryStatsRoundedIcon from '@mui/icons-material/QueryStatsRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
+import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded';
 import TipsAndUpdatesRoundedIcon from '@mui/icons-material/TipsAndUpdatesRounded';
 import WorkOutlineRoundedIcon from '@mui/icons-material/WorkOutlineRounded';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -46,6 +47,13 @@ const scoreCardsFromReport = (report) => ([
   { label: '岗位匹配', value: report?.job_match_score ?? '--', tone: '#f472b6' },
 ]);
 
+const formatElapsedDuration = (elapsedMs = 0) => {
+  const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+};
+
 const VoiceAssistantPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -66,7 +74,11 @@ const VoiceAssistantPage = () => {
   const [reportLoading, setReportLoading] = useState(false);
   const [reportError, setReportError] = useState('');
   const [reportGeneratedAt, setReportGeneratedAt] = useState('');
+  const [interviewStartedAt, setInterviewStartedAt] = useState(null);
+  const [interviewEndedAt, setInterviewEndedAt] = useState(null);
+  const [timerNow, setTimerNow] = useState(() => Date.now());
   const autoReportSignatureRef = useRef('');
+  const previousConnectedRef = useRef(false);
 
   const transcriptTurns = buildTranscriptTurns(conversationMessages);
   const transcriptSignature = buildTranscriptSignature(transcriptTurns);
@@ -77,6 +89,36 @@ const VoiceAssistantPage = () => {
     ? (agentState && agentState !== 'disconnected' ? agentState : 'connecting')
     : 'disconnected';
   const scoreCards = scoreCardsFromReport(voiceReport);
+  const interviewEndTime = isConnected ? timerNow : (interviewEndedAt || timerNow);
+  const interviewElapsedMs = interviewStartedAt ? Math.max(0, interviewEndTime - interviewStartedAt) : 0;
+  const interviewDurationText = formatElapsedDuration(interviewElapsedMs);
+
+  useEffect(() => {
+    const wasConnected = previousConnectedRef.current;
+
+    if (isConnected && !wasConnected) {
+      const now = Date.now();
+      setInterviewStartedAt(now);
+      setInterviewEndedAt(null);
+      setTimerNow(now);
+    } else if (!isConnected && wasConnected) {
+      setInterviewEndedAt(Date.now());
+    }
+
+    previousConnectedRef.current = isConnected;
+  }, [isConnected]);
+
+  useEffect(() => {
+    if (!isConnected || !interviewStartedAt) {
+      return undefined;
+    }
+
+    const timer = window.setInterval(() => {
+      setTimerNow(Date.now());
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [isConnected, interviewStartedAt]);
 
   const requestVoiceReport = async () => {
     if (!canAnalyze) {
@@ -195,6 +237,11 @@ const VoiceAssistantPage = () => {
             <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-wrap' }}>
               {turn.text}
             </Typography>
+            {interviewStartedAt && (
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.8 }}>
+                当前面试时长：{interviewDurationText}
+              </Typography>
+            )}
           </Box>
         ))}
       </Stack>
@@ -230,6 +277,11 @@ const VoiceAssistantPage = () => {
               icon={<MicRoundedIcon />}
               label={isConnected ? '语音面试进行中' : transcriptTurns.length ? '已完成，可复盘' : '等待开始'}
               sx={{ bgcolor: 'rgba(52,211,153,0.10)', color: '#86efac' }}
+            />
+            <Chip
+              icon={<ScheduleRoundedIcon />}
+              label={`面试时长 ${interviewDurationText}`}
+              sx={{ bgcolor: 'rgba(148,163,184,0.12)', color: '#cbd5e1' }}
             />
           </Stack>
         </Box>

@@ -72,6 +72,7 @@ class Settings(BaseSettings):
     JUDGE0_TIMEOUT: float = 20.0
     JUDGE0_WINDOWS_COMPAT_MODE: bool = False
     JUDGE0_WINDOWS_MEMORY_LIMIT_KB: int = 1048576
+    JUDGE0_JAVA_MEMORY_LIMIT_KB: int = 4194304
     MEM0_ADD_TIMEOUT: float = 20.0
     MEM0_ADD_RETRIES: int = 1
     MEM0_SEARCH_TIMEOUT: float = 10.0

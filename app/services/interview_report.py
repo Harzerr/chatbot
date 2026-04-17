@@ -246,6 +246,7 @@ class InterviewReportBuilder:
         averages: dict,
         chat_messages: list[dict],
         evaluations: list[dict],
+        total_answers: int | None = None,
     ) -> ReportNarrative:
         _ = latest, chat_messages, evaluations
         dimension_scores = {
@@ -259,6 +260,7 @@ class InterviewReportBuilder:
         sorted_dims = sorted(dimension_scores.items(), key=lambda item: item[1], reverse=True)
         top_dims = [self._dimension_label(dim) for dim, score in sorted_dims[:2] if score >= 70]
         low_dims = [self._dimension_label(dim) for dim, _ in sorted_dims[-2:]]
+        answer_count = total_answers if total_answers is not None else len(evaluations)
 
         return ReportNarrative(
             summary=self._build_summary(
@@ -267,7 +269,7 @@ class InterviewReportBuilder:
                 improvement_areas=low_dims,
             ),
             content_analysis=(
-                f"本次共评估 {len(evaluations)} 条有效回答，"
+                f"本次共记录 {answer_count} 条有效作答，参与评分 {len(evaluations)} 条，"
                 f"综合均分约为 {averages['overall_score']} 分。"
             ),
             strengths=top_dims or ["作答完整度"],
@@ -350,6 +352,11 @@ class InterviewReportBuilder:
         latest = chat_messages[-1] if chat_messages else {}
 
         interview_questions = self._build_interview_questions_from_chat_messages(chat_messages)
+        effective_answer_count = sum(
+            1 for item in interview_questions if str(item.get("candidate_answer") or "").strip()
+        )
+        scored_answer_count = len(evaluations)
+        total_answers = max(scored_answer_count, effective_answer_count)
         if not evaluations:
             return InterviewReportResponse(
                 chat_id=chat_id,
@@ -357,7 +364,7 @@ class InterviewReportBuilder:
                 interview_level=latest.get("interview_level"),
                 interview_type=latest.get("interview_type"),
                 target_company=latest.get("target_company"),
-                total_answers=0,
+                total_answers=total_answers,
                 overall_score=0,
                 technical_accuracy=0,
                 knowledge_depth=0,
@@ -395,6 +402,7 @@ class InterviewReportBuilder:
             averages=averages,
             chat_messages=chat_messages,
             evaluations=evaluations,
+            total_answers=total_answers,
         )
         resources = [RecommendedResource(**item) for item in get_recommended_resources(low_dim_keys)]
 
@@ -404,7 +412,7 @@ class InterviewReportBuilder:
             interview_level=latest.get("interview_level"),
             interview_type=latest.get("interview_type"),
             target_company=latest.get("target_company"),
-            total_answers=len(evaluations),
+            total_answers=total_answers,
             overall_score=averages["overall_score"],
             technical_accuracy=averages["technical_accuracy"],
             knowledge_depth=averages["knowledge_depth"],

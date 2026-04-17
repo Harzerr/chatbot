@@ -45,7 +45,10 @@ class Judge0CodeRunner:
         if settings.JUDGE0_WINDOWS_COMPAT_MODE:
             payload["enable_per_process_and_thread_time_limit"] = True
             payload["enable_per_process_and_thread_memory_limit"] = True
-            if request.language in {"javascript", "typescript"}:
+            if request.language == "java":
+                # Java VM needs larger virtual address space for metaspace reservation under isolate.
+                payload["memory_limit"] = settings.JUDGE0_JAVA_MEMORY_LIMIT_KB
+            elif request.language in {"javascript", "typescript"}:
                 payload["memory_limit"] = settings.JUDGE0_WINDOWS_MEMORY_LIMIT_KB
 
         try:

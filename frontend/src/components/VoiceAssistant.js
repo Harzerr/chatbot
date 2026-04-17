@@ -409,6 +409,7 @@ const VoiceAssistant = ({
   const messagesEndRef = useRef(null);
   const seenFinalTranscriptionKeysRef = useRef(new Set());
   const seenAssistantChatKeysRef = useRef(new Set());
+  const voiceSessionChatIdRef = useRef(null);
   const { 
     room, 
     isConnected, 
@@ -486,6 +487,9 @@ const VoiceAssistant = ({
         }
 
         setError(null);
+        // Always start a fresh interview session when user clicks "start voice interview".
+        const baseChatId = interviewContext?.chatId || 'voice';
+        voiceSessionChatIdRef.current = `${baseChatId}-voice-${Date.now()}`;
         
         console.log('Starting LiveKit connection process');
         setIsLoading(true);
@@ -498,7 +502,7 @@ const VoiceAssistant = ({
             'Authorization': `${tokenType || 'Bearer'} ${resolvedToken}`
           },
           body: JSON.stringify({
-            chat_id: interviewContext?.chatId || null,
+            chat_id: voiceSessionChatIdRef.current,
             interview_role: interviewContext?.interviewRole || null,
             interview_level: interviewContext?.interviewLevel || null,
             interview_type: interviewContext?.interviewType || null,

@@ -251,6 +251,14 @@ const renderInterviewQuestionsHtml = (questions = []) => {
   `).join('');
 };
 
+const getEffectiveAnswerCount = (reportData = {}) => {
+  const scoredCount = Number(reportData?.total_answers || 0);
+  const qaCount = Array.isArray(reportData?.interview_questions)
+    ? reportData.interview_questions.filter((item) => String(item?.candidate_answer || '').trim()).length
+    : 0;
+  return Math.max(scoredCount, qaCount);
+};
+
 const formatReportTime = (dateInput = new Date()) => new Intl.DateTimeFormat('zh-CN', {
   year: 'numeric',
   month: '2-digit',
@@ -551,7 +559,7 @@ const buildReportPrintHtml = (chatMeta, reportData) => {
             </div>
             <div class="card meta-item">
               <span>有效作答轮次</span>
-              <strong>${escapeHtml(String(reportData.total_answers || 0))}</strong>
+              <strong>${escapeHtml(String(getEffectiveAnswerCount(reportData)))}</strong>
             </div>
           </section>
 
@@ -916,7 +924,7 @@ const downloadReportPdf = async (chatMeta, reportData) => {
   drawMetaLine('面试级别', level);
   drawMetaLine('面试类型', interviewType);
   drawMetaLine('目标公司', company);
-  drawMetaLine('有效作答轮次', String(reportData.total_answers || 0));
+  drawMetaLine('有效作答轮次', String(getEffectiveAnswerCount(reportData)));
 
   drawHeading('面试评价');
   drawMetaLine('综合得分', String(reportData.overall_score ?? 0));
@@ -1071,6 +1079,8 @@ const Chat = () => {
   };
 
   const messagesEndRef = useRef(null);
+  const currentChatIdRef = useRef(null);
+  const reportRequestIdRef = useRef(0);
   const { logout, currentUser } = useAuth();
   const navigate = useNavigate();
   const theme = useTheme();
@@ -1079,6 +1089,10 @@ const Chat = () => {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamingMessage]);
+
+  useEffect(() => {
+    currentChatIdRef.current = currentChat?.id || null;
+  }, [currentChat?.id]);
 
   useEffect(() => {
     fetchChats();
@@ -1102,22 +1116,39 @@ const Chat = () => {
     }));
   }, [currentUser]);
 
+  const clearReportState = () => {
+    reportRequestIdRef.current += 1;
+    setReportLoading(false);
+    setReport(null);
+  };
+
   const fetchInterviewReport = async (chatId, options = {}) => {
     const { rethrow = false } = options;
+    const requestId = reportRequestIdRef.current + 1;
+    reportRequestIdRef.current = requestId;
     setReportLoading(true);
     try {
       const response = await chatService.getInterviewReport(chatId);
-      setReport(response);
+      if (requestId !== reportRequestIdRef.current) {
+        return null;
+      }
+      if (!currentChatIdRef.current || currentChatIdRef.current === chatId) {
+        setReport(response);
+      }
       return response;
     } catch (reportError) {
       console.error('Error fetching interview report:', reportError);
-      setReport(null);
+      if (requestId === reportRequestIdRef.current && (!currentChatIdRef.current || currentChatIdRef.current === chatId)) {
+        setReport(null);
+      }
       if (rethrow) {
         throw reportError;
       }
       return null;
     } finally {
-      setReportLoading(false);
+      if (requestId === reportRequestIdRef.current) {
+        setReportLoading(false);
+      }
     }
   };
 
@@ -1175,7 +1206,7 @@ const Chat = () => {
   const fetchMessages = async (chatId) => {
     setChatLoading(true);
     setError(null);
-    setReport(null);
+    clearReportState();
 
     try {
       const response = await chatService.getChatById(chatId);
@@ -1252,7 +1283,7 @@ const Chat = () => {
     setChats((prev) => [newChat, ...prev]);
     setCurrentChat(newChat);
     setMessages([]);
-    setReport(null);
+    clearReportState();
     setFinishRequestedAt(null);
 
     if (isMobile) {
@@ -2261,9 +2292,14 @@ const Chat = () => {
                     正在生成本场面试报告...
                   </Typography>
                 ) : report ? (
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                    {report.summary}
-                  </Typography>
+                  <>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                      {report.summary}
+                    </Typography>
+                    <Typography variant="caption" sx={{ mt: 0.6, display: 'block', color: 'rgba(191,219,254,0.9)' }}>
+                      有效作答轮次：{getEffectiveAnswerCount(report)}
+                    </Typography>
+                  </>
                 ) : (
                   <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
                     面试过程中不再逐轮展示评分。完成作答后，可在这里统一查看本场面试报告。
