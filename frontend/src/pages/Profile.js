@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Alert,
@@ -20,10 +20,24 @@ import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import LogoutIcon from '@mui/icons-material/Logout';
 import { useAuth } from '../contexts/AuthContext';
+import chatService from '../services/chatService';
+import ProfileGrowthReport from '../components/ProfileGrowthReport';
+
+const HISTORY_PAGE_SIZE = 100;
+const HISTORY_MAX_PAGES = 20;
 
 const Profile = () => {
   const navigate = useNavigate();
-  const { currentUser, loading, error, refreshCurrentUser, updateProfile, uploadResume, logout } = useAuth();
+  const {
+    currentUser,
+    loading,
+    error,
+    refreshCurrentUser,
+    updateProfile,
+    uploadResume,
+    logout,
+  } = useAuth();
+
   const [form, setForm] = useState({
     username: '',
     full_name: '',
@@ -36,12 +50,48 @@ const Profile = () => {
   const [saveLoading, setSaveLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState('');
+  const [growthLoading, setGrowthLoading] = useState(false);
+  const [growthError, setGrowthError] = useState('');
+  const [interviewMessages, setInterviewMessages] = useState([]);
+
+  const loadGrowthReport = useCallback(async () => {
+    setGrowthLoading(true);
+    setGrowthError('');
+    try {
+      const allMessages = [];
+
+      for (let page = 0; page < HISTORY_MAX_PAGES; page += 1) {
+        const offset = page * HISTORY_PAGE_SIZE;
+        const response = await chatService.getUserChats(HISTORY_PAGE_SIZE, offset);
+        const batch = Array.isArray(response?.messages) ? response.messages : [];
+
+        allMessages.push(...batch);
+
+        if (batch.length < HISTORY_PAGE_SIZE) {
+          break;
+        }
+      }
+
+      setInterviewMessages(allMessages);
+    } catch (err) {
+      console.error('Failed to load growth report data:', err);
+      setGrowthError('加载成长分析数据失败，请稍后重试。');
+    } finally {
+      setGrowthLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     refreshCurrentUser().catch((err) => {
       console.error('Failed to refresh profile:', err);
     });
-  }, []);
+  }, [refreshCurrentUser]);
+
+  useEffect(() => {
+    loadGrowthReport().catch((err) => {
+      console.error('Failed to initialize growth report:', err);
+    });
+  }, [loadGrowthReport]);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -78,11 +128,13 @@ const Profile = () => {
   const handleResumeUpload = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
+
     setMessage('');
     setUploading(true);
     try {
       const response = await uploadResume(file);
-      setMessage(`简历上传成功，系统已提取内容并可用于后续面试。文件：${response.file_name}`);
+      setMessage(`简历上传成功，系统已完成解析。文件：${response.file_name}`);
+      await loadGrowthReport();
     } catch (err) {
       console.error('Resume upload failed:', err);
     } finally {
@@ -109,7 +161,14 @@ const Profile = () => {
           <Box sx={{ flexGrow: 1 }}>
             <Typography variant="h6">个人档案</Typography>
           </Box>
-          <Button color="inherit" onClick={() => { logout(); navigate('/login'); }} startIcon={<LogoutIcon />}>
+          <Button
+            color="inherit"
+            onClick={() => {
+              logout();
+              navigate('/login');
+            }}
+            startIcon={<LogoutIcon />}
+          >
             退出登录
           </Button>
         </Toolbar>
@@ -130,7 +189,7 @@ const Profile = () => {
                   候选人资料
                 </Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 1, maxWidth: 720, lineHeight: 1.7 }}>
-                  注册信息会作为你的面试背景。上传简历后，系统会围绕你的项目经历、技能栈和目标岗位发问。
+                  这里的注册资料会影响面试上下文。上传简历后，系统会根据你的项目经历、技能栈和目标岗位生成更贴合的提问。
                 </Typography>
               </Box>
               <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
@@ -186,7 +245,7 @@ const Profile = () => {
                 简历上传
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.75 }}>
-                支持上传 PDF、PNG、JPG、JPEG、WEBP。上传成功后，系统会自动抽取简历文本，作为后续模拟面试的提问依据。
+                支持上传 PDF、PNG、JPG、JPEG、WEBP。上传后系统会自动提取简历文本，用于后续模拟面试提问。
               </Typography>
 
               <Button
@@ -232,12 +291,19 @@ const Profile = () => {
                   </>
                 ) : (
                   <Typography variant="body2" sx={{ color: '#fbbf24', lineHeight: 1.8 }}>
-                    还没有上传简历。开始新面试前需要先上传简历。
+                    还没有上传简历。开始新面试前建议先上传简历。
                   </Typography>
                 )}
               </Paper>
             </Paper>
           </Stack>
+
+          <ProfileGrowthReport
+            messages={interviewMessages}
+            loading={growthLoading}
+            error={growthError}
+            onRetry={loadGrowthReport}
+          />
         </Stack>
       </Container>
     </Box>

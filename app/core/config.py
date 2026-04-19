@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     EMBEDDING_MAX_RETRIES: int = 2
     EMBEDDING_RETRY_INTERVAL: float = 0.8
     LLM_MODEL: str = "openai/gpt-4o-mini"
+    PDFTOTEXT_PATH: str = ""
 
     STT_API_URL: str = "http://127.0.0.1:8000/v1/"
     LLM_API_URL: str = "http://127.0.0.1:11434/v1/"
