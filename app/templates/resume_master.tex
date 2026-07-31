@@ -1,0 +1,79 @@
+% Abstracted from E:\offer\example.tex. Compile with XeLaTeX.
+\documentclass[UTF8,a4paper,10pt,fontset=none]{ctexart}
+
+\usepackage[left=9.52mm,right=9.64mm,top=7.93mm,bottom=8mm,headheight=0pt,headsep=0pt,footskip=0pt]{geometry}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{eso-pic}
+\usepackage{fontspec}
+\usepackage{graphicx}
+\usepackage[hidelinks]{hyperref}
+\usepackage{tabularx}
+\usepackage{xcolor}
+
+\newif\ifresumeicons
+\IfFileExists{fontawesome5.sty}{\resumeiconstrue\usepackage{fontawesome5}}{\resumeiconsfalse}
+% Linux server fallbacks; visually close to the Windows fonts in the supplied master.
+\setmainfont{Nimbus Sans}
+\setsansfont{Nimbus Sans}
+\setCJKmainfont{Noto Sans CJK SC}
+\setCJKsansfont{Noto Sans CJK SC}
+
+\definecolor{ResumeText}{HTML}{1A1A1A}
+\definecolor{ResumeSecondary}{HTML}{333333}
+\definecolor{ResumeRule}{HTML}{6B7280}
+\definecolor{ResumeBorder}{HTML}{E5E7EB}
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0pt}
+\setlength{\tabcolsep}{0pt}
+\setlength{\topskip}{10.5pt}
+\hyphenpenalty=10000
+\exhyphenpenalty=10000
+\emergencystretch=1em
+\renewcommand{\familydefault}{\sfdefault}
+\renewcommand{\labelitemi}{\textbullet}
+\linespread{1}
+
+\newcommand{\ResumeBodyFont}{\fontsize{10.5pt}{15.73pt}\selectfont}
+\newcommand{\ResumeIcon}[2]{\ifresumeicons#1\hspace{0.55em}\fi#2}
+\newcommand{\ResumeName}{%%NAME%%}
+\newcommand{\ResumeContact}{%%CONTACT%%}
+\newcommand{\ResumeTargetRole}{%%TARGET_ROLE%%}
+\newcommand{\ResumePhoto}{%%PHOTO_BLOCK%%}
+
+% Header geometry and visual treatment follow the supplied example.tex master.
+\newcommand{\PlaceResumeHeader}{%
+  \AddToShipoutPictureFG*{%
+    \AtPageUpperLeft{%
+      \setlength{\unitlength}{1pt}%
+      \put(0,-32.1){\raisebox{-\height}{\makebox[\paperwidth][c]{\fontsize{24pt}{24pt}\selectfont\bfseries \ResumeName}}}%
+      \put(0,-70.2){\raisebox{-\height}{\makebox[\paperwidth][c]{\ResumeBodyFont \ResumeContact}}}%
+      \put(0,-90.4){\raisebox{-\height}{\makebox[\paperwidth][c]{\hspace{1.25em}\ResumeIcon{\faBullseye}{\ResumeTargetRole}}}}%
+      \ResumePhoto
+    }%
+  }%
+}
+
+\newcommand{\ResumeSection}[2][2.8mm]{%
+  \par\vspace{#1}%
+  {\fontsize{12pt}{14.5pt}\selectfont\bfseries #2\par}%
+  \vspace{1.55mm}%
+  {\color{ResumeRule}\hrule height 1.5pt}%
+  \vspace{3.35mm}%
+}
+\newcommand{\ResumeEntry}[3]{%
+  \noindent\parbox[t]{0.4\linewidth}{\raggedright\strut #1}%
+  \parbox[t]{0.3\linewidth}{\centering\strut #2}%
+  \parbox[t]{0.3\linewidth}{\raggedleft\strut\color{ResumeSecondary}#3}\par
+}
+\newenvironment{ResumeItems}{\begin{itemize}[leftmargin=5.29mm,labelwidth=1.4mm,labelsep=1.75mm,itemindent=0pt,topsep=0pt,partopsep=0pt,parsep=0pt,itemsep=3pt]}{\end{itemize}}
+
+\begin{document}
+\sffamily
+\ResumeBodyFont
+\color{ResumeText}
+\PlaceResumeHeader
+\vspace*{32.1mm}
+%%CONTENT%%
+\end{document}

@@ -1,0 +1,19 @@
+name: chatbot
+
+services:
+  qdrant:
+    image: docker.m.daocloud.io/qdrant/qdrant:v1.13.6
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    mem_limit: 512m
+    cpus: 0.75
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 4096
+
+volumes:
+  qdrant_data:

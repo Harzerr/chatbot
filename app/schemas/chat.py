@@ -2,6 +2,38 @@ from typing import List, Optional, Literal
 
 from pydantic import BaseModel, Field
 
+class RubricScore(BaseModel):
+    dimension: str
+    label: str
+    score: int
+    rationale: str = ""
+    evidence: List[str] = Field(default_factory=list)
+    missing_points: List[str] = Field(default_factory=list)
+
+
+class JDRequirementMatch(BaseModel):
+    requirement: str
+    status: Literal["已体现", "部分体现", "未体现", "不适用"] = "不适用"
+    evidence: List[str] = Field(default_factory=list)
+    gap: str = ""
+
+
+class CapabilityAssessment(BaseModel):
+    capability: str
+    score: int
+    evidence: List[str] = Field(default_factory=list)
+    missing_points: List[str] = Field(default_factory=list)
+
+
+class CompetencySummary(BaseModel):
+    capability: str
+    score: int
+    confidence: Literal["低", "中", "高"] = "低"
+    covered_questions: int = 0
+    evidence: List[str] = Field(default_factory=list)
+    missing_points: List[str] = Field(default_factory=list)
+
+
 class AnswerEvaluation(BaseModel):
     technical_accuracy: int
     knowledge_depth: int
@@ -18,6 +50,17 @@ class AnswerEvaluation(BaseModel):
     summary: str
     strengths: List[str]
     improvement_areas: List[str]
+    assessment_version: str = "legacy"
+    question_type: str = "通用技术题"
+    capability_tags: List[str] = Field(default_factory=list)
+    rubric_scores: List[RubricScore] = Field(default_factory=list)
+    rubric_overall_score: int = 0
+    confidence_score: int = 0
+    confidence_level: Literal["低", "中", "高"] = "低"
+    jd_requirement_matches: List[JDRequirementMatch] = Field(default_factory=list)
+    resume_consistency: Literal["一致", "证据不足", "存在冲突", "不适用"] = "不适用"
+    resume_evidence: List[str] = Field(default_factory=list)
+    capability_assessments: List[CapabilityAssessment] = Field(default_factory=list)
 
 class ChatMessage(BaseModel):
     """Chat message model for API responses"""
@@ -34,6 +77,21 @@ class ChatMessage(BaseModel):
     jd_content: str | None = None
     resume_content: str | None = None
     evaluation: Optional[AnswerEvaluation] = None
+    interview_status: Optional[str] = None
+    interview_paused_at: Optional[str] = None
+    interview_paused_seconds: float = 0.0
+
+
+class InterviewSessionActionResponse(BaseModel):
+    chat_id: str
+    status: str
+    paused_at: Optional[str] = None
+    paused_seconds: float = 0.0
+
+
+class ChatDeleteResponse(BaseModel):
+    chat_id: str
+    deleted: bool
 
 class ChatHistoryResponse(BaseModel):
     """Response model for chat history endpoints"""
@@ -72,6 +130,10 @@ class InterviewReportResponse(BaseModel):
     recommendations: List[str]
     recommended_resources: List[RecommendedResource]
     interview_questions: List[InterviewQuestionReference] = Field(default_factory=list)
+    assessment_version: str = "legacy"
+    coverage_status: str = "暂无有效能力覆盖数据"
+    competency_assessments: List[CompetencySummary] = Field(default_factory=list)
+    jd_requirement_matches: List[JDRequirementMatch] = Field(default_factory=list)
 
 class VoiceTranscriptTurn(BaseModel):
     role: Literal["candidate", "interviewer"]
@@ -86,5 +148,3 @@ class VoiceInterviewReportRequest(BaseModel):
     target_company: Optional[str] = None
     jd_content: Optional[str] = None
     transcript: List[VoiceTranscriptTurn] = []
-
-

@@ -1,0 +1,22 @@
+import axios from 'axios';
+
+const careerService = {
+  listFacts: async () => (await axios.get('/api/v1/career/facts')).data,
+  createFact: async (payload) => (await axios.post('/api/v1/career/facts', payload)).data,
+  updateFact: async (id, payload) => (await axios.put(`/api/v1/career/facts/${id}`, payload)).data,
+  archiveFact: async (id) => (await axios.delete(`/api/v1/career/facts/${id}`)).data,
+  deleteFact: async (id) => (await axios.delete(`/api/v1/career/facts/${id}/permanently`)).data,
+  extractFacts: async () => (await axios.post('/api/v1/career/facts/extract')).data,
+  listJobs: async () => (await axios.get('/api/v1/career/jobs')).data,
+  importJob: async (payload) => (await axios.post('/api/v1/career/jobs/import', payload)).data,
+  updateJob: async (id, payload) => (await axios.put(`/api/v1/career/jobs/${id}`, payload)).data,
+  refreshJob: async (id) => (await axios.post(`/api/v1/career/jobs/${id}/refresh`)).data,
+  deleteJob: async (id) => (await axios.delete(`/api/v1/career/jobs/${id}`)).data,
+  listResumes: async () => (await axios.get('/api/v1/career/resumes')).data,
+  generateResume: async (payload) => (await axios.post('/api/v1/career/resumes/generate', payload)).data,
+  downloadResumeTex: async (id) => axios.get(`/api/v1/career/resumes/${id}/tex`, { responseType: 'blob' }),
+  downloadResumePdf: async (id) => axios.get(`/api/v1/career/resumes/${id}/pdf`, { responseType: 'blob' }),
+  deleteResume: async (id) => (await axios.delete(`/api/v1/career/resumes/${id}`)).data,
+};
+
+export default careerService;

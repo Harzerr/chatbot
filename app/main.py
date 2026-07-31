@@ -1,15 +1,17 @@
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.agent.langgraph_agent import initialize_graph, close_graph
 from app.api.api import api_router
 from app.core.config import settings
-from app.db.bootstrap import ensure_user_profile_columns
+from app.db.bootstrap import ensure_training_columns, ensure_user_profile_columns
 from app.db.base import Base
 from app.db.session import async_engine
 from app.services.role_knowledge_store import QdrantRoleKnowledgeStore
@@ -39,6 +41,7 @@ async def lifespan(app: FastAPI):
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await ensure_user_profile_columns(async_engine)
+    await ensure_training_columns(async_engine)
 
     logger.info(f"LANGCHAIN_TRACING_V2: {os.getenv('LANGCHAIN_TRACING_V2')}")
     logger.info(f"LANGSMITH_PROJECT: {os.getenv('LANGSMITH_PROJECT')}")
@@ -68,6 +71,10 @@ if settings.BACKEND_CORS_ORIGINS:
     )
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
+AVATAR_UPLOAD_DIR = Path(__file__).resolve().parents[1] / "uploads" / "avatars"
+AVATAR_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/media/avatars", StaticFiles(directory=str(AVATAR_UPLOAD_DIR)), name="avatar-media")
 
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

@@ -83,7 +83,7 @@ def _build_openai_llm():
         http_client=http_client,
     )
     return livekit_openai.LLM(
-        model=settings.LLM_MODEL,
+        model=settings.INTERVIEW_LLM_MODEL,
         client=openai_client,
     )
 
@@ -180,7 +180,7 @@ async def entrypoint(ctx: JobContext):
 
     logger.info(
         "Voice agent config loaded: llm_model=%s, deepgram_language=%s, cartesia_language=%s, cartesia_voice_id=%s",
-        settings.LLM_MODEL,
+        settings.INTERVIEW_LLM_MODEL,
         settings.DEEPGRAM_LANGUAGE,
         settings.CARTESIA_LANGUAGE,
         settings.CARTESIA_VOICE_ID,
@@ -361,5 +361,4 @@ if __name__ == "__main__":
             exc_info=True,
         )
         raise
-
 

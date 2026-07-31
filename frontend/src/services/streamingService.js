@@ -25,6 +25,7 @@ const streamingService = {
       target_company: interviewConfig.targetCompany,
       jd_content: interviewConfig.jdContent,
       resume_content: interviewConfig.resumeContent,
+      code_execution: interviewConfig.codeExecution || null,
     });
 
     const token = localStorage.getItem('token');

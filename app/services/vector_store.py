@@ -212,3 +212,30 @@ class MultiTenantVectorStore:
         results = format_chat_results(response[0])
         results.sort(key=lambda x: x.get("timestamp", ""))
         return results
+
+    def delete_chat_by_id(self, chat_id: str, tenant_id: str, user_id: str) -> None:
+        """Delete every vector point belonging to one user's interview session."""
+        chat_filter = models.Filter(
+            must=[
+                models.FieldCondition(
+                    key="metadata.tenant_id",
+                    match=models.MatchValue(value=tenant_id),
+                ),
+                models.FieldCondition(
+                    key="metadata.user_id",
+                    match=models.MatchValue(value=str(user_id)),
+                ),
+                models.FieldCondition(
+                    key="metadata.chat_id",
+                    match=models.MatchValue(value=chat_id),
+                ),
+            ]
+        )
+        self._run_with_reconnect(
+            "delete_chat_by_id",
+            lambda: self.client.delete(
+                collection_name=self.collection_name,
+                points_selector=models.FilterSelector(filter=chat_filter),
+                wait=True,
+            ),
+        )

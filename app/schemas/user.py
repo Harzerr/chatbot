@@ -5,7 +5,6 @@ from pydantic import BaseModel
 
 class UserBase(BaseModel):
     username: str
-    tenant_id: str
     full_name: str
     email: str
     phone: str
@@ -18,6 +17,18 @@ class UserCreate(UserBase):
     password: str
 
 
+class EducationRecord(BaseModel):
+    school: str = ""
+    degree: str = ""
+    major: str = ""
+    start_date: str = ""
+    end_date: str = ""
+    rank: str = ""
+    gpa: str = ""
+    english_level: str = ""
+    details: str = ""
+
+
 class UserUpdate(BaseModel):
     username: Optional[str] = None
     password: Optional[str] = None
@@ -27,6 +38,7 @@ class UserUpdate(BaseModel):
     target_role: Optional[str] = None
     years_of_experience: Optional[int] = None
     bio: Optional[str] = None
+    education: Optional[list[EducationRecord]] = None
 
 
 class ResumeUploadResponse(BaseModel):
@@ -38,11 +50,15 @@ class ResumeUploadResponse(BaseModel):
 
 class UserInDBBase(UserBase):
     id: int
+    tenant_id: str
     resume_file_name: Optional[str] = None
     resume_content_type: Optional[str] = None
     resume_uploaded_at: Optional[str] = None
     has_resume: bool = False
     resume_excerpt: Optional[str] = None
+    avatar_url: Optional[str] = None
+    avatar_updated_at: Optional[str] = None
+    education: list[EducationRecord] = []
 
     class Config:
         from_attributes = True

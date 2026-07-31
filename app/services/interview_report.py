@@ -7,7 +7,9 @@ from langchain_openai import ChatOpenAI
 
 from app.core.config import settings
 from app.schemas.chat import (
+    CompetencySummary,
     InterviewReportResponse,
+    JDRequirementMatch,
     RecommendedResource,
     VoiceInterviewReportRequest,
 )
@@ -59,7 +61,7 @@ class InterviewReportBuilder:
 
     def __init__(self) -> None:
         self.llm = ChatOpenAI(
-            model=settings.LLM_MODEL,
+            model=settings.INTERVIEW_LLM_MODEL,
             temperature=0.2,
             api_key=settings.OPENROUTER_API_KEY,
             base_url=settings.OPENROUTER_API_BASE,
@@ -110,6 +112,101 @@ class InterviewReportBuilder:
         strength_text = "、".join(strengths) if strengths else "暂未形成稳定优势"
         improvement_text = "、".join(improvement_areas) if improvement_areas else "暂无明显短板"
         return f"{level_text} 当前优势：{strength_text}。优先改进：{improvement_text}。"
+
+    @staticmethod
+    def _dedupe_text(items: list[str], limit: int = 3) -> list[str]:
+        result: list[str] = []
+        seen = set()
+        for item in items:
+            text = str(item or "").strip()
+            key = "".join(text.split())
+            if text and key not in seen:
+                seen.add(key)
+                result.append(text)
+        return result[:limit]
+
+    def _build_competency_assessments(self, evaluations: list[dict]) -> list[CompetencySummary]:
+        buckets: dict[str, dict] = {}
+        for evaluation in evaluations:
+            assessments = evaluation.get("capability_assessments") or []
+            if not assessments:
+                assessments = [
+                    {
+                        "capability": tag,
+                        "score": self._score(evaluation, "overall_score"),
+                        "evidence": [],
+                        "missing_points": evaluation.get("improvement_areas") or [],
+                    }
+                    for tag in (evaluation.get("capability_tags") or [])
+                ]
+            for item in assessments:
+                if not isinstance(item, dict):
+                    continue
+                capability = str(item.get("capability") or "综合能力").strip()
+                bucket = buckets.setdefault(capability, {"scores": [], "evidence": [], "missing": []})
+                try:
+                    bucket["scores"].append(self._clamp_score(int(item.get("score", 0))))
+                except (TypeError, ValueError):
+                    continue
+                bucket["evidence"].extend(item.get("evidence") or [])
+                bucket["missing"].extend(item.get("missing_points") or [])
+
+        summaries: list[CompetencySummary] = []
+        for capability, bucket in buckets.items():
+            count = len(bucket["scores"])
+            confidence = "高" if count >= 3 else "中" if count >= 2 else "低"
+            summaries.append(
+                CompetencySummary(
+                    capability=capability,
+                    score=self._clamp_score(round(mean(bucket["scores"]))) if count else 0,
+                    confidence=confidence,
+                    covered_questions=count,
+                    evidence=self._dedupe_text(bucket["evidence"]),
+                    missing_points=self._dedupe_text(bucket["missing"]),
+                )
+            )
+        return sorted(summaries, key=lambda item: (-item.covered_questions, item.score, item.capability))[:8]
+
+    def _build_jd_requirement_matches(self, evaluations: list[dict]) -> list[JDRequirementMatch]:
+        priority = {"已体现": 3, "部分体现": 2, "未体现": 1, "不适用": 0}
+        buckets: dict[str, dict] = {}
+        for evaluation in evaluations:
+            for item in evaluation.get("jd_requirement_matches") or []:
+                if not isinstance(item, dict):
+                    continue
+                requirement = str(item.get("requirement") or "").strip()
+                if not requirement:
+                    continue
+                bucket = buckets.setdefault(requirement, {"status": "不适用", "evidence": [], "gaps": []})
+                status = str(item.get("status") or "不适用")
+                if priority.get(status, 0) > priority.get(bucket["status"], 0):
+                    bucket["status"] = status
+                bucket["evidence"].extend(item.get("evidence") or [])
+                gap = str(item.get("gap") or "").strip()
+                if gap:
+                    bucket["gaps"].append(gap)
+
+        return [
+            JDRequirementMatch(
+                requirement=requirement,
+                status=bucket["status"] if bucket["status"] in priority else "不适用",
+                evidence=self._dedupe_text(bucket["evidence"], limit=2),
+                gap="；".join(self._dedupe_text(bucket["gaps"], limit=2)),
+            )
+            for requirement, bucket in list(buckets.items())[:8]
+        ]
+
+    @staticmethod
+    def _coverage_status(total_answers: int, competencies: list[CompetencySummary]) -> str:
+        if not competencies:
+            return "当前尚未形成可用的能力覆盖数据。"
+        stable = [item.capability for item in competencies if item.confidence == "高"]
+        preliminary = [item.capability for item in competencies if item.confidence == "中"]
+        if stable:
+            return f"已完成 {total_answers} 条作答，{ '、'.join(stable) } 已被至少 3 题覆盖，可作为相对稳定结论。"
+        if preliminary:
+            return f"已完成 {total_answers} 条作答，{ '、'.join(preliminary) } 已有初步覆盖；其余结论仍需更多题目验证。"
+        return f"已完成 {total_answers} 条作答，但每项能力目前仅由单题支撑，应将结论视为低置信度观察。"
 
     def _format_reference_answer_from_evaluation(self, evaluation: dict | object) -> str:
         expected_key_points = []
@@ -379,6 +476,7 @@ class InterviewReportBuilder:
                 recommendations=["至少完成一轮详细作答后，再重新生成报告。"],
                 recommended_resources=[],
                 interview_questions=interview_questions,
+                assessment_version="rubric-v2",
             )
 
         averages = {
@@ -405,6 +503,9 @@ class InterviewReportBuilder:
             total_answers=total_answers,
         )
         resources = [RecommendedResource(**item) for item in get_recommended_resources(low_dim_keys)]
+        competency_assessments = self._build_competency_assessments(evaluations)
+        jd_requirement_matches = self._build_jd_requirement_matches(evaluations)
+        coverage_status = self._coverage_status(total_answers, competency_assessments)
 
         return InterviewReportResponse(
             chat_id=chat_id,
@@ -421,12 +522,16 @@ class InterviewReportBuilder:
             problem_solving=averages["problem_solving"],
             job_match_score=averages["job_match_score"],
             summary=narrative.summary,
-            content_analysis=narrative.content_analysis,
+            content_analysis=f"{narrative.content_analysis} {coverage_status}",
             strengths=narrative.strengths,
             improvement_areas=narrative.improvement_areas,
             recommendations=narrative.recommendations,
             recommended_resources=resources,
             interview_questions=interview_questions,
+            assessment_version="rubric-v2" if any(item.get("assessment_version") == "rubric-v2" for item in evaluations) else "legacy",
+            coverage_status=coverage_status,
+            competency_assessments=competency_assessments,
+            jd_requirement_matches=jd_requirement_matches,
         )
 
     def build_from_transcript(

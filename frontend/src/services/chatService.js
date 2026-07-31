@@ -47,6 +47,21 @@ const chatService = {
     }
   },
 
+  pauseInterview: async (chatId) => {
+    const response = await axios.post(`/api/v1/history/chats/${chatId}/pause`);
+    return response.data;
+  },
+
+  resumeInterview: async (chatId) => {
+    const response = await axios.post(`/api/v1/history/chats/${chatId}/resume`);
+    return response.data;
+  },
+
+  deleteInterview: async (chatId) => {
+    const response = await axios.delete(`/api/v1/history/chats/${chatId}`);
+    return response.data;
+  },
+
   generateVoiceInterviewReport: async (payload) => {
     try {
       const response = await axios.post('/api/v1/history/voice/report', payload);

@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import userService from '../services/userService';
 
@@ -122,11 +122,11 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const refreshCurrentUser = async () => {
+  const refreshCurrentUser = useCallback(async () => {
     const profile = await userService.getMe();
     setCurrentUser(profile);
     return profile;
-  };
+  }, []);
 
   const updateProfile = async (payload) => {
     setError(null);
@@ -154,6 +154,31 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const uploadAvatar = async (file) => {
+    setError(null);
+    try {
+      const profile = await userService.uploadAvatar(file);
+      setCurrentUser(profile);
+      return profile;
+    } catch (err) {
+      console.error('Avatar upload failed:', err);
+      setError(err.response?.data?.detail || 'Avatar upload failed. Please try again.');
+      throw err;
+    }
+  };
+
+  const deleteAvatar = async () => {
+    setError(null);
+    try {
+      await userService.deleteAvatar();
+      await refreshCurrentUser();
+    } catch (err) {
+      console.error('Avatar removal failed:', err);
+      setError(err.response?.data?.detail || 'Avatar removal failed. Please try again.');
+      throw err;
+    }
+  };
+
   const value = {
     isAuthenticated: !!token,
     token,
@@ -167,6 +192,8 @@ export const AuthProvider = ({ children }) => {
     refreshCurrentUser,
     updateProfile,
     uploadResume,
+    uploadAvatar,
+    deleteAvatar,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

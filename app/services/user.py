@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_password_hash, verify_password
+from app.core.config import settings
 from app.models.user import User
 from app.schemas.user import UserCreate, UserUpdate
 from app.utils.logger import setup_logger
@@ -27,6 +28,7 @@ class UserService:
     
     async def create(self, obj_in: UserCreate) -> User:
         user_data = obj_in.model_dump() if isinstance(obj_in, UserCreate) else obj_in
+        user_data["tenant_id"] = settings.DEFAULT_TENANT_ID
         user = User(**user_data)
 
         password = get_password_hash(user_data["password"])

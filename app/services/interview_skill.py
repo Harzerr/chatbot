@@ -619,6 +619,7 @@ JD 分析：
         target_company: str | None = None,
         jd_content: str | None = None,
         resume_content: str | None = None,
+        code_execution: dict | None = None,
     ) -> dict:
         question_limit = get_interview_question_limit(interview_type)
         normalized_question = (question or "").strip()
@@ -722,6 +723,8 @@ JD 分析：
                     interview_type=interview_type,
                     target_company=target_company,
                     jd_content=jd_content,
+                    resume_content=resume_content,
+                    code_execution=code_execution,
                 )
         except Exception:
             evaluation = None

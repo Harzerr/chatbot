@@ -2,6 +2,18 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+class CodeExecutionEvidence(BaseModel):
+    language: str = Field(default="", max_length=32)
+    status: str = Field(default="", max_length=128)
+    passed: Optional[bool] = None
+    time: Optional[str] = Field(default=None, max_length=64)
+    memory: Optional[int] = None
+    stdout: str = Field(default="", max_length=2000)
+    stderr: str = Field(default="", max_length=2000)
+    compile_output: str = Field(default="", max_length=2000)
+    message: str = Field(default="", max_length=1000)
+
+
 class LLMRequest(BaseModel):
     user_message: str = Field(description="Chat message")
     chat_id: str = Field(description="Chat ID")
@@ -12,6 +24,7 @@ class LLMRequest(BaseModel):
     target_company: Optional[str] = Field(default=None, description="Target company")
     jd_content: Optional[str] = Field(default=None, description="Job description content")
     resume_content: Optional[str] = Field(default=None, description="Resume content or summary")
+    code_execution: Optional[CodeExecutionEvidence] = Field(default=None, description="Latest Judge0 result for a coding interview answer")
 
 
 class CodeRunRequest(BaseModel):

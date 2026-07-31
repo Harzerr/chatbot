@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     EMBEDDING_MAX_RETRIES: int = 2
     EMBEDDING_RETRY_INTERVAL: float = 0.8
     LLM_MODEL: str = "openai/gpt-4o-mini"
+    CAREER_LLM_MODEL: str = "deepseek/deepseek-v4-flash"
+    # Interview traffic uses a model available in the server's OpenRouter region.
+    INTERVIEW_LLM_MODEL: str = "deepseek/deepseek-v4-flash"
     PDFTOTEXT_PATH: str = ""
 
     STT_API_URL: str = "http://127.0.0.1:8000/v1/"
@@ -55,6 +58,7 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "********"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 300
+    DEFAULT_TENANT_ID: str = "public"
 
     SQLALCHEMY_DATABASE_URI: str = "sqlite:///./app.db"
 
@@ -71,12 +75,15 @@ class Settings(BaseSettings):
     JUDGE0_API_URL: str = "http://127.0.0.1:2358"
     JUDGE0_API_KEY: str = ""
     JUDGE0_TIMEOUT: float = 20.0
-    JUDGE0_WINDOWS_COMPAT_MODE: bool = False
+    # Judge0 1.13 requires this mode on hosts using cgroup v2.
+    JUDGE0_WINDOWS_COMPAT_MODE: bool = True
     JUDGE0_WINDOWS_MEMORY_LIMIT_KB: int = 1048576
     JUDGE0_JAVA_MEMORY_LIMIT_KB: int = 4194304
     MEM0_ADD_TIMEOUT: float = 20.0
     MEM0_ADD_RETRIES: int = 1
     MEM0_SEARCH_TIMEOUT: float = 10.0
+    LLM_INPUT_USD_PER_1M: float = 0.0
+    LLM_OUTPUT_USD_PER_1M: float = 0.0
 
     TAVILY_API_KEY: str = "********"
     FIRECRAWL_API_KEY: str = "********"

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
 import {
   Box,
@@ -25,6 +25,7 @@ import {
   DialogActions,
   TextField,
   MenuItem,
+  Tooltip,
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import AddIcon from '@mui/icons-material/Add';
@@ -39,8 +40,12 @@ import TipsAndUpdatesRoundedIcon from '@mui/icons-material/TipsAndUpdatesRounded
 import MenuBookRoundedIcon from '@mui/icons-material/MenuBookRounded';
 import LightbulbRoundedIcon from '@mui/icons-material/LightbulbRounded';
 import AccountCircleRoundedIcon from '@mui/icons-material/AccountCircleRounded';
+import PauseCircleOutlineRoundedIcon from '@mui/icons-material/PauseCircleOutlineRounded';
+import PlayCircleOutlineRoundedIcon from '@mui/icons-material/PlayCircleOutlineRounded';
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import { useAuth } from '../contexts/AuthContext';
 import chatService from '../services/chatService';
+import careerService from '../services/careerService';
 import streamingService from '../services/streamingService';
 import MessageBubble from '../components/MessageBubble';
 import ChatInput from '../components/ChatInput';
@@ -66,6 +71,18 @@ const getInterviewQuestionLimit = (interviewType = '一面') => interviewQuestio
 const getEstimatedInterviewMinutes = (interviewType = '一面') => {
   const profile = interviewTimeProfiles[interviewType] || interviewTimeProfiles.一面;
   return getInterviewQuestionLimit(interviewType) * profile.minutesPerQuestion + profile.bufferMinutes;
+};
+const buildInterviewJdContext = (job) => {
+  const normalized = job?.normalized || {};
+  const lines = [
+    `职位：${job?.title || ''}`,
+    job?.company ? `公司：${job.company}` : '',
+    Array.isArray(normalized.required_skills) && normalized.required_skills.length ? `核心要求：${normalized.required_skills.join('；')}` : '',
+    Array.isArray(normalized.responsibilities) && normalized.responsibilities.length ? `工作职责：${normalized.responsibilities.join('；')}` : '',
+    Array.isArray(normalized.preferred_skills) && normalized.preferred_skills.length ? `加分项：${normalized.preferred_skills.join('；')}` : '',
+    job?.raw_content ? `JD 原文：\n${job.raw_content}` : '',
+  ];
+  return lines.filter(Boolean).join('\n\n');
 };
 const MANUAL_FINISH_COMMAND = '__SYSTEM_END_INTERVIEW_AND_EXPORT_REPORT__';
 
@@ -162,15 +179,23 @@ const getInterviewEndedAt = (chat = {}) => {
   return null;
 };
 
-const getElapsedInterviewMinutes = (startedAt, endedAt = null, fallbackNow = Date.now()) => {
+const getElapsedInterviewMinutes = (
+  startedAt,
+  endedAt = null,
+  fallbackNow = Date.now(),
+  pausedSeconds = 0,
+  pausedAt = null,
+) => {
   const startTime = startedAt ? new Date(startedAt).getTime() : Number.NaN;
-  const endTime = endedAt ? new Date(endedAt).getTime() : fallbackNow;
+  const pausedTime = pausedAt ? new Date(pausedAt).getTime() : Number.NaN;
+  const endTime = endedAt ? new Date(endedAt).getTime() : (Number.isNaN(pausedTime) ? fallbackNow : pausedTime);
 
   if (Number.isNaN(startTime) || Number.isNaN(endTime) || endTime <= startTime) {
     return 0;
   }
 
-  return Math.max(1, Math.ceil((endTime - startTime) / 60000));
+  const activeMilliseconds = Math.max(0, endTime - startTime - (Number(pausedSeconds) || 0) * 1000);
+  return Math.max(1, Math.ceil(activeMilliseconds / 60000));
 };
 
 const formatMinuteAmount = (minutes) => {
@@ -180,7 +205,13 @@ const formatMinuteAmount = (minutes) => {
 
 const buildInterviewTimeCopy = (meta = {}, now = Date.now()) => {
   const estimatedMinutes = meta.estimatedMinutes || getEstimatedInterviewMinutes(meta.interviewType);
-  const elapsedMinutes = getElapsedInterviewMinutes(meta.startedAt, meta.endedAt, now);
+  const elapsedMinutes = getElapsedInterviewMinutes(
+    meta.startedAt,
+    meta.endedAt,
+    now,
+    meta.pausedSeconds,
+    meta.pausedAt,
+  );
 
   if (meta.isFinished || meta.status === '已完成' || meta.status === '待复盘') {
     return {
@@ -196,10 +227,15 @@ const buildInterviewTimeCopy = (meta = {}, now = Date.now()) => {
     };
   }
 
-  return {
-    short: `已用 ${formatMinuteAmount(elapsedMinutes)}`,
-    detail: `已用 ${formatMinuteAmount(elapsedMinutes)} · 预计 ${estimatedMinutes} 分钟`,
-  };
+  return meta.isPaused
+    ? {
+      short: `已暂停 · ${formatMinuteAmount(elapsedMinutes)}`,
+      detail: `计时已暂停 · 已用 ${formatMinuteAmount(elapsedMinutes)}`,
+    }
+    : {
+      short: `已用 ${formatMinuteAmount(elapsedMinutes)}`,
+      detail: `已用 ${formatMinuteAmount(elapsedMinutes)} · 预计 ${estimatedMinutes} 分钟`,
+    };
 };
 
 const escapeHtml = (content = '') => String(content)
@@ -1003,6 +1039,9 @@ const deriveInterviewMeta = (chat) => {
       targetCompany: chat.targetCompany || '',
       score: latestEvaluation?.overall_score ?? null,
       status,
+      interviewStatus: chat.interviewStatus || 'active',
+      pausedAt: chat.interviewPausedAt || null,
+      pausedSeconds: Number(chat.interviewPausedSeconds) || 0,
       startedAt,
       endedAt,
       isFinished,
@@ -1037,6 +1076,9 @@ const deriveInterviewMeta = (chat) => {
     interviewType,
     score: latestEvaluation?.overall_score ?? null,
     status,
+    interviewStatus: chat.interviewStatus || 'active',
+    pausedAt: chat.interviewPausedAt || null,
+    pausedSeconds: Number(chat.interviewPausedSeconds) || 0,
     startedAt,
     endedAt,
     isFinished,
@@ -1057,6 +1099,7 @@ const Chat = () => {
   const [error, setError] = useState(null);
   const [streamingMessage, setStreamingMessage] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
+  const [latestCodeExecution, setLatestCodeExecution] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [setupDialogOpen, setSetupDialogOpen] = useState(false);
@@ -1064,6 +1107,8 @@ const Chat = () => {
   const [report, setReport] = useState(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [finishExportLoading, setFinishExportLoading] = useState(false);
+  const [sessionActionLoading, setSessionActionLoading] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const [finishRequestedAt, setFinishRequestedAt] = useState(null);
   const [timeNow, setTimeNow] = useState(() => Date.now());
   const [interviewSetup, setInterviewSetup] = useState({
@@ -1072,7 +1117,11 @@ const Chat = () => {
     interviewType: '一面',
     targetCompany: '',
     jdContent: '',
+    jobPostingId: '',
   });
+  const [interviewJobs, setInterviewJobs] = useState([]);
+  const [interviewJobsLoading, setInterviewJobsLoading] = useState(false);
+  const [interviewJobsError, setInterviewJobsError] = useState('');
 
   const isInterviewFinished = (messageList = messages) => {
     return hasInterviewEnded(messageList);
@@ -1083,6 +1132,7 @@ const Chat = () => {
   const reportRequestIdRef = useRef(0);
   const { logout, currentUser } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('lg'));
 
@@ -1108,13 +1158,53 @@ const Chat = () => {
 
   useEffect(() => {
     if (!currentUser?.target_role) return;
-    if (!roleOptions.includes(currentUser.target_role)) return;
 
     setInterviewSetup((prev) => ({
       ...prev,
-      interviewRole: currentUser.target_role,
+      interviewRole: prev.jobPostingId ? prev.interviewRole : currentUser.target_role,
     }));
   }, [currentUser]);
+
+  useEffect(() => {
+    if (!setupDialogOpen) return;
+    let disposed = false;
+    setInterviewJobsLoading(true);
+    setInterviewJobsError('');
+    careerService.listJobs()
+      .then((jobs) => {
+        if (!disposed) setInterviewJobs(Array.isArray(jobs) ? jobs : []);
+      })
+      .catch(() => {
+        if (!disposed) setInterviewJobsError('职位库加载失败，仍可手工填写 JD。');
+      })
+      .finally(() => {
+        if (!disposed) setInterviewJobsLoading(false);
+      });
+    return () => { disposed = true; };
+  }, [setupDialogOpen]);
+
+  useEffect(() => {
+    const interviewJobId = location.state?.interviewJobId;
+    if (!interviewJobId) return;
+    if (!setupDialogOpen) {
+      if (currentUser?.has_resume) setSetupDialogOpen(true);
+      else setResumePromptOpen(true);
+      return;
+    }
+    if (interviewJobsLoading) return;
+    const job = interviewJobs.find((item) => String(item.id) === String(interviewJobId));
+    if (!job) return;
+    setInterviewSetup((prev) => ({
+      ...prev,
+      jobPostingId: String(job.id),
+      interviewRole: job.title || prev.interviewRole,
+      targetCompany: job.company || prev.targetCompany,
+      jdContent: buildInterviewJdContext(job) || prev.jdContent,
+    }));
+    if (currentUser?.has_resume) setSetupDialogOpen(true);
+    else setResumePromptOpen(true);
+    navigate(location.pathname, { replace: true, state: {} });
+  }, [currentUser?.has_resume, interviewJobs, interviewJobsLoading, location.pathname, location.state, navigate]);
 
   const clearReportState = () => {
     reportRequestIdRef.current += 1;
@@ -1180,6 +1270,9 @@ const Chat = () => {
           interviewType: latestMessage.interview_type,
           targetCompany: latestMessage.target_company,
           jdContent: latestMessage.jd_content,
+          interviewStatus: latestMessage.interview_status || 'active',
+          interviewPausedAt: latestMessage.interview_paused_at || null,
+          interviewPausedSeconds: Number(latestMessage.interview_paused_seconds) || 0,
         };
         const meta = deriveInterviewMeta(baseChat);
         return { ...baseChat, ...meta };
@@ -1189,7 +1282,7 @@ const Chat = () => {
       setChats(sortedChats);
       setCurrentChat((prev) => {
         if (!prev) return prev;
-        return sortedChats.find((chat) => chat.id === prev.id) || prev;
+        return sortedChats.find((chat) => chat.id === prev.id) || null;
       });
 
       if (sortedChats.length > 0 && !currentChat) {
@@ -1276,6 +1369,7 @@ const Chat = () => {
       interviewType: setup.interviewType,
       targetCompany: setup.targetCompany,
       jdContent: setup.jdContent,
+      jobPostingId: setup.jobPostingId,
     };
     const meta = deriveInterviewMeta(baseChat);
     const newChat = { ...baseChat, ...meta, status: '新会话' };
@@ -1306,6 +1400,21 @@ const Chat = () => {
     const createdChat = createInterviewSession(interviewSetup);
     setSetupDialogOpen(false);
     startInterviewOpening(createdChat);
+  };
+
+  const handleInterviewJobChange = (event) => {
+    const jobPostingId = event.target.value;
+    const job = interviewJobs.find((item) => String(item.id) === String(jobPostingId));
+    setInterviewSetup((prev) => {
+      if (!job) return { ...prev, jobPostingId: '' };
+      return {
+        ...prev,
+        jobPostingId: String(job.id),
+        interviewRole: job.title || prev.interviewRole,
+        targetCompany: job.company || prev.targetCompany,
+        jdContent: buildInterviewJdContext(job) || prev.jdContent,
+      };
+    });
   };
 
   const startInterviewOpening = async (activeChat) => {
@@ -1354,7 +1463,9 @@ const Chat = () => {
         interviewType: activeChat.interviewType,
         targetCompany: activeChat.targetCompany,
         jdContent: activeChat.jdContent,
+        codeExecution: latestCodeExecution,
       });
+      setLatestCodeExecution(null);
     } catch (streamError) {
       console.error('Error starting opening interview question:', streamError);
       setError('自动开始面试失败，请重试。');
@@ -1484,8 +1595,72 @@ const Chat = () => {
     handleFinishInterview();
   };
 
+  const applySessionState = (chatId, session) => {
+    const updateChat = (chat) => {
+      if (!chat || chat.id !== chatId) return chat;
+      return {
+        ...chat,
+        interviewStatus: session.status,
+        interviewPausedAt: session.paused_at || null,
+        interviewPausedSeconds: Number(session.paused_seconds) || 0,
+      };
+    };
+    setChats((prev) => prev.map(updateChat));
+    setCurrentChat((prev) => updateChat(prev));
+    setTimeNow(Date.now());
+  };
+
+  const handlePauseToggle = async () => {
+    if (!currentChat?.id || isStreaming || finishExportLoading || currentInterviewFinished) return;
+    setSessionActionLoading(true);
+    setError(null);
+    try {
+      const session = currentChat.interviewStatus === 'paused'
+        ? await chatService.resumeInterview(currentChat.id)
+        : await chatService.pauseInterview(currentChat.id);
+      applySessionState(currentChat.id, session);
+    } catch (sessionError) {
+      console.error('Error updating interview session state:', sessionError);
+      setError(sessionError.response?.data?.detail || '更新面试状态失败，请稍后重试。');
+    } finally {
+      setSessionActionLoading(false);
+    }
+  };
+
+  const handleDeleteInterview = async () => {
+    if (!deleteTarget?.id || sessionActionLoading || isStreaming) return;
+    setSessionActionLoading(true);
+    setError(null);
+    try {
+      await chatService.deleteInterview(deleteTarget.id);
+      const remainingChats = chats.filter((chat) => chat.id !== deleteTarget.id);
+      const deletingCurrent = currentChat?.id === deleteTarget.id;
+      setChats(remainingChats);
+      setDeleteTarget(null);
+
+      if (deletingCurrent) {
+        setCurrentChat(null);
+        setMessages([]);
+        clearReportState();
+        setFinishRequestedAt(null);
+        if (remainingChats[0]) {
+          handleSelectChat(remainingChats[0].id, remainingChats);
+        }
+      }
+    } catch (deleteError) {
+      console.error('Error deleting interview:', deleteError);
+      setError(deleteError.response?.data?.detail || '删除面试记录失败，请稍后重试。');
+    } finally {
+      setSessionActionLoading(false);
+    }
+  };
+
   const handleSendMessage = async (message) => {
     if (!message.trim() || isStreaming || isInterviewFinished()) return;
+    if (currentChat?.interviewStatus === 'paused') {
+      setError('该面试已暂停，请先继续面试后再提交回答。');
+      return;
+    }
     if (!currentChat && !currentUser?.has_resume) {
       setError('开始面试前，请先前往个人档案上传简历。');
       setResumePromptOpen(true);
@@ -1566,6 +1741,17 @@ const Chat = () => {
       stdin,
       expectedOutput,
     });
+    setLatestCodeExecution({
+      language,
+      status: response.status,
+      passed: response.passed,
+      time: response.time,
+      memory: response.memory,
+      stdout: response.stdout,
+      stderr: response.stderr,
+      compile_output: response.compile_output,
+      message: response.message,
+    });
     return response;
   };
 
@@ -1586,6 +1772,7 @@ const Chat = () => {
   const currentStatus = (() => {
     if (currentInterviewFinished) return '已完成';
     if (finishRequestedAt) return '结束中';
+    if (currentChat?.interviewStatus === 'paused') return '已暂停';
     if (messages.length > 0 || isStreaming) return '进行中';
     return currentChat?.status || '待开始';
   })();
@@ -1610,6 +1797,9 @@ const Chat = () => {
     targetQuestions: baseCurrentMeta.targetQuestions || getInterviewQuestionLimit(baseCurrentMeta.interviewType),
     estimatedMinutes: baseCurrentMeta.estimatedMinutes || getEstimatedInterviewMinutes(baseCurrentMeta.interviewType),
     isFinished: currentInterviewFinished || !!finishRequestedAt || baseCurrentMeta.isFinished,
+    isPaused: !currentInterviewFinished && currentChat?.interviewStatus === 'paused',
+    pausedAt: baseCurrentMeta.pausedAt || null,
+    pausedSeconds: baseCurrentMeta.pausedSeconds || 0,
     endedAt: timingStoppedAt || baseCurrentMeta.endedAt,
     status: currentStatus,
   };
@@ -1628,6 +1818,17 @@ const Chat = () => {
         content_analysis: latestMessageEvaluation.summary,
       }
       : null;
+  const competencyItems = report?.competency_assessments?.length
+    ? report.competency_assessments
+    : (latestMessageEvaluation?.capability_assessments || []).map((item) => ({
+      capability: item.capability,
+      score: item.score,
+      confidence: latestMessageEvaluation?.confidence_level || '低',
+      covered_questions: 1,
+      evidence: item.evidence || [],
+      missing_points: item.missing_points || [],
+    }));
+  const jdRequirementItems = report?.jd_requirement_matches || latestMessageEvaluation?.jd_requirement_matches || [];
   const sidebar = (
     <>
       <Toolbar sx={{ alignItems: 'stretch', px: 2.5, py: 1.5, flexShrink: 0 }}>
@@ -1683,15 +1884,36 @@ const Chat = () => {
                 从第一场模拟面试开始，逐步建立你的练习记录。
               </Typography>
             </Paper>
+
           ) : (
             chats.map((chat) => (
-              <ListItem key={chat.id} disablePadding sx={{ mb: 1.2 }}>
+              <ListItem
+                key={chat.id}
+                disablePadding
+                sx={{ mb: 1.2 }}
+                secondaryAction={(
+                  <Tooltip title="删除面试记录">
+                    <span>
+                      <IconButton
+                        edge="end"
+                        aria-label={`删除 ${chat.title}`}
+                        onClick={() => setDeleteTarget(chat)}
+                        disabled={isStreaming || sessionActionLoading}
+                        sx={{ color: 'rgba(248,113,113,0.84)' }}
+                      >
+                        <DeleteOutlineRoundedIcon fontSize="small" />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                )}
+              >
                 <ListItemButton
                   selected={currentChat?.id === chat.id}
                   onClick={() => handleSelectChat(chat.id)}
                   sx={{
                     borderRadius: 2,
                     px: 2,
+                    pr: 5.5,
                     py: 1.8,
                     alignItems: 'flex-start',
                     border: currentChat?.id === chat.id
@@ -1745,6 +1967,35 @@ const Chat = () => {
 
   return (
     <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+      <Dialog
+        open={!!deleteTarget}
+        onClose={() => !sessionActionLoading && setDeleteTarget(null)}
+        fullWidth
+        maxWidth="xs"
+        PaperProps={{
+          sx: {
+            borderRadius: 2,
+            background: '#0d1728',
+            border: '1px solid rgba(248,113,113,0.22)',
+          },
+        }}
+      >
+        <DialogTitle>删除面试记录？</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.7 }}>
+            将永久删除本场面试的全部问答和报告数据，此操作无法撤销。
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button onClick={() => setDeleteTarget(null)} disabled={sessionActionLoading} color="inherit">
+            取消
+          </Button>
+          <Button onClick={handleDeleteInterview} disabled={sessionActionLoading} color="error" variant="contained">
+            {sessionActionLoading ? '删除中...' : '删除'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       <Dialog
         open={resumePromptOpen}
         onClose={() => setResumePromptOpen(false)}
@@ -1832,10 +2083,30 @@ const Chat = () => {
             <TextField
               select
               fullWidth
+              label="目标 JD"
+              value={interviewSetup.jobPostingId}
+              onChange={handleInterviewJobChange}
+              disabled={interviewJobsLoading}
+              helperText={interviewJobsError || (interviewSetup.jobPostingId ? '已带入职位库中的岗位、公司和 JD；仍可在下方微调。' : '选择已导入的职位后，将自动带入岗位、公司和 JD。')}
+            >
+              <MenuItem value="">不使用职位库 JD（手工填写）</MenuItem>
+              {interviewJobs.map((job) => (
+                <MenuItem key={job.id} value={String(job.id)}>
+                  {job.title || '未命名职位'}{job.company ? ` - ${job.company}` : ''}
+                </MenuItem>
+              ))}
+            </TextField>
+
+            <TextField
+              select
+              fullWidth
               label="目标岗位"
               value={interviewSetup.interviewRole}
               onChange={(e) => setInterviewSetup((prev) => ({ ...prev, interviewRole: e.target.value }))}
             >
+              {!roleOptions.includes(interviewSetup.interviewRole) && (
+                <MenuItem value={interviewSetup.interviewRole}>{interviewSetup.interviewRole}</MenuItem>
+              )}
               {roleOptions.map((option) => (
                 <MenuItem key={option} value={option}>
                   {option}
@@ -1901,8 +2172,8 @@ const Chat = () => {
               multiline
               minRows={4}
               maxRows={8}
-              label="JD 内容"
-              placeholder="可粘贴岗位职责、要求、加分项。没有也可以留空。"
+              label="JD 内容（可编辑）"
+              placeholder="可从职位库选择，或手工粘贴岗位职责、要求和加分项。"
               value={interviewSetup.jdContent}
               onChange={(e) => setInterviewSetup((prev) => ({ ...prev, jdContent: e.target.value }))}
             />
@@ -1965,8 +2236,25 @@ const Chat = () => {
             <Chip icon={<ScheduleRoundedIcon />} label={currentTimeCopy.short} sx={{ bgcolor: 'rgba(148,163,184,0.12)', color: '#cbd5e1' }} />
           </Stack>
 
+          <Tooltip title={currentMeta.isPaused ? '继续面试并恢复计时' : '暂停面试并冻结计时'}>
+            <span>
+              <IconButton
+                color="inherit"
+                aria-label={currentMeta.isPaused ? '继续面试' : '暂停面试'}
+                onClick={handlePauseToggle}
+                disabled={!currentChat?.id || isStreaming || finishExportLoading || currentInterviewFinished || sessionActionLoading}
+                sx={{ color: currentMeta.isPaused ? '#34d399' : '#cbd5e1' }}
+              >
+                {currentMeta.isPaused ? <PlayCircleOutlineRoundedIcon /> : <PauseCircleOutlineRoundedIcon />}
+              </IconButton>
+            </span>
+          </Tooltip>
+
           <Button color="inherit" onClick={() => navigate('/profile')} startIcon={<AccountCircleRoundedIcon />}>
             个人档案
+          </Button>
+          <Button color="inherit" onClick={() => navigate('/training')} startIcon={<AutoGraphRoundedIcon />}>
+            训练营
           </Button>
           <Button
             color="inherit"
@@ -2127,7 +2415,7 @@ const Chat = () => {
               onSendMessage={handleSendMessage}
               onRunCode={handleRunCode}
               latestCodingPrompt={latestCodingPrompt}
-              disabled={isStreaming || isInterviewFinished()}
+              disabled={isStreaming || isInterviewFinished() || currentMeta.isPaused}
             />
           )}
         </Box>
@@ -2396,6 +2684,60 @@ const Chat = () => {
                   <Chip icon={<AutoGraphRoundedIcon />} label={`问题解决：${evaluationDisplay.problem_solving}`} sx={{ justifyContent: 'flex-start', bgcolor: 'rgba(148,163,184,0.08)', color: '#cbd5e1' }} />
                   <Chip icon={<TrackChangesRoundedIcon />} label={`岗位匹配度：${evaluationDisplay.job_match_score ?? 0}`} sx={{ justifyContent: 'flex-start', bgcolor: 'rgba(148,163,184,0.08)', color: '#cbd5e1' }} />
                   <Chip icon={<TipsAndUpdatesRoundedIcon />} label={`综合得分：${evaluationDisplay.overall_score}`} sx={{ justifyContent: 'flex-start', bgcolor: 'rgba(125,211,252,0.12)', color: '#7dd3fc' }} />
+                  {evaluationDisplay.assessment_version === 'rubric-v2' && (
+                    <Typography variant="caption" sx={{ color: 'rgba(191,219,254,0.82)', mt: 0.3 }}>
+                      本场综合分按题型 Rubric 加权；能力结论会随覆盖题数更新。
+                    </Typography>
+                  )}
+                  {competencyItems.length > 0 && (
+                    <Box sx={{ pt: 1.2, mt: 0.2, borderTop: '1px solid rgba(148,163,184,0.12)' }}>
+                      <Typography variant="subtitle2" sx={{ color: '#f8fafc', fontWeight: 700, mb: 0.8 }}>
+                        能力覆盖与置信度
+                      </Typography>
+                      <Stack spacing={0.85}>
+                        {competencyItems.slice(0, 6).map((item) => (
+                          <Box key={item.capability}>
+                            <Stack direction="row" spacing={0.8} alignItems="center" justifyContent="space-between">
+                              <Typography variant="body2" sx={{ color: 'rgba(226,232,240,0.92)' }}>
+                                {item.capability} · {item.score} 分
+                              </Typography>
+                              <Chip
+                                size="small"
+                                label={`${item.covered_questions || 1} 题覆盖 · ${item.confidence || '低'}置信度`}
+                                sx={{ height: 22, color: item.confidence === '高' ? '#86efac' : item.confidence === '中' ? '#fde68a' : '#cbd5e1', bgcolor: 'rgba(148,163,184,0.10)' }}
+                              />
+                            </Stack>
+                            {item.missing_points?.[0] && (
+                              <Typography variant="caption" sx={{ display: 'block', color: 'rgba(191,219,254,0.78)', mt: 0.2, lineHeight: 1.55 }}>
+                                待补：{item.missing_points[0]}
+                              </Typography>
+                            )}
+                          </Box>
+                        ))}
+                      </Stack>
+                    </Box>
+                  )}
+                  {jdRequirementItems.length > 0 && (
+                    <Box sx={{ pt: 1.2, mt: 0.2, borderTop: '1px solid rgba(148,163,184,0.12)' }}>
+                      <Typography variant="subtitle2" sx={{ color: '#f8fafc', fontWeight: 700, mb: 0.8 }}>
+                        JD 要求核对
+                      </Typography>
+                      <Stack spacing={0.65}>
+                        {jdRequirementItems.slice(0, 5).map((item, index) => (
+                          <Stack key={`${item.requirement}-${index}`} direction="row" spacing={0.8} alignItems="flex-start">
+                            <Chip
+                              size="small"
+                              label={item.status || '不适用'}
+                              sx={{ height: 21, flexShrink: 0, color: item.status === '已体现' ? '#86efac' : item.status === '部分体现' ? '#fde68a' : '#fda4af', bgcolor: 'rgba(148,163,184,0.10)' }}
+                            />
+                            <Typography variant="caption" sx={{ color: 'rgba(226,232,240,0.82)', lineHeight: 1.55 }}>
+                              {item.requirement}
+                            </Typography>
+                          </Stack>
+                        ))}
+                      </Stack>
+                    </Box>
+                  )}
                   {evaluationDisplay.content_analysis && (
                     <Box
                       sx={{

@@ -21,3 +21,8 @@ class User(Base):
     resume_content_type = Column(String, nullable=True)
     resume_uploaded_at = Column(String, nullable=True)
     resume_text = Column(Text, nullable=True)
+    avatar_file_name = Column(String, nullable=True)
+    avatar_file_path = Column(String, nullable=True)
+    avatar_content_type = Column(String, nullable=True)
+    avatar_updated_at = Column(String, nullable=True)
+    education_json = Column(Text, nullable=False, default="[]")

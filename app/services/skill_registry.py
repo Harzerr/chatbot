@@ -125,6 +125,7 @@ class InterviewSkillRunner:
             target_company=state.get("target_company"),
             jd_content=state.get("jd_content"),
             resume_content=state.get("resume_content"),
+            code_execution=state.get("code_execution"),
         )
         return SkillResult(
             response=result["response"],

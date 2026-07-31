@@ -1,0 +1,5 @@
+[
+  {"question":"Redis 缓存和数据库如何保证一致性？","answer":"采用 Cache Aside，先更新数据库再删除缓存，并通过消息重试和幂等消费处理删除失败。", "expected_verdict":"正确", "expected_score":85, "role":"Java后端工程师"},
+  {"question":"Redis 缓存和数据库如何保证一致性？","answer":"直接同时写 Redis 和 MySQL 就一定一致。", "expected_verdict":"错误", "expected_score":25, "role":"Java后端工程师"},
+  {"question":"解释 C++ 的 weak_ptr 用途。","answer":"weak_ptr 不增加引用计数，常用于观察 shared_ptr 并打破循环引用。", "expected_verdict":"正确", "expected_score":85, "role":"C++开发工程师"}
+]

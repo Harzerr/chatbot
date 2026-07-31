@@ -11,6 +11,17 @@ const userService = {
     return response.data;
   },
 
+  uploadAvatar: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await axios.post('/api/v1/users/me/avatar', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
+  deleteAvatar: async () => axios.delete('/api/v1/users/me/avatar'),
+
   uploadResume: async (file) => {
     const formData = new FormData();
     formData.append('file', file);

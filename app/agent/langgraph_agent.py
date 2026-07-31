@@ -108,6 +108,7 @@ class AgentState(TypedDict):
     target_company: Optional[str]
     jd_content: Optional[str]
     resume_content: Optional[str]
+    code_execution: Optional[dict]
     evaluation: Optional[dict]
     is_finished: bool
 
@@ -392,7 +393,7 @@ async def create_graph():
         return await agent_node(state, agent=scrapper_agent, name="Scrapper")
 
     skill_llm = ChatOpenAI(
-        model=settings.LLM_MODEL,
+        model=settings.INTERVIEW_LLM_MODEL,
         temperature=0.35,
         api_key=settings.OPENROUTER_API_KEY,
         base_url=settings.OPENROUTER_API_BASE,
@@ -472,6 +473,7 @@ def create_initial_state(messages: List[BaseMessage], max_iterations: int, **kwa
         "target_company": kwargs.get("target_company"),
         "jd_content": kwargs.get("jd_content"),
         "resume_content": kwargs.get("resume_content"),
+        "code_execution": kwargs.get("code_execution"),
         "evaluation": kwargs.get("evaluation"),
         "is_finished": kwargs.get("is_finished", False),
     }

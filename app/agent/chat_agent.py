@@ -1,4 +1,6 @@
 import asyncio
+import hashlib
+from time import perf_counter
 from datetime import datetime
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 from langchain_core.runnables import RunnableConfig
@@ -13,8 +15,15 @@ from app.schemas.chat import AnswerEvaluation
 from app.services.embedding_provider import get_mem0_embedder_config
 from app.services.vector_store import MultiTenantVectorStore
 from app.utils.logger import setup_logger
+from app.services.metrics import record_ai_metric
 
 logger = setup_logger(__name__)
+
+
+def _tenant_user_scope(tenant_id: str, user_id: str) -> str:
+    """Stable, opaque namespace for all durable AI memory operations."""
+    tenant_digest = hashlib.sha256(tenant_id.encode("utf-8")).hexdigest()[:16]
+    return f"tenant-{tenant_digest}:user-{user_id}"
 
 
 class AISupport:
@@ -154,6 +163,7 @@ class AISupport:
         target_company: str | None = None,
         jd_content: str | None = None,
         resume_content: str | None = None,
+        code_execution: dict | None = None,
     ) -> dict:
         """Process a user question and return an AI response.
         
@@ -167,15 +177,18 @@ class AISupport:
             Dictionary containing the AI response messages
         """
         logger.info("Self ID: {}".format(id(self)))
+        started_at = perf_counter()
 
-        memories = await self.__search_memory(question, user_id=user_id)
+        memory_scope = _tenant_user_scope(tenant_id, user_id)
+        memories = await self.__search_memory(question, memory_scope=memory_scope)
 
         relevant_docs = self.__vector_store.get_chat_by_id(
             chat_id=chat_id, 
             user_id=user_id, 
             tenant_id=tenant_id
         )
-        logger.info(f"Retrieved {relevant_docs}")
+        retrieval_count = len(relevant_docs)
+        logger.info("Retrieved %s scoped chat-history records for chat_id=%s", len(relevant_docs), chat_id)
         previous_interviewer_question = relevant_docs[-1].get("assistant_message") if relevant_docs else None
         context = "Relevant information from previous conversations:\n"
         if memories['results']:
@@ -192,12 +205,13 @@ class AISupport:
                 context += f" - Assistant: {answer_text}\n"
 
 
-        thread_id = f"user_{user_id}_chat_{chat_id}"
+        thread_id = f"{memory_scope}:chat-{chat_id}"
 
         config: RunnableConfig = {
             "configurable": {
                 "thread_id": thread_id,
-                "user_id": user_id,
+                "user_id": memory_scope,
+                "tenant_id": tenant_id,
                 "chat_id": chat_id
             }
         }
@@ -210,6 +224,7 @@ class AISupport:
         use_skill_mode = bool(active_skill)
 
         response_content = ""
+        response_message = None
         evaluation: AnswerEvaluation | None = None
         if use_skill_mode:
             logger.info("Using graph-dispatched skill mode skill=%s chat_id=%s", active_skill, chat_id)
@@ -230,6 +245,7 @@ class AISupport:
                 target_company=target_company,
                 jd_content=jd_content,
                 resume_content=resume_content,
+                code_execution=code_execution,
             )
             response_state = await self.__graph.ainvoke(initial_state, config=config)
 
@@ -237,6 +253,7 @@ class AISupport:
                 for msg in reversed(response_state["messages"]):
                     if isinstance(msg, AIMessage) and getattr(msg, "content", ""):
                         response_content = msg.content
+                        response_message = msg
                         logger.info("Using skill response from %s", getattr(msg, "name", "AIMessage"))
                         break
 
@@ -266,13 +283,20 @@ class AISupport:
                 for msg in reversed(response_state["messages"]):
                     if isinstance(msg, AIMessage) and getattr(msg, "content", ""):
                         response_content = msg.content
+                        response_message = msg
                         logger.info(f"Using agent response from {msg.name}")
                         break
 
         final_response = response_content
 
+        usage = getattr(response_message, "usage_metadata", None) or getattr(response_message, "response_metadata", {}).get("token_usage", {}) if response_message else {}
+        prompt_tokens = int(usage.get("input_tokens") or usage.get("prompt_tokens") or 0)
+        completion_tokens = int(usage.get("output_tokens") or usage.get("completion_tokens") or 0)
+        estimated_cost = (prompt_tokens * settings.LLM_INPUT_USD_PER_1M + completion_tokens * settings.LLM_OUTPUT_USD_PER_1M) / 1_000_000
+        await record_ai_metric(user_id=int(user_id), tenant_id=tenant_id, operation="interview" if use_interview_mode else "chat", model=settings.INTERVIEW_LLM_MODEL if use_interview_mode else settings.LLM_MODEL, success=1, latency_ms=(perf_counter() - started_at) * 1000, retrieval_count=retrieval_count, prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, estimated_cost_usd=estimated_cost)
+
         try:
-            await self.__add_memory(question, final_response, user_id=user_id)
+            await self.__add_memory(question, final_response, memory_scope=memory_scope, tenant_id=tenant_id)
         except Exception as memory_error:
             logger.warning("mem0 add failed, continuing without blocking response: %s", memory_error)
 
@@ -292,6 +316,7 @@ class AISupport:
                     "target_company": target_company,
                     "jd_content": jd_content,
                     "resume_content": resume_content,
+                    "code_execution": code_execution,
                     "evaluation": evaluation.model_dump() if evaluation else None,
                 }
             )
@@ -303,7 +328,7 @@ class AISupport:
 
         return {"messages": [final_response]}
 
-    async def __add_memory(self, question, response, user_id=None):
+    async def __add_memory(self, question, response, memory_scope: str, tenant_id: str):
         payload = f"User: {question}\nAssistant: {response}"
         retries = max(0, settings.MEM0_ADD_RETRIES)
         last_error: Exception | None = None
@@ -314,8 +339,8 @@ class AISupport:
                     asyncio.to_thread(
                         self.__memory.add,
                         payload,
-                        user_id=user_id,
-                        metadata={"app_id": self.__app_id},
+                        user_id=memory_scope,
+                        metadata={"app_id": self.__app_id, "tenant_id": tenant_id},
                     ),
                     timeout=settings.MEM0_ADD_TIMEOUT,
                 )
@@ -337,13 +362,13 @@ class AISupport:
         if last_error:
             raise last_error
 
-    async def __search_memory(self, query, user_id=None):
+    async def __search_memory(self, query, memory_scope: str):
         try:
             related_memories = await asyncio.wait_for(
                 asyncio.to_thread(
                     self.__memory.search,
                     query,
-                    user_id=user_id,
+                    user_id=memory_scope,
                 ),
                 timeout=settings.MEM0_SEARCH_TIMEOUT,
             )

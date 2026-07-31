@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.endpoints import auth, users, chat, chat_history, voice_chat, code
+from app.api.endpoints import auth, users, chat, chat_history, voice_chat, code, career, training, metrics
 
 api_router = APIRouter()
 
@@ -10,3 +10,6 @@ api_router.include_router(chat.router, prefix="/chat", tags=["chat"])
 api_router.include_router(chat_history.router, prefix="/history", tags=["chat_history"])
 api_router.include_router(voice_chat.router, prefix="/livekit", tags=["livekit"])
 api_router.include_router(code.router, prefix="/code", tags=["code"])
+api_router.include_router(career.router, prefix="/career", tags=["career"])
+api_router.include_router(training.router, prefix="/training", tags=["training"])
+api_router.include_router(metrics.router, prefix="/metrics", tags=["metrics"])

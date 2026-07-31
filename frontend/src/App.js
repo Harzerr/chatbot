@@ -9,6 +9,8 @@ import Register from './pages/Register';
 import Chat from './pages/Chat';
 import VoiceAssistantPage from './pages/VoiceAssistantPage';
 import Profile from './pages/Profile';
+import CareerStudio from './pages/CareerStudio';
+import TrainingCamp from './pages/TrainingCamp';
 
 const interviewTheme = createTheme({
   palette: {
@@ -106,6 +108,8 @@ const App = () => {
             <Route element={<ProtectedRoute />}>
               <Route path="/chat" element={<Chat />} />
               <Route path="/profile" element={<Profile />} />
+              <Route path="/career" element={<CareerStudio />} />
+              <Route path="/training" element={<TrainingCamp />} />
               <Route path="/voice" element={<VoiceAssistantPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/chat" replace />} />
