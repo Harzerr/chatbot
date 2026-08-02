@@ -21,7 +21,7 @@ const TypingAnimation = () => (
         sx={{
           width: 8,
           height: 8,
-          backgroundColor: '#7dd3fc',
+          backgroundColor: '#0284c7',
           borderRadius: 1,
           animation: 'pulse 1.4s infinite ease-in-out',
           animationDelay: `${i * 0.16}s`,
@@ -85,9 +85,9 @@ const MessageBubble = ({ content, role, isStreaming = false }) => {
           width: 42,
           height: 42,
           flexShrink: 0,
-          bgcolor: isCandidate ? 'rgba(245, 158, 11, 0.16)' : 'rgba(125, 211, 252, 0.16)',
-          color: isCandidate ? '#fbbf24' : '#7dd3fc',
-          border: '1px solid rgba(255,255,255,0.08)',
+          bgcolor: isCandidate ? 'rgba(245, 158, 11, 0.12)' : 'rgba(14, 165, 233, 0.12)',
+          color: isCandidate ? '#b45309' : '#0284c7',
+          border: '1px solid rgba(148, 163, 184, 0.22)',
         }}
       >
         {isCandidate ? <PersonOutlineIcon /> : <RecordVoiceOverIcon />}
@@ -101,12 +101,12 @@ const MessageBubble = ({ content, role, isStreaming = false }) => {
           maxWidth: '78%',
           borderRadius: 1,
           background: isCandidate
-            ? 'linear-gradient(180deg, rgba(245,158,11,0.14) 0%, rgba(245,158,11,0.08) 100%)'
-            : 'linear-gradient(180deg, rgba(14,165,233,0.14) 0%, rgba(15,23,42,0.92) 100%)',
+            ? 'linear-gradient(180deg, rgba(255,251,235,1) 0%, rgba(254,243,199,0.72) 100%)'
+            : 'linear-gradient(180deg, #ffffff 0%, rgba(240,249,255,0.86) 100%)',
           border: isCandidate
-            ? '1px solid rgba(245,158,11,0.16)'
-            : '1px solid rgba(125,211,252,0.16)',
-          color: '#e5eef9',
+            ? '1px solid rgba(245,158,11,0.22)'
+            : '1px solid rgba(14,165,233,0.20)',
+          color: '#1e293b',
           position: 'relative',
           minHeight: isStreaming && !content ? 88 : 'auto',
         }}
@@ -121,10 +121,10 @@ const MessageBubble = ({ content, role, isStreaming = false }) => {
           }}
         >
           <Box>
-            <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#f8fafc', lineHeight: 1.2 }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#0f172a', lineHeight: 1.2 }}>
               {speaker}
             </Typography>
-            <Typography variant="caption" sx={{ color: 'rgba(226,232,240,0.72)', lineHeight: 1.35 }}>
+            <Typography variant="caption" sx={{ color: '#64748b', lineHeight: 1.35 }}>
               {isCandidate ? '已记录你的作答内容' : '由 AI 面试官发起的问题'}
             </Typography>
           </Box>
@@ -133,9 +133,9 @@ const MessageBubble = ({ content, role, isStreaming = false }) => {
             size="small"
             sx={{
               flexShrink: 0,
-              bgcolor: isCandidate ? 'rgba(245,158,11,0.16)' : 'rgba(125,211,252,0.14)',
-              color: isCandidate ? '#fbbf24' : '#7dd3fc',
-              border: '1px solid rgba(255,255,255,0.08)',
+              bgcolor: isCandidate ? 'rgba(245,158,11,0.12)' : 'rgba(14,165,233,0.10)',
+              color: isCandidate ? '#b45309' : '#0284c7',
+              border: '1px solid rgba(148,163,184,0.18)',
               fontWeight: 600,
             }}
           />
@@ -147,7 +147,7 @@ const MessageBubble = ({ content, role, isStreaming = false }) => {
               whiteSpace: 'pre-wrap',
               lineHeight: 1.75,
               fontSize: '0.98rem',
-              color: '#e5eef9',
+              color: '#1e293b',
               wordBreak: 'keep-all',
               overflowWrap: 'break-word',
             }}
@@ -169,7 +169,7 @@ const MessageBubble = ({ content, role, isStreaming = false }) => {
                   }}
                 >
                   <TypingAnimation />
-                  <Typography variant="body2" sx={{ color: 'rgba(226,232,240,0.72)' }}>
+                  <Typography variant="body2" sx={{ color: '#64748b' }}>
                     面试官正在准备下一道问题...
                   </Typography>
                 </Box>
@@ -177,7 +177,7 @@ const MessageBubble = ({ content, role, isStreaming = false }) => {
             ) : (
               <Box
                 sx={{
-                  color: '#e5eef9',
+                  color: '#1e293b',
                   fontSize: '0.98rem',
                   lineHeight: 1.75,
                   '& p': {
@@ -205,7 +205,7 @@ const MessageBubble = ({ content, role, isStreaming = false }) => {
                     mb: 0,
                   },
                   '& strong': {
-                    color: '#f8fafc',
+                    color: '#0f172a',
                     fontWeight: 700,
                   },
                   '& code': {
@@ -222,12 +222,12 @@ const MessageBubble = ({ content, role, isStreaming = false }) => {
                       <Box
                         component="pre"
                         sx={{
-                          backgroundColor: 'rgba(15, 23, 42, 0.85)',
+                          backgroundColor: '#f1f5f9',
                           p: 1.5,
                           my: 1.2,
                           borderRadius: 1,
                           overflowX: 'auto',
-                          border: '1px solid rgba(148,163,184,0.16)',
+                          border: '1px solid rgba(148,163,184,0.24)',
                           lineHeight: 1.6,
                         }}
                         {...props}
@@ -238,7 +238,7 @@ const MessageBubble = ({ content, role, isStreaming = false }) => {
                         <Box
                           component="code"
                           sx={{
-                            backgroundColor: 'rgba(15, 23, 42, 0.85)',
+                            backgroundColor: '#e2e8f0',
                             px: 0.7,
                             py: 0.25,
                             borderRadius: 1,

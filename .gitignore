@@ -124,6 +124,8 @@ merging_index/
 backups/
 logs/tmux/
 uploads/
+.deploy/
+chatbot_deploy_key*
 *.pdf
 *.db
 *.sqlite

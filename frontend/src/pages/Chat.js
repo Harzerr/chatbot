@@ -1877,7 +1877,7 @@ const Chat = () => {
                 bgcolor: 'rgba(125,211,252,0.05)',
               }}
             >
-              <Typography variant="subtitle2" sx={{ color: '#f8fafc' }}>
+              <Typography variant="subtitle2" sx={{ color: '#0f172a' }}>
                 还没有面试记录
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
@@ -1921,15 +1921,15 @@ const Chat = () => {
                       : '1px solid rgba(148,163,184,0.08)',
                     bgcolor: currentChat?.id === chat.id
                       ? 'rgba(125,211,252,0.08)'
-                      : 'rgba(15,23,42,0.55)',
+                      : '#ffffff',
                   }}
                 >
                   <Box sx={{ width: '100%' }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 0.5, mb: 0.6 }}>
-                      <Typography variant="subtitle2" sx={{ color: '#f8fafc' }}>
+                      <Typography variant="subtitle2" sx={{ color: '#0f172a' }}>
                         {chat.title}
                       </Typography>
-                      <Typography variant="body2" sx={{ color: '#cbd5e1' }}>
+                      <Typography variant="body2" sx={{ color: '#475569' }}>
                       {chat.level}
                       </Typography>
                       <Chip
@@ -1950,7 +1950,7 @@ const Chat = () => {
                       sx={{
                         mt: 0.7,
                         display: 'block',
-                        color: 'rgba(226,232,240,0.64)',
+                        color: '#64748b',
                       }}
                     >
                       {chat.questionCount}/{chat.targetQuestions} 题 · {buildInterviewTimeCopy(chat, timeNow).short}
@@ -1975,7 +1975,7 @@ const Chat = () => {
         PaperProps={{
           sx: {
             borderRadius: 2,
-            background: '#0d1728',
+            background: '#ffffff',
             border: '1px solid rgba(248,113,113,0.22)',
           },
         }}
@@ -2004,7 +2004,7 @@ const Chat = () => {
         PaperProps={{
           sx: {
             borderRadius: 2.5,
-            background: 'linear-gradient(180deg, rgba(13,23,40,0.96) 0%, rgba(8,15,28,0.98) 100%)',
+            background: 'linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)',
             border: '1px solid rgba(251, 191, 36, 0.18)',
           },
         }}
@@ -2018,7 +2018,7 @@ const Chat = () => {
           </Typography>
         </DialogContent>
         <DialogActions sx={{ px: 4, pb: 4, pt: 2 }}>
-          <Button onClick={() => setResumePromptOpen(false)} sx={{ color: '#cbd5e1' }}>
+          <Button onClick={() => setResumePromptOpen(false)} sx={{ color: '#475569' }}>
             取消
           </Button>
           <Button
@@ -2048,7 +2048,7 @@ const Chat = () => {
             width: 'min(720px, calc(100% - 32px))',
             minHeight: 470,
             borderRadius: 2.5,
-            background: 'linear-gradient(180deg, rgba(13,23,40,0.96) 0%, rgba(8,15,28,0.98) 100%)',
+            background: 'linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)',
             border: '1px solid rgba(125, 211, 252, 0.12)',
           },
         }}
@@ -2067,10 +2067,10 @@ const Chat = () => {
                 p: 1.8,
                 borderRadius: 2,
                 bgcolor: 'rgba(125,211,252,0.06)',
-                border: '1px solid rgba(125,211,252,0.12)',
+                border: '1px solid rgba(125, 211, 252, 0.24)',
               }}
             >
-              <Typography variant="subtitle2" sx={{ color: '#f8fafc' }}>
+              <Typography variant="subtitle2" sx={{ color: '#0f172a' }}>
                 当前档案简历
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75, lineHeight: 1.7 }}>
@@ -2159,7 +2159,7 @@ const Chat = () => {
                 border: '1px solid rgba(52,211,153,0.12)',
               }}
             >
-              <Typography variant="subtitle2" sx={{ color: '#f8fafc' }}>
+              <Typography variant="subtitle2" sx={{ color: '#0f172a' }}>
                 本场节奏
               </Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75, lineHeight: 1.7 }}>
@@ -2180,7 +2180,7 @@ const Chat = () => {
           </Stack>
         </DialogContent>
         <DialogActions sx={{ px: 4, pb: 4, pt: 2 }}>
-          <Button onClick={() => setSetupDialogOpen(false)} sx={{ color: '#cbd5e1' }}>
+          <Button onClick={() => setSetupDialogOpen(false)} sx={{ color: '#475569' }}>
             取消
           </Button>
           <Button
@@ -2231,9 +2231,9 @@ const Chat = () => {
           </Box>
 
           <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ display: { xs: 'none', md: 'flex' } }}>
-            <Chip icon={<WorkOutlineRoundedIcon />} label={currentMeta.role} sx={{ bgcolor: 'rgba(125,211,252,0.10)', color: '#7dd3fc' }} />
-            <Chip icon={<TrackChangesRoundedIcon />} label={`第 ${Math.max(1, assistantQuestionCount)} / ${currentMeta.targetQuestions} 题`} sx={{ bgcolor: 'rgba(245,158,11,0.10)', color: '#fbbf24' }} />
-            <Chip icon={<ScheduleRoundedIcon />} label={currentTimeCopy.short} sx={{ bgcolor: 'rgba(148,163,184,0.12)', color: '#cbd5e1' }} />
+            <Chip icon={<WorkOutlineRoundedIcon />} label={currentMeta.role} sx={{ bgcolor: 'rgba(125,211,252,0.10)', color: '#0284c7' }} />
+            <Chip icon={<TrackChangesRoundedIcon />} label={`第 ${Math.max(1, assistantQuestionCount)} / ${currentMeta.targetQuestions} 题`} sx={{ bgcolor: 'rgba(245,158,11,0.10)', color: '#b45309' }} />
+            <Chip icon={<ScheduleRoundedIcon />} label={currentTimeCopy.short} sx={{ bgcolor: 'rgba(148,163,184,0.12)', color: '#475569' }} />
           </Stack>
 
           <Tooltip title={currentMeta.isPaused ? '继续面试并恢复计时' : '暂停面试并冻结计时'}>
@@ -2295,10 +2295,9 @@ const Chat = () => {
           '& .MuiDrawer-paper': {
             width: drawerWidth,
             boxSizing: 'border-box',
-            bgcolor: '#091321',
-            borderRight: '1px solid rgba(125, 211, 252, 0.08)',
-            backgroundImage:
-              'linear-gradient(180deg, rgba(14,165,233,0.04) 0%, rgba(9,19,33,1) 100%)',
+            bgcolor: '#ffffff',
+            borderRight: '1px solid rgba(148, 163, 184, 0.18)',
+            backgroundImage: 'linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)',
             display: 'flex',
             flexDirection: 'column',
             overflowX: 'hidden',
@@ -2372,7 +2371,7 @@ const Chat = () => {
                   borderRadius: 2.5,
                   mt: 2,
                   textAlign: 'center',
-                  bgcolor: 'rgba(15,23,42,0.75)',
+                  bgcolor: '#ffffff',
                 }}
               >
                 <Typography variant="h5" gutterBottom>
@@ -2425,8 +2424,8 @@ const Chat = () => {
             display: { xs: 'none', lg: 'block' },
             p: 3,
             pt: 11,
-            borderLeft: '1px solid rgba(125,211,252,0.08)',
-            background: 'rgba(8,15,28,0.54)',
+            borderLeft: '1px solid rgba(148, 163, 184, 0.18)',
+            background: '#f8fbff',
             height: '100vh',
             overflowY: 'auto',
             minHeight: 0,
@@ -2439,8 +2438,8 @@ const Chat = () => {
               sx={{
                 p: 2.5,
                 borderRadius: 2.5,
-                bgcolor: 'rgba(15,23,42,0.72)',
-                backgroundImage: 'linear-gradient(135deg, rgba(14,165,233,0.14) 0%, rgba(15,23,42,0.92) 60%)',
+                bgcolor: '#ffffff',
+                backgroundImage: 'linear-gradient(135deg, rgba(14,165,233,0.08) 0%, #ffffff 68%)',
               }}
             >
               <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1.5}>
@@ -2453,7 +2452,7 @@ const Chat = () => {
                       fontSize: { xs: '1.25rem', md: '1.45rem' },
                       fontWeight: 700,
                       lineHeight: 1.2,
-                      color: '#f8fafc',
+                      color: '#0f172a',
                     }}
                   >
                     {currentMeta.role}
@@ -2469,7 +2468,7 @@ const Chat = () => {
                   disabled={!currentChat?.id || reportLoading || isStreaming || finishExportLoading}
                   sx={{
                     borderColor: 'rgba(125,211,252,0.24)',
-                    color: '#7dd3fc',
+                    color: '#0284c7',
                     borderRadius: 2,
                     whiteSpace: 'nowrap',
                     flexShrink: 0,
@@ -2491,7 +2490,7 @@ const Chat = () => {
                     label={currentMeta.level}
                     sx={{
                       bgcolor: 'rgba(125,211,252,0.10)',
-                      color: '#7dd3fc',
+                      color: '#0284c7',
                       mt: 1,
                       pt: 0.4,
                       borderRadius: '16px',
@@ -2508,7 +2507,7 @@ const Chat = () => {
                     label={currentMeta.interviewType}
                     sx={{
                       bgcolor: 'rgba(148,163,184,0.12)',
-                      color: '#cbd5e1',
+                      color: '#475569',
                       mt: 1,
                       pt: 0.4,
                       borderRadius: '16px',
@@ -2523,7 +2522,7 @@ const Chat = () => {
                     label={currentInterviewFinished ? '已结束' : currentMeta.status}
                     sx={{
                       bgcolor: 'rgba(52,211,153,0.10)',
-                      color: '#34d399',
+                      color: '#059669',
                       mt: 1,
                       pt: 0.4,
                       borderRadius: '16px',
@@ -2539,7 +2538,7 @@ const Chat = () => {
                     label={currentTimeCopy.detail}
                     sx={{
                       bgcolor: 'rgba(148,163,184,0.12)',
-                      color: '#cbd5e1',
+                      color: '#475569',
                       mt: 1,
                       pt: 0.4,
                       borderRadius: '16px',
@@ -2554,7 +2553,7 @@ const Chat = () => {
                     label={displayedScore == null ? 'ai评分待生成' : `ai评分 ${displayedScore}`}
                     sx={{
                       bgcolor: 'rgba(245,158,11,0.10)',
-                      color: '#fbbf24',
+                      color: '#b45309',
                       mt: 1,
                       pt: 0.4,
                       borderRadius: '16px',
@@ -2569,10 +2568,10 @@ const Chat = () => {
                 sx={{
                   mt: 2,
                   pt: 2,
-                  borderTop: '1px solid rgba(148,163,184,0.12)',
+                  borderTop: '1px solid rgba(148, 163, 184, 0.18)',
                 }}
               >
-                <Typography variant="subtitle2" sx={{ color: '#f8fafc', fontWeight: 700 }}>
+                <Typography variant="subtitle2" sx={{ color: '#0f172a', fontWeight: 700 }}>
                   报告摘要
                 </Typography>
                 {reportLoading ? (
@@ -2584,7 +2583,7 @@ const Chat = () => {
                     <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
                       {report.summary}
                     </Typography>
-                    <Typography variant="caption" sx={{ mt: 0.6, display: 'block', color: 'rgba(191,219,254,0.9)' }}>
+                    <Typography variant="caption" sx={{ mt: 0.6, display: 'block', color: '#2563eb' }}>
                       有效作答轮次：{getEffectiveAnswerCount(report)}
                     </Typography>
                   </>
@@ -2601,13 +2600,13 @@ const Chat = () => {
               sx={{
                 p: 2.5,
                 borderRadius: 2.5,
-                bgcolor: 'rgba(15,23,42,0.72)',
-                backgroundImage: 'linear-gradient(180deg, rgba(147,197,253,0.08) 0%, rgba(15,23,42,0.78) 100%)',
+                bgcolor: '#ffffff',
+                backgroundImage: 'linear-gradient(180deg, rgba(,0.08) 0%, #ffffff 100%)',
               }}
             >
               <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.35 }}>
-                <WorkOutlineRoundedIcon sx={{ color: '#93c5fd', fontSize: 20 }} />
-                <Typography variant="subtitle1" sx={{ color: '#f8fafc', fontWeight: 700 }}>
+                <WorkOutlineRoundedIcon sx={{ color: '#2563eb', fontSize: 20 }} />
+                <Typography variant="subtitle1" sx={{ color: '#0f172a', fontWeight: 700 }}>
                   问答记录与参考答案
                 </Typography>
               </Stack>
@@ -2620,28 +2619,28 @@ const Chat = () => {
                       sx={{
                         p: 1.35,
                         borderRadius: 2,
-                        bgcolor: 'rgba(255,255,255,0.04)',
-                        border: '1px solid rgba(147,197,253,0.22)',
+                        bgcolor: '#f8fafc',
+                        border: '1px solid rgba(147, 197, 253, 0.32)',
                       }}
                     >
-                      <Typography variant="caption" sx={{ color: '#93c5fd', display: 'block', mb: 0.55 }}>
+                      <Typography variant="caption" sx={{ color: '#2563eb', display: 'block', mb: 0.55 }}>
                         第 {index + 1} 题 · 面试官问题
                       </Typography>
-                      <Typography variant="body2" sx={{ color: '#edf4ff', lineHeight: 1.7, mb: 1.1, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                      <Typography variant="body2" sx={{ color: '#1e293b', lineHeight: 1.7, mb: 1.1, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                         {item.question || '未记录问题'}
                       </Typography>
 
-                      <Typography variant="caption" sx={{ color: 'rgba(191,219,254,0.9)', display: 'block', mb: 0.55 }}>
+                      <Typography variant="caption" sx={{ color: '#2563eb', display: 'block', mb: 0.55 }}>
                         候选人回答
                       </Typography>
-                      <Typography variant="body2" sx={{ color: 'rgba(226,232,240,0.86)', lineHeight: 1.7, mb: 1.1, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                      <Typography variant="body2" sx={{ color: '#475569', lineHeight: 1.7, mb: 1.1, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                         {item.candidate_answer || '未记录回答'}
                       </Typography>
 
-                      <Typography variant="caption" sx={{ color: 'rgba(191,219,254,0.9)', display: 'block', mb: 0.55 }}>
+                      <Typography variant="caption" sx={{ color: '#2563eb', display: 'block', mb: 0.55 }}>
                         参考答案
                       </Typography>
-                      <Typography variant="body2" sx={{ color: 'rgba(226,232,240,0.86)', lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                      <Typography variant="body2" sx={{ color: '#475569', lineHeight: 1.7, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
                         {item.reference_answer || '暂无参考答案'}
                       </Typography>
                     </Box>
@@ -2652,11 +2651,11 @@ const Chat = () => {
                   sx={{
                     p: 1.35,
                     borderRadius: 2,
-                    bgcolor: 'rgba(255,255,255,0.04)',
-                    border: '1px solid rgba(147,197,253,0.22)',
+                    bgcolor: '#f8fafc',
+                    border: '1px solid rgba(147, 197, 253, 0.32)',
                   }}
                 >
-                  <Typography variant="body2" sx={{ color: '#edf4ff', fontSize: '0.96rem', lineHeight: 1.75 }}>
+                  <Typography variant="body2" sx={{ color: '#1e293b', fontSize: '0.96rem', lineHeight: 1.75 }}>
                     暂无可展示的问答记录。继续完成面试问答后会自动补充这一部分。
                   </Typography>
                 </Box>
@@ -2668,37 +2667,37 @@ const Chat = () => {
               sx={{
                 p: 2.5,
                 borderRadius: 2.5,
-                bgcolor: 'rgba(15,23,42,0.72)',
-                backgroundImage: 'linear-gradient(180deg, rgba(56,189,248,0.08) 0%, rgba(15,23,42,0.78) 100%)',
+                bgcolor: '#ffffff',
+                backgroundImage: 'linear-gradient(180deg, rgba(,0.08) 0%, #ffffff 100%)',
               }}
             >
-              <Typography variant="subtitle1" sx={{ color: '#f8fafc', mb: 1.5, fontWeight: 700 }}>
+              <Typography variant="subtitle1" sx={{ color: '#0f172a', mb: 1.5, fontWeight: 700 }}>
                 能力评估
               </Typography>
               {evaluationDisplay ? (
                 <Stack spacing={1}>
-                  <Chip icon={<AssignmentTurnedInRoundedIcon />} label={`技术准确性：${evaluationDisplay.technical_accuracy}`} sx={{ justifyContent: 'flex-start', bgcolor: 'rgba(148,163,184,0.08)', color: '#cbd5e1' }} />
-                  <Chip icon={<AutoGraphRoundedIcon />} label={`知识深度：${evaluationDisplay.knowledge_depth}`} sx={{ justifyContent: 'flex-start', bgcolor: 'rgba(148,163,184,0.08)', color: '#cbd5e1' }} />
-                  <Chip icon={<TipsAndUpdatesRoundedIcon />} label={`表达清晰度：${evaluationDisplay.communication_clarity}`} sx={{ justifyContent: 'flex-start', bgcolor: 'rgba(148,163,184,0.08)', color: '#cbd5e1' }} />
-                  <Chip icon={<AssignmentTurnedInRoundedIcon />} label={`逻辑结构：${evaluationDisplay.logical_structure}`} sx={{ justifyContent: 'flex-start', bgcolor: 'rgba(148,163,184,0.08)', color: '#cbd5e1' }} />
-                  <Chip icon={<AutoGraphRoundedIcon />} label={`问题解决：${evaluationDisplay.problem_solving}`} sx={{ justifyContent: 'flex-start', bgcolor: 'rgba(148,163,184,0.08)', color: '#cbd5e1' }} />
-                  <Chip icon={<TrackChangesRoundedIcon />} label={`岗位匹配度：${evaluationDisplay.job_match_score ?? 0}`} sx={{ justifyContent: 'flex-start', bgcolor: 'rgba(148,163,184,0.08)', color: '#cbd5e1' }} />
-                  <Chip icon={<TipsAndUpdatesRoundedIcon />} label={`综合得分：${evaluationDisplay.overall_score}`} sx={{ justifyContent: 'flex-start', bgcolor: 'rgba(125,211,252,0.12)', color: '#7dd3fc' }} />
+                  <Chip icon={<AssignmentTurnedInRoundedIcon />} label={`技术准确性：${evaluationDisplay.technical_accuracy}`} sx={{ justifyContent: 'flex-start', bgcolor: 'rgba(148,163,184,0.08)', color: '#475569' }} />
+                  <Chip icon={<AutoGraphRoundedIcon />} label={`知识深度：${evaluationDisplay.knowledge_depth}`} sx={{ justifyContent: 'flex-start', bgcolor: 'rgba(148,163,184,0.08)', color: '#475569' }} />
+                  <Chip icon={<TipsAndUpdatesRoundedIcon />} label={`表达清晰度：${evaluationDisplay.communication_clarity}`} sx={{ justifyContent: 'flex-start', bgcolor: 'rgba(148,163,184,0.08)', color: '#475569' }} />
+                  <Chip icon={<AssignmentTurnedInRoundedIcon />} label={`逻辑结构：${evaluationDisplay.logical_structure}`} sx={{ justifyContent: 'flex-start', bgcolor: 'rgba(148,163,184,0.08)', color: '#475569' }} />
+                  <Chip icon={<AutoGraphRoundedIcon />} label={`问题解决：${evaluationDisplay.problem_solving}`} sx={{ justifyContent: 'flex-start', bgcolor: 'rgba(148,163,184,0.08)', color: '#475569' }} />
+                  <Chip icon={<TrackChangesRoundedIcon />} label={`岗位匹配度：${evaluationDisplay.job_match_score ?? 0}`} sx={{ justifyContent: 'flex-start', bgcolor: 'rgba(148,163,184,0.08)', color: '#475569' }} />
+                  <Chip icon={<TipsAndUpdatesRoundedIcon />} label={`综合得分：${evaluationDisplay.overall_score}`} sx={{ justifyContent: 'flex-start', bgcolor: 'rgba(125,211,252,0.12)', color: '#0284c7' }} />
                   {evaluationDisplay.assessment_version === 'rubric-v2' && (
-                    <Typography variant="caption" sx={{ color: 'rgba(191,219,254,0.82)', mt: 0.3 }}>
+                    <Typography variant="caption" sx={{ color: '#475569', mt: 0.3 }}>
                       本场综合分按题型 Rubric 加权；能力结论会随覆盖题数更新。
                     </Typography>
                   )}
                   {competencyItems.length > 0 && (
-                    <Box sx={{ pt: 1.2, mt: 0.2, borderTop: '1px solid rgba(148,163,184,0.12)' }}>
-                      <Typography variant="subtitle2" sx={{ color: '#f8fafc', fontWeight: 700, mb: 0.8 }}>
+                    <Box sx={{ pt: 1.2, mt: 0.2, borderTop: '1px solid rgba(148, 163, 184, 0.18)' }}>
+                      <Typography variant="subtitle2" sx={{ color: '#0f172a', fontWeight: 700, mb: 0.8 }}>
                         能力覆盖与置信度
                       </Typography>
                       <Stack spacing={0.85}>
                         {competencyItems.slice(0, 6).map((item) => (
                           <Box key={item.capability}>
                             <Stack direction="row" spacing={0.8} alignItems="center" justifyContent="space-between">
-                              <Typography variant="body2" sx={{ color: 'rgba(226,232,240,0.92)' }}>
+                              <Typography variant="body2" sx={{ color: '#1e293b' }}>
                                 {item.capability} · {item.score} 分
                               </Typography>
                               <Chip
@@ -2708,7 +2707,7 @@ const Chat = () => {
                               />
                             </Stack>
                             {item.missing_points?.[0] && (
-                              <Typography variant="caption" sx={{ display: 'block', color: 'rgba(191,219,254,0.78)', mt: 0.2, lineHeight: 1.55 }}>
+                              <Typography variant="caption" sx={{ display: 'block', color: '#64748b', mt: 0.2, lineHeight: 1.55 }}>
                                 待补：{item.missing_points[0]}
                               </Typography>
                             )}
@@ -2718,8 +2717,8 @@ const Chat = () => {
                     </Box>
                   )}
                   {jdRequirementItems.length > 0 && (
-                    <Box sx={{ pt: 1.2, mt: 0.2, borderTop: '1px solid rgba(148,163,184,0.12)' }}>
-                      <Typography variant="subtitle2" sx={{ color: '#f8fafc', fontWeight: 700, mb: 0.8 }}>
+                    <Box sx={{ pt: 1.2, mt: 0.2, borderTop: '1px solid rgba(148, 163, 184, 0.18)' }}>
+                      <Typography variant="subtitle2" sx={{ color: '#0f172a', fontWeight: 700, mb: 0.8 }}>
                         JD 要求核对
                       </Typography>
                       <Stack spacing={0.65}>
@@ -2730,7 +2729,7 @@ const Chat = () => {
                               label={item.status || '不适用'}
                               sx={{ height: 21, flexShrink: 0, color: item.status === '已体现' ? '#86efac' : item.status === '部分体现' ? '#fde68a' : '#fda4af', bgcolor: 'rgba(148,163,184,0.10)' }}
                             />
-                            <Typography variant="caption" sx={{ color: 'rgba(226,232,240,0.82)', lineHeight: 1.55 }}>
+                            <Typography variant="caption" sx={{ color: '#475569', lineHeight: 1.55 }}>
                               {item.requirement}
                             </Typography>
                           </Stack>
@@ -2743,14 +2742,14 @@ const Chat = () => {
                       sx={{
                         p: 1.4,
                         borderRadius: 2,
-                        bgcolor: 'rgba(255,255,255,0.04)',
-                        border: '1px solid rgba(125,211,252,0.12)',
+                        bgcolor: '#f8fafc',
+                        border: '1px solid rgba(125, 211, 252, 0.24)',
                       }}
                     >
-                      <Typography variant="subtitle2" sx={{ color: '#f8fafc', fontWeight: 700, mb: 0.8 }}>
+                      <Typography variant="subtitle2" sx={{ color: '#0f172a', fontWeight: 700, mb: 0.8 }}>
                         内容分析
                       </Typography>
-                      <Typography variant="body2" sx={{ color: 'rgba(226,232,240,0.84)', lineHeight: 1.75 }}>
+                      <Typography variant="body2" sx={{ color: '#475569', lineHeight: 1.75 }}>
                         {evaluationDisplay.content_analysis}
                       </Typography>
                     </Box>
@@ -2762,7 +2761,7 @@ const Chat = () => {
                     sx={{
                       p: 1.4,
                       borderRadius: 2,
-                      bgcolor: 'rgba(255,255,255,0.04)',
+                      bgcolor: '#f8fafc',
                       border: '1px solid rgba(148,163,184,0.12)',
                     }}
                   >
@@ -2771,7 +2770,7 @@ const Chat = () => {
                       variant="body2"
                       sx={{
                         mt: 0.9,
-                        color: 'rgba(226,232,240,0.84)',
+                        color: '#475569',
                         fontSize: '0.93rem',
                         lineHeight: 1.65,
                       }}
@@ -2788,17 +2787,17 @@ const Chat = () => {
               sx={{
                 p: 2.5,
                 borderRadius: 2.5,
-                bgcolor: 'rgba(15,23,42,0.72)',
-                backgroundImage: 'linear-gradient(180deg, rgba(245,158,11,0.08) 0%, rgba(15,23,42,0.78) 100%)',
+                bgcolor: '#ffffff',
+                backgroundImage: 'linear-gradient(180deg, rgba(,0.08) 0%, #ffffff 100%)',
               }}
             >
               <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.35 }}>
-                <LightbulbRoundedIcon sx={{ color: '#fbbf24', fontSize: 20 }} />
-                <Typography variant="subtitle1" sx={{ color: '#f8fafc', fontWeight: 700 }}>
+                <LightbulbRoundedIcon sx={{ color: '#b45309', fontSize: 20 }} />
+                <Typography variant="subtitle1" sx={{ color: '#0f172a', fontWeight: 700 }}>
                 作答提示
                 </Typography>
               </Stack>
-              <Typography variant="body2" sx={{ color: 'rgba(226,232,240,0.72)', mb: 1.45, lineHeight: 1.7 }}>
+              <Typography variant="body2" sx={{ color: '#64748b', mb: 1.45, lineHeight: 1.7 }}>
                 用更短的段落拆开信息，阅读起来会轻很多，也更方便你在作答前快速抓重点。
               </Typography>
               <Stack spacing={1.15}>
@@ -2809,14 +2808,14 @@ const Chat = () => {
                       sx={{
                         p: 1.35,
                         borderRadius: 2,
-                        bgcolor: 'rgba(255,255,255,0.04)',
-                        border: '1px solid rgba(245,158,11,0.14)',
+                        bgcolor: '#f8fafc',
+                        border: '1px solid rgba(245, 158, 11, 0.24)',
                       }}
                     >
                       <Typography
                         variant="body2"
                         sx={{
-                          color: '#edf4ff',
+                          color: '#1e293b',
                           fontSize: '0.96rem',
                           lineHeight: 1.75,
                         }}
@@ -2831,11 +2830,11 @@ const Chat = () => {
                       sx={{
                         p: 1.35,
                         borderRadius: 2,
-                        bgcolor: 'rgba(255,255,255,0.04)',
-                        border: '1px solid rgba(245,158,11,0.14)',
+                        bgcolor: '#f8fafc',
+                        border: '1px solid rgba(245, 158, 11, 0.24)',
                       }}
                     >
-                      <Typography variant="body2" sx={{ color: '#edf4ff', fontSize: '0.96rem', lineHeight: 1.75 }}>
+                      <Typography variant="body2" sx={{ color: '#1e293b', fontSize: '0.96rem', lineHeight: 1.75 }}>
                         先给出你的判断，再解释原因，最后补充影响或复盘结论。
                       </Typography>
                     </Box>
@@ -2843,11 +2842,11 @@ const Chat = () => {
                       sx={{
                         p: 1.35,
                         borderRadius: 2,
-                        bgcolor: 'rgba(255,255,255,0.04)',
-                        border: '1px solid rgba(245,158,11,0.14)',
+                        bgcolor: '#f8fafc',
+                        border: '1px solid rgba(245, 158, 11, 0.24)',
                       }}
                     >
-                      <Typography variant="body2" sx={{ color: '#edf4ff', fontSize: '0.96rem', lineHeight: 1.75 }}>
+                      <Typography variant="body2" sx={{ color: '#1e293b', fontSize: '0.96rem', lineHeight: 1.75 }}>
                         如果被问到复杂方案题，先讲假设条件和取舍，再落到具体方案与技术选择。
                       </Typography>
                     </Box>
@@ -2861,13 +2860,13 @@ const Chat = () => {
               sx={{
                 p: 2.5,
                 borderRadius: 2.5,
-                bgcolor: 'rgba(15,23,42,0.72)',
-                backgroundImage: 'linear-gradient(180deg, rgba(52,211,153,0.08) 0%, rgba(15,23,42,0.78) 100%)',
+                bgcolor: '#ffffff',
+                backgroundImage: 'linear-gradient(180deg, rgba(,0.08) 0%, #ffffff 100%)',
               }}
             >
               <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.35 }}>
-                <MenuBookRoundedIcon sx={{ color: '#6ee7b7', fontSize: 20 }} />
-                <Typography variant="subtitle1" sx={{ color: '#f8fafc', fontWeight: 700 }}>
+                <MenuBookRoundedIcon sx={{ color: '#059669', fontSize: 20 }} />
+                <Typography variant="subtitle1" sx={{ color: '#0f172a', fontWeight: 700 }}>
                 推荐资源
                 </Typography>
               </Stack>
@@ -2879,14 +2878,14 @@ const Chat = () => {
                       sx={{
                         p: 1.35,
                         borderRadius: 2,
-                        bgcolor: 'rgba(255,255,255,0.04)',
-                        border: '1px solid rgba(52,211,153,0.14)',
+                        bgcolor: '#f8fafc',
+                        border: '1px solid rgba(52, 211, 153, 0.24)',
                       }}
                     >
-                      <Typography variant="body2" sx={{ color: '#f8fafc', fontSize: '0.98rem', fontWeight: 700 }}>
+                      <Typography variant="body2" sx={{ color: '#0f172a', fontSize: '0.98rem', fontWeight: 700 }}>
                         {resource.title}
                       </Typography>
-                      <Typography variant="body2" sx={{ mt: 0.65, color: 'rgba(226,232,240,0.82)', fontSize: '0.93rem', lineHeight: 1.7 }}>
+                      <Typography variant="body2" sx={{ mt: 0.65, color: '#475569', fontSize: '0.93rem', lineHeight: 1.7 }}>
                         {resource.category} · {resource.reason}
                       </Typography>
                     </Box>
@@ -2897,11 +2896,11 @@ const Chat = () => {
                   sx={{
                     p: 1.35,
                     borderRadius: 2,
-                    bgcolor: 'rgba(255,255,255,0.04)',
-                    border: '1px solid rgba(52,211,153,0.14)',
+                    bgcolor: '#f8fafc',
+                    border: '1px solid rgba(52, 211, 153, 0.24)',
                   }}
                 >
-                  <Typography variant="body2" sx={{ color: '#edf4ff', fontSize: '0.96rem', lineHeight: 1.75 }}>
+                  <Typography variant="body2" sx={{ color: '#1e293b', fontSize: '0.96rem', lineHeight: 1.75 }}>
                     完成几轮有效作答后，这里会根据你的短板推荐针对性的学习资源。
                   </Typography>
                 </Box>

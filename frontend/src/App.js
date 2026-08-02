@@ -14,22 +14,26 @@ import TrainingCamp from './pages/TrainingCamp';
 
 const interviewTheme = createTheme({
   palette: {
-    mode: 'dark',
+    mode: 'light',
     primary: {
-      main: '#7dd3fc',
+      main: '#0284c7',
     },
     secondary: {
-      main: '#f59e0b',
+      main: '#d97706',
     },
     background: {
-      default: '#07111f',
-      paper: '#0d1728',
+      default: '#f4f7fb',
+      paper: '#ffffff',
     },
     success: {
-      main: '#34d399',
+      main: '#059669',
     },
     warning: {
-      main: '#fbbf24',
+      main: '#d97706',
+    },
+    text: {
+      primary: '#0f172a',
+      secondary: '#475569',
     },
   },
   shape: {
@@ -58,19 +62,19 @@ const interviewTheme = createTheme({
       styleOverrides: {
         body: {
           background:
-            'radial-gradient(circle at top left, rgba(14,165,233,0.18), transparent 30%), radial-gradient(circle at top right, rgba(245,158,11,0.12), transparent 24%), linear-gradient(180deg, #07111f 0%, #0a1322 100%)',
-          scrollbarColor: '#3b4c68 #0d1728',
+            'linear-gradient(180deg, #f8fbff 0%, #eef4fb 100%)',
+          scrollbarColor: '#cbd5e1 #f8fafc',
           '&::-webkit-scrollbar, & *::-webkit-scrollbar': {
-            backgroundColor: '#0d1728',
+            backgroundColor: '#f8fafc',
             width: 10,
             height: 10,
           },
           '&::-webkit-scrollbar-thumb, & *::-webkit-scrollbar-thumb': {
             borderRadius: 10,
-            backgroundColor: '#36506b',
+            backgroundColor: '#cbd5e1',
           },
           '&::-webkit-scrollbar-thumb:hover, & *::-webkit-scrollbar-thumb:hover': {
-            backgroundColor: '#4d6a88',
+            backgroundColor: '#94a3b8',
           },
         },
       },
@@ -79,17 +83,18 @@ const interviewTheme = createTheme({
       styleOverrides: {
         root: {
           backgroundImage: 'none',
-          border: '1px solid rgba(125, 211, 252, 0.08)',
+          border: '1px solid rgba(148, 163, 184, 0.18)',
         },
       },
     },
     MuiAppBar: {
       styleOverrides: {
         root: {
-          background: 'rgba(7, 17, 31, 0.78)',
+          background: 'rgba(255, 255, 255, 0.86)',
           backdropFilter: 'blur(16px)',
-          borderBottom: '1px solid rgba(125, 211, 252, 0.10)',
-          boxShadow: 'none',
+          borderBottom: '1px solid rgba(148, 163, 184, 0.18)',
+          boxShadow: '0 10px 30px rgba(15, 23, 42, 0.06)',
+          color: '#0f172a',
         },
       },
     },
