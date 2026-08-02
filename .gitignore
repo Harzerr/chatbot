@@ -121,6 +121,9 @@ venv.bak/
 # Project specific
 sentence_index/
 merging_index/
+backups/
+logs/tmux/
+uploads/
 *.pdf
 *.db
 *.sqlite
