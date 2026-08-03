@@ -1,7 +1,7 @@
 % Abstracted from E:\offer\example.tex. Compile with XeLaTeX.
 \documentclass[UTF8,a4paper,10pt,fontset=none]{ctexart}
 
-\usepackage[left=9.52mm,right=9.64mm,top=7.93mm,bottom=8mm,headheight=0pt,headsep=0pt,footskip=0pt]{geometry}
+%%GEOMETRY%%
 \usepackage{array}
 \usepackage{enumitem}
 \usepackage{eso-pic}
@@ -35,12 +35,13 @@
 \renewcommand{\labelitemi}{\textbullet}
 \linespread{1}
 
-\newcommand{\ResumeBodyFont}{\fontsize{10.5pt}{15.73pt}\selectfont}
+\newcommand{\ResumeBodyFont}{%%BODY_FONT%%}
 \newcommand{\ResumeIcon}[2]{\ifresumeicons#1\hspace{0.55em}\fi#2}
 \newcommand{\ResumeName}{%%NAME%%}
 \newcommand{\ResumeContact}{%%CONTACT%%}
 \newcommand{\ResumeTargetRole}{%%TARGET_ROLE%%}
 \newcommand{\ResumePhoto}{%%PHOTO_BLOCK%%}
+\newcommand{\ResumeSectionFont}{\fontsize{12pt}{14.5pt}\selectfont}
 
 % Header geometry and visual treatment follow the supplied example.tex master.
 \newcommand{\PlaceResumeHeader}{%
@@ -57,7 +58,7 @@
 
 \newcommand{\ResumeSection}[2][2.8mm]{%
   \par\vspace{#1}%
-  {\fontsize{12pt}{14.5pt}\selectfont\bfseries #2\par}%
+  {\ResumeSectionFont\bfseries #2\par}%
   \vspace{1.55mm}%
   {\color{ResumeRule}\hrule height 1.5pt}%
   \vspace{3.35mm}%

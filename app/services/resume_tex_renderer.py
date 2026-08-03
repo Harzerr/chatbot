@@ -1,4 +1,5 @@
 import io
+import math
 import re
 import shutil
 import subprocess
@@ -28,6 +29,47 @@ _TEX_ESCAPES = {
 def _escape_tex(value: Any) -> str:
     text = str(value or "")
     return "".join(_TEX_ESCAPES.get(char, char) for char in text).replace("\r", " ").replace("\n", " ").strip()
+
+
+def _layout_value(value: Any, default: float, minimum: float, maximum: float) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return default
+    if not math.isfinite(parsed):
+        return default
+    return max(minimum, min(maximum, parsed))
+
+
+def _layout(content: dict[str, Any]) -> dict[str, Any]:
+    value = content.get("layout")
+    return value if isinstance(value, dict) else {}
+
+
+def _section_style(content: dict[str, Any], key: str) -> tuple[float, int, str]:
+    layout = _layout(content)
+    styles = layout.get("sectionStyles") if isinstance(layout.get("sectionStyles"), dict) else {}
+    style = styles.get(key) if isinstance(styles.get(key), dict) else {}
+    size = _layout_value(style.get("fontSize", layout.get("fontSize", 10.5)), 10.5, 8, 16)
+    weight = int(_layout_value(style.get("fontWeight", 400), 400, 400, 800))
+    color = str(style.get("color") or "#17202a")
+    if not re.fullmatch(r"#[0-9A-Fa-f]{6}", color):
+        color = "#17202a"
+    return size, weight, color[1:]
+
+
+def _styled_block(content: dict[str, Any], key: str, block: str) -> str:
+    size, weight, color = _section_style(content, key)
+    leading = size * 1.5
+    weight_command = r"\bfseries" if weight >= 600 else r"\mdseries"
+    return (
+        "\\begingroup\n"
+        f"\\fontsize{{{size:.1f}pt}}{{{leading:.2f}pt}}\\selectfont\n"
+        f"\\renewcommand{{\\ResumeSectionFont}}{{\\fontsize{{{size:.1f}pt}}{{{leading:.2f}pt}}\\selectfont}}\n"
+        f"{weight_command}\\color[HTML]{{{color}}}\n"
+        f"{block}\n"
+        "\\endgroup"
+    )
 
 
 def _items(items: list[Any]) -> str:
@@ -108,9 +150,12 @@ def _education(entries: Any) -> str:
 
 def _content(content: dict[str, Any]) -> str:
     blocks: list[str] = []
+    summary = _escape_tex(content.get("summary"))
+    if summary:
+        blocks.append(_styled_block(content, "summary", f"\\ResumeSection[0pt]{{职业摘要}}\n{summary}\\par"))
     education = _education(content.get("education"))
     if education:
-        blocks.append(education)
+        blocks.append(_styled_block(content, "education", education))
     headings: set[str] = set()
     for section in content.get("sections", []):
         if not isinstance(section, dict):
@@ -122,13 +167,13 @@ def _content(content: dict[str, Any]) -> str:
         if not heading or not section_body or (education and heading == "教育背景"):
             continue
         headings.add(heading)
-        blocks.append(f"\\ResumeSection{{{heading}}}\n{section_body}")
+        blocks.append(_styled_block(content, section.get("heading") or "other", f"\\ResumeSection{{{heading}}}\n{section_body}"))
 
     skills = content.get("skills")
     if isinstance(skills, list) and skills and "专业技能" not in headings:
         items = _items(skills)
         if items:
-            blocks.append(f"\\ResumeSection{{专业技能}}\n{items}")
+            blocks.append(_styled_block(content, "专业技能", f"\\ResumeSection{{专业技能}}\n{items}"))
     return "\n\n".join(blocks) or "\\ResumeSection[0pt]{简历内容}\n暂无可导出的已确认内容。"
 
 
@@ -145,6 +190,10 @@ def _photo_block(avatar_name: str | None) -> str:
 
 def render_resume_tex(content: dict[str, Any], user: Any, title: str = "", avatar_name: str | None = None) -> str:
     template = TEMPLATE_PATH.read_text(encoding="utf-8")
+    layout = _layout(content)
+    body_size = _layout_value(layout.get("fontSize"), 10.5, 8, 16)
+    body_leading = body_size * 1.5
+    padding = _layout_value(layout.get("padding"), 15, 8, 24)
     phone = _escape_tex(getattr(user, "phone", ""))
     email = _escape_tex(getattr(user, "email", ""))
     contact_parts = []
@@ -155,6 +204,8 @@ def render_resume_tex(content: dict[str, Any], user: Any, title: str = "", avata
     contact = "\\hspace{2.2em}".join(contact_parts)
     role = _escape_tex(content.get("headline") or getattr(user, "target_role", "") or title or "求职简历")
     replacements = {
+        "%%GEOMETRY%%": f"\\usepackage[left={padding:.1f}mm,right={padding:.1f}mm,top={padding:.1f}mm,bottom={padding:.1f}mm,headheight=0pt,headsep=0pt,footskip=0pt]{{geometry}}",
+        "%%BODY_FONT%%": f"\\fontsize{{{body_size:.1f}pt}}{{{body_leading:.2f}pt}}\\selectfont",
         "%%NAME%%": _escape_tex(getattr(user, "full_name", "") or "未填写姓名"),
         "%%CONTACT%%": contact,
         "%%TARGET_ROLE%%": role,

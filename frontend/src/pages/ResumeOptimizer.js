@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Alert,
@@ -24,7 +24,6 @@ import {
 } from '@mui/material';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
-import ImportExportRoundedIcon from '@mui/icons-material/ImportExportRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
 import KeyboardArrowUpRoundedIcon from '@mui/icons-material/KeyboardArrowUpRounded';
@@ -41,6 +40,17 @@ const sectionLabels = {
   '专业技能': '专业技能',
   '竞赛与荣誉': '竞赛与荣誉',
 };
+
+const styleLabels = {
+  summary: '职业摘要',
+  education: '教育背景',
+  '实习经历': '实习经历',
+  '项目经历': '项目经历',
+  '专业技能': '专业技能',
+  '竞赛与荣誉': '竞赛与荣誉',
+};
+
+const defaultSectionStyle = { fontSize: 10.5, fontWeight: 400, color: '#17202a' };
 
 const clone = (value) => JSON.parse(JSON.stringify(value || {}));
 
@@ -61,7 +71,11 @@ const updateSection = (content, index, updater) => {
   return next;
 };
 
-const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, fontSize, padding, onChange }) => {
+const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionStyles, fontSize, padding, onChange }) => {
+  const measureRef = useRef(null);
+  const [pageGroups, setPageGroups] = useState([]);
+  const getSectionStyle = (key) => ({ ...defaultSectionStyle, fontSize, ...(sectionStyles[key] || {}) });
+
   const updateEntry = (sectionIndex, entryIndex, field, value) => {
     onChange(updateSection(content, sectionIndex, (section) => {
       const next = { ...section, entries: [...(section.entries || [])] };
@@ -78,143 +92,165 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, fontSize, 
     }));
   };
 
-  return (
-    <Box
-      sx={{
-        width: '210mm',
-        minHeight: '297mm',
-        maxWidth: '100%',
-        bgcolor: '#fff',
-        color: '#17202a',
-        p: `${padding}mm`,
-        fontSize: `${fontSize}pt`,
-        lineHeight: 1.55,
-        boxShadow: '0 16px 40px rgba(15, 23, 42, 0.14)',
-        overflowWrap: 'anywhere',
-        fontFamily: 'Arial, "Microsoft YaHei", sans-serif',
-        backgroundImage: 'repeating-linear-gradient(to bottom, #ffffff 0, #ffffff calc(297mm - 8px), #dbe4ef calc(297mm - 8px), #dbe4ef 297mm)',
-        '& .MuiInput-underline:before, & .MuiInput-underline:after': { display: 'none' },
-      }}
-    >
+  const sectionHeading = (heading) => {
+    const style = getSectionStyle(sectionKey(heading));
+    return (
+      <Typography sx={{ borderLeft: '3px solid #0f766e', pl: 1, mb: 1, fontWeight: 800, fontSize: `${style.fontSize}pt`, color: style.color }}>
+      {sectionLabels[heading] || heading || '其他经历'}
+      </Typography>
+    );
+  };
+
+  const renderEntry = (sectionIndex, heading, entry, entryIndex) => {
+    const style = getSectionStyle(sectionKey(heading));
+    return (
+    <Box sx={{ mb: 1.3, breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${style.fontSize}pt`, fontWeight: style.fontWeight, color: style.color }}>
+      <Stack direction="row" spacing={1} alignItems="baseline" justifyContent="space-between">
+        <TextField
+          variant="standard"
+          value={entry.title || ''}
+          onChange={(event) => updateEntry(sectionIndex, entryIndex, 'title', event.target.value)}
+          sx={{ flex: 1, '& .MuiInputBase-root': { fontWeight: 700, fontSize: 'inherit' } }}
+        />
+        <TextField
+          variant="standard"
+          value={entry.period || ''}
+          onChange={(event) => updateEntry(sectionIndex, entryIndex, 'period', event.target.value)}
+          sx={{ width: 125, '& .MuiInputBase-root': { fontSize: '0.92em', color: '#52606d' } }}
+        />
+      </Stack>
+      <TextField
+        variant="standard"
+        fullWidth
+        value={entry.subtitle || ''}
+        onChange={(event) => updateEntry(sectionIndex, entryIndex, 'subtitle', event.target.value)}
+        placeholder="角色 / 职位"
+        sx={{ '& .MuiInputBase-root': { fontSize: '0.94em', color: '#52606d' } }}
+      />
+      {entry.summary && (
+        <TextField
+          variant="standard"
+          fullWidth
+          multiline
+          value={entry.summary || ''}
+          onChange={(event) => updateEntry(sectionIndex, entryIndex, 'summary', event.target.value)}
+          sx={{ mt: 0.4, '& .MuiInputBase-root': { fontSize: '0.96em' } }}
+        />
+      )}
+      {entry.tech_stack?.length > 0 && <Typography variant="caption" sx={{ display: 'block', mt: 0.4, color: '#0f766e' }}>技术栈：{entry.tech_stack.join('、')}</Typography>}
+      {(entry.items || []).map((item, itemIndex) => (
+        <TextField
+          key={`${item.label}-${itemIndex}`}
+          variant="standard"
+          fullWidth
+          multiline
+          value={item.text || ''}
+          onChange={(event) => updateEntry(sectionIndex, entryIndex, 'items', (entry.items || []).map((current, index) => index === itemIndex ? { ...current, text: event.target.value } : current))}
+          sx={{ mt: 0.35, '& .MuiInputBase-root': { fontSize: '0.96em' } }}
+          InputProps={{ startAdornment: <Box component="span" sx={{ mr: 0.7, color: '#0f766e' }}>•</Box> }}
+        />
+      ))}
+    </Box>
+    );
+  };
+
+  const blocks = [];
+  blocks.push({
+    key: 'header',
+    node: (
       <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, borderLeft: '4px solid #0f766e', pl: 2, mb: 2.5 }}>
         <Box sx={{ minWidth: 0 }}>
-          <Typography sx={{ fontSize: `${Math.max(fontSize + 7, 17)}pt`, fontWeight: 800 }}>
-            {user?.full_name || '姓名待确认'}
-          </Typography>
+          <Typography sx={{ fontSize: `${Math.max(fontSize + 7, 17)}pt`, fontWeight: 800 }}>{user?.full_name || '姓名待确认'}</Typography>
           <Typography sx={{ color: '#0f766e', fontWeight: 700, mt: 0.25 }}>{content.headline}</Typography>
-          <Typography variant="body2" sx={{ color: '#52606d', mt: 1 }}>
-            {[user?.phone, user?.email, user?.target_role].filter(Boolean).join('  ·  ') || '请在个人档案补充联系方式'}
-          </Typography>
+          <Typography variant="body2" sx={{ color: '#52606d', mt: 1 }}>{[user?.phone, user?.email, user?.target_role].filter(Boolean).join('  ·  ') || '请在个人档案补充联系方式'}</Typography>
         </Box>
-        <Avatar
-          src={user?.avatar_url || undefined}
-          alt="证件照"
-          variant="square"
-          sx={{ width: 76, height: 96, flex: '0 0 auto', bgcolor: '#f1f5f9', color: '#64748b', border: '1px solid #cbd5e1', fontSize: 12 }}
-        >
-          证件照
-        </Avatar>
+        <Avatar src={user?.avatar_url || undefined} alt="证件照" variant="square" sx={{ width: 76, height: 96, flex: '0 0 auto', bgcolor: '#f1f5f9', color: '#64748b', border: '1px solid #cbd5e1', fontSize: 12 }}>证件照</Avatar>
       </Box>
+    ),
+  });
+  blocks.push({
+    key: 'summary',
+    node: (() => {
+      const style = getSectionStyle('summary');
+      return <TextField fullWidth variant="standard" label="职业摘要（可编辑）" value={content.summary || ''} onChange={(event) => onChange({ ...content, summary: event.target.value })} multiline sx={{ mb: 2, fontSize: `${style.fontSize}pt`, color: style.color, '& .MuiInputBase-root': { fontSize: 'inherit', fontWeight: style.fontWeight, color: style.color } }} />;
+    })(),
+  });
 
-      <TextField
-        fullWidth
-        variant="standard"
-        label="职业摘要（可编辑）"
-        value={content.summary || ''}
-        onChange={(event) => onChange({ ...content, summary: event.target.value })}
-        multiline
-        sx={{ mb: 2, '& .MuiInputBase-root': { fontSize: 'inherit' } }}
-      />
+  if (!hiddenSections.education && content.education?.length > 0) {
+    const educationStyle = getSectionStyle('education');
+    content.education.forEach((item, index) => blocks.push({
+      key: `education-${index}`,
+      node: <Box sx={{ mb: 1.1, breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${educationStyle.fontSize}pt`, fontWeight: educationStyle.fontWeight, color: educationStyle.color }}>{index === 0 && sectionHeading('education')}<Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}><Typography fontWeight={700}>{[item.school, item.major, item.degree].filter(Boolean).join(' · ') || item.title || '教育经历'}</Typography><Typography sx={{ whiteSpace: 'nowrap', color: '#52606d' }}>{[item.start_date, item.end_date].filter(Boolean).join(' - ')}</Typography></Box></Box>,
+    }));
+  }
 
-      {!hiddenSections.education && content.education?.length > 0 && (
-        <Box sx={{ mb: 2 }}>
-          <Typography sx={{ borderLeft: '3px solid #0f766e', pl: 1, mb: 1, fontWeight: 800 }}>教育背景</Typography>
-          {content.education.map((item, index) => (
-            <Box key={`${item.school || item.title}-${index}`} sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, mb: 0.6 }}>
-              <Typography fontWeight={700}>{[item.school, item.major, item.degree].filter(Boolean).join(' · ') || item.title || '教育经历'}</Typography>
-              <Typography sx={{ whiteSpace: 'nowrap', color: '#52606d' }}>{[item.start_date, item.end_date].filter(Boolean).join(' - ')}</Typography>
-            </Box>
-          ))}
+  content.sections.forEach((section, sectionIndex) => {
+    const key = sectionKey(section.heading);
+    if (hiddenSections[key]) return;
+    const visibleEntries = (section.entries || []).filter((entry, entryIndex) => key !== '项目经历' || !hiddenProjects[`${sectionIndex}-${entryIndex}`]);
+    visibleEntries.forEach((entry) => {
+      const entryIndex = (section.entries || []).indexOf(entry);
+      const style = getSectionStyle(key);
+      blocks.push({ key: `${key}-entry-${entryIndex}`, node: <Box sx={{ fontSize: `${style.fontSize}pt`, fontWeight: style.fontWeight, color: style.color }}>{entryIndex === (section.entries || []).indexOf(visibleEntries[0]) && sectionHeading(section.heading)}{renderEntry(sectionIndex, section.heading, entry, entryIndex)}</Box> });
+    });
+    (section.items || []).forEach((item, itemIndex) => blocks.push({
+      key: `${key}-item-${itemIndex}`,
+      node: (() => {
+        const style = getSectionStyle(key);
+        return <Box sx={{ breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${style.fontSize}pt`, fontWeight: style.fontWeight, color: style.color }}>{itemIndex === 0 && visibleEntries.length === 0 && sectionHeading(section.heading)}<TextField variant="standard" fullWidth multiline value={item.text || item.label || ''} onChange={(event) => updateItem(sectionIndex, itemIndex, event.target.value)} sx={{ mb: 0.35, '& .MuiInputBase-root': { fontSize: '0.96em', fontWeight: style.fontWeight, color: style.color } }} InputProps={{ startAdornment: <Box component="span" sx={{ mr: 0.7, color: '#0f766e' }}>•</Box> }} /></Box>;
+      })(),
+    }));
+  });
+  blocks.push({ key: 'footer', node: <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', textAlign: 'right', mt: 3 }}>职引 · 仅使用已确认职业事实</Typography> });
+
+  useLayoutEffect(() => {
+    if (!measureRef.current) return;
+    const pageHeight = (297 - padding * 2) * (96 / 25.4);
+    const measuredBlocks = [...measureRef.current.querySelectorAll('[data-resume-measure-block]')];
+    const groups = [];
+    let current = [];
+    let usedHeight = 0;
+    measuredBlocks.forEach((element, index) => {
+      const height = element.getBoundingClientRect().height;
+      if (current.length && usedHeight + height > pageHeight) {
+        groups.push(current);
+        current = [];
+        usedHeight = 0;
+      }
+      current.push(index);
+      usedHeight += height;
+    });
+    if (current.length) groups.push(current);
+    setPageGroups(groups);
+  }, [content, hiddenSections, hiddenProjects, sectionStyles, fontSize, padding]);
+
+  const groups = pageGroups.length ? pageGroups : [blocks.map((_, index) => index)];
+  const pageSx = {
+    width: '210mm',
+    minHeight: '297mm',
+    maxWidth: '100%',
+    bgcolor: '#fff',
+    color: '#17202a',
+    p: `${padding}mm`,
+    fontSize: `${fontSize}pt`,
+    lineHeight: 1.55,
+    overflowWrap: 'anywhere',
+    fontFamily: 'Arial, "Microsoft YaHei", sans-serif',
+    boxSizing: 'border-box',
+    '& .MuiInput-underline:before, & .MuiInput-underline:after': { display: 'none' },
+  };
+
+  return (
+    <Box>
+      <Typography variant="caption" sx={{ display: 'block', color: '#64748b', mb: 1 }}>A4 分页预览 · 每页 210 × 297 mm · 共 {groups.length} 页</Typography>
+      <Box ref={measureRef} sx={{ position: 'absolute', left: '-100000px', top: 0, visibility: 'hidden', pointerEvents: 'none', width: '210mm', ...pageSx, height: 'auto' }}>
+        {blocks.map((block) => <Box key={`measure-${block.key}`} data-resume-measure-block>{block.node}</Box>)}
+      </Box>
+      {groups.map((group, pageIndex) => (
+        <Box key={`page-${pageIndex}`} sx={{ ...pageSx, mb: pageIndex < groups.length - 1 ? 1 : 0, boxShadow: '0 16px 40px rgba(15, 23, 42, 0.14)' }}>
+          {group.map((blockIndex) => <React.Fragment key={blocks[blockIndex].key}>{blocks[blockIndex].node}</React.Fragment>)}
         </Box>
-      )}
-
-      {content.sections.map((section, sectionIndex) => {
-        const key = sectionKey(section.heading);
-        if (hiddenSections[key]) return null;
-        return (
-          <Box key={`${section.heading}-${sectionIndex}`} sx={{ mb: 2 }}>
-            <Typography sx={{ borderLeft: '3px solid #0f766e', pl: 1, mb: 1, fontWeight: 800 }}>
-              {sectionLabels[section.heading] || section.heading || '其他经历'}
-            </Typography>
-            {(section.entries || []).map((entry, entryIndex) => {
-              const projectKey = `${sectionIndex}-${entryIndex}`;
-              if (key === '项目经历' && hiddenProjects[projectKey]) return null;
-              return (
-                <Box key={`${entry.title}-${entryIndex}`} sx={{ mb: 1.3 }}>
-                  <Stack direction="row" spacing={1} alignItems="baseline" justifyContent="space-between">
-                    <TextField
-                      variant="standard"
-                      value={entry.title || ''}
-                      onChange={(event) => updateEntry(sectionIndex, entryIndex, 'title', event.target.value)}
-                      sx={{ flex: 1, '& .MuiInputBase-root': { fontWeight: 700, fontSize: 'inherit' } }}
-                    />
-                    <TextField
-                      variant="standard"
-                      value={entry.period || ''}
-                      onChange={(event) => updateEntry(sectionIndex, entryIndex, 'period', event.target.value)}
-                      sx={{ width: 125, '& .MuiInputBase-root': { fontSize: '0.92em', color: '#52606d' } }}
-                    />
-                  </Stack>
-                  <TextField
-                    variant="standard"
-                    fullWidth
-                    value={entry.subtitle || ''}
-                    onChange={(event) => updateEntry(sectionIndex, entryIndex, 'subtitle', event.target.value)}
-                    placeholder="角色 / 职位"
-                    sx={{ '& .MuiInputBase-root': { fontSize: '0.94em', color: '#52606d' } }}
-                  />
-                  {entry.summary && (
-                    <TextField
-                      variant="standard"
-                      fullWidth
-                      multiline
-                      value={entry.summary || ''}
-                      onChange={(event) => updateEntry(sectionIndex, entryIndex, 'summary', event.target.value)}
-                      sx={{ mt: 0.4, '& .MuiInputBase-root': { fontSize: '0.96em' } }}
-                    />
-                  )}
-                  {entry.tech_stack?.length > 0 && <Typography variant="caption" sx={{ display: 'block', mt: 0.4, color: '#0f766e' }}>技术栈：{entry.tech_stack.join('、')}</Typography>}
-                  {(entry.items || []).map((item, itemIndex) => (
-                    <TextField
-                      key={`${item.label}-${itemIndex}`}
-                      variant="standard"
-                      fullWidth
-                      multiline
-                      value={item.text || ''}
-                      onChange={(event) => updateEntry(sectionIndex, entryIndex, 'items', (entry.items || []).map((current, index) => index === itemIndex ? { ...current, text: event.target.value } : current))}
-                      sx={{ mt: 0.35, '& .MuiInputBase-root': { fontSize: '0.96em' } }}
-                      InputProps={{ startAdornment: <Box component="span" sx={{ mr: 0.7, color: '#0f766e' }}>•</Box> }}
-                    />
-                  ))}
-                </Box>
-              );
-            })}
-            {(section.items || []).map((item, itemIndex) => (
-              <TextField
-                key={`${item.label}-${itemIndex}`}
-                variant="standard"
-                fullWidth
-                multiline
-                value={item.text || item.label || ''}
-                onChange={(event) => updateItem(sectionIndex, itemIndex, event.target.value)}
-                sx={{ mb: 0.35, '& .MuiInputBase-root': { fontSize: '0.96em' } }}
-                InputProps={{ startAdornment: <Box component="span" sx={{ mr: 0.7, color: '#0f766e' }}>•</Box> }}
-              />
-            ))}
-          </Box>
-        );
-      })}
-      <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', textAlign: 'right', mt: 3 }}>职引 · 仅使用已确认职业事实</Typography>
+      ))}
     </Box>
   );
 };
@@ -222,13 +258,13 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, fontSize, 
 const ResumeOptimizer = () => {
   const navigate = useNavigate();
   const { currentUser, uploadAvatar, deleteAvatar } = useAuth();
-  const importInput = useRef(null);
   const [resumes, setResumes] = useState([]);
   const [selectedId, setSelectedId] = useState('');
   const [content, setContent] = useState(null);
   const [title, setTitle] = useState('');
   const [hiddenSections, setHiddenSections] = useState({});
   const [hiddenProjects, setHiddenProjects] = useState({});
+  const [sectionStyles, setSectionStyles] = useState({});
   const [fontSize, setFontSize] = useState(10.5);
   const [padding, setPadding] = useState(15);
   const [loading, setLoading] = useState(true);
@@ -259,7 +295,11 @@ const ResumeOptimizer = () => {
       setContent(null);
       return;
     }
-    setContent(normalizeContent(selectedResume, currentUser));
+    const nextContent = normalizeContent(selectedResume, currentUser);
+    setContent(nextContent);
+    setSectionStyles(nextContent.layout?.sectionStyles || {});
+    setFontSize(nextContent.layout?.fontSize || 10.5);
+    setPadding(nextContent.layout?.padding || 15);
     setTitle(selectedResume.title || '定制简历');
   }, [selectedResume, currentUser]);
 
@@ -267,7 +307,17 @@ const ResumeOptimizer = () => {
     if (!selectedResume || !content) return;
     setWorking(true); setError(''); setNotice('');
     try {
-      const saved = await careerService.updateResume(selectedResume.id, { title: title.trim() || '定制简历', content });
+      const contentToSave = {
+        ...content,
+        layout: {
+          ...(content.layout || {}),
+          fontSize,
+          padding,
+          sectionStyles,
+        },
+      };
+      const saved = await careerService.updateResume(selectedResume.id, { title: title.trim() || '定制简历', content: contentToSave });
+      setContent(contentToSave);
       setResumes((items) => items.map((item) => item.id === saved.id ? saved : item));
       setNotice('当前版本已保存，导出 PDF 会使用最新内容。');
     } catch (err) {
@@ -290,22 +340,6 @@ const ResumeOptimizer = () => {
       setError(err.response?.data?.detail || '导出 PDF 失败。');
     } finally {
       setWorking(false);
-    }
-  };
-
-  const importPrototypeJson = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    setWorking(true); setError(''); setNotice('');
-    try {
-      const draft = JSON.parse(await file.text());
-      const result = await careerService.importProfile(draft);
-      setNotice(`已导入 ${result.imported_facts} 条待确认事实，跳过 ${result.skipped_facts} 条重复事实。请回到工作台确认后生成简历。`);
-    } catch (err) {
-      setError(err.response?.data?.detail || '原型 JSON 导入失败，请确认文件格式正确。');
-    } finally {
-      setWorking(false);
-      event.target.value = '';
     }
   };
 
@@ -359,15 +393,11 @@ const ResumeOptimizer = () => {
       </AppBar>
       <Container maxWidth="xl" sx={{ py: 2.5 }}>
         {(error || notice) && <Alert severity={error ? 'error' : 'success'} sx={{ mb: 2 }}>{error || notice}</Alert>}
-        <input ref={importInput} hidden type="file" accept="application/json,.json" onChange={importPrototypeJson} />
         {!resumes.length ? (
           <Paper sx={{ p: 4, textAlign: 'center' }}>
             <Typography variant="h5">还没有可编辑的定制简历</Typography>
             <Typography color="text.secondary" sx={{ mt: 1 }}>先在求职工作台导入职位并生成一份定制简历，之后可以在这里编辑、排序和导出。</Typography>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="center" sx={{ mt: 2 }}>
-              <Button variant="outlined" startIcon={<ImportExportRoundedIcon />} onClick={() => importInput.current?.click()} disabled={working}>先导入原型 JSON</Button>
-              <Button variant="contained" onClick={() => navigate('/career')}>去生成定制简历</Button>
-            </Stack>
+            <Button variant="contained" sx={{ mt: 2 }} onClick={() => navigate('/career')}>去生成定制简历</Button>
           </Paper>
         ) : (
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '260px minmax(0, 1fr) 300px' }, gap: 2, alignItems: 'start' }}>
@@ -387,11 +417,6 @@ const ResumeOptimizer = () => {
                 </Stack>
               </Paper>
               <Paper sx={{ p: 2 }}>
-                <Typography variant="subtitle1" fontWeight={700}>导入原型资料</Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.7 }}>兼容原型的 `resume-profiles.json`，导入后进入事实库待确认。</Typography>
-                <Button fullWidth variant="outlined" startIcon={<ImportExportRoundedIcon />} sx={{ mt: 1.5 }} onClick={() => importInput.current?.click()} disabled={working}>选择 JSON 导入</Button>
-              </Paper>
-              <Paper sx={{ p: 2 }}>
                 <Typography variant="subtitle1" fontWeight={700}>证件照</Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 0.7 }}>上传后显示在 A4 预览和后端 PDF 中，支持 PNG、JPG、WEBP，最大 5MB。</Typography>
                 <Button component="label" fullWidth variant="outlined" startIcon={<UploadFileRoundedIcon />} sx={{ mt: 1.5 }} disabled={avatarWorking}>
@@ -402,8 +427,8 @@ const ResumeOptimizer = () => {
               </Paper>
             </Stack>
 
-            <Paper sx={{ p: { xs: 1, md: 3 }, bgcolor: '#e9eef5', minHeight: 'calc(100vh - 130px)', overflow: 'auto' }}>
-              {content && <ResumePaper content={content} user={currentUser} hiddenSections={hiddenSections} hiddenProjects={hiddenProjects} fontSize={fontSize} padding={padding} onChange={setContent} />}
+            <Paper sx={{ p: { xs: 1, md: 3 }, bgcolor: '#e9eef5', height: { xs: 'auto', lg: 'calc(100vh - 170px)' }, maxHeight: { xs: 'none', lg: 'calc(100vh - 170px)' }, overflowY: { xs: 'visible', lg: 'auto' }, overflowX: 'auto', minWidth: 0 }}>
+              {content && <ResumePaper content={content} user={currentUser} hiddenSections={hiddenSections} hiddenProjects={hiddenProjects} sectionStyles={sectionStyles} fontSize={fontSize} padding={padding} onChange={setContent} />}
             </Paper>
 
             <Stack spacing={2}>
@@ -413,6 +438,39 @@ const ResumeOptimizer = () => {
                 <Slider value={fontSize} min={8} max={14} step={0.5} onChange={(_, value) => setFontSize(value)} size="small" />
                 <Typography variant="caption" color="text.secondary">页边距：{padding}mm</Typography>
                 <Slider value={padding} min={8} max={24} step={1} onChange={(_, value) => setPadding(value)} size="small" />
+              </Paper>
+              <Paper sx={{ p: 2 }}>
+                <Typography variant="subtitle1" fontWeight={700}>分区字体</Typography>
+                <Typography variant="caption" color="text.secondary">分别调整摘要、教育和各段经历的字号、粗细与颜色。</Typography>
+                <Stack spacing={1.2} sx={{ mt: 1 }}>
+                  {['summary', 'education', ...(content?.sections || []).map((section) => sectionKey(section.heading))]
+                    .filter((value, index, array) => array.indexOf(value) === index)
+                    .map((key) => {
+                      const style = { ...defaultSectionStyle, fontSize, ...(sectionStyles[key] || {}) };
+                      const updateStyle = (field, value) => setSectionStyles((current) => ({ ...current, [key]: { ...style, [field]: value } }));
+                      return (
+                        <Box key={key}>
+                          <Typography variant="caption" color="text.secondary">{styleLabels[key] || key}</Typography>
+                          <Stack direction="row" spacing={0.5} sx={{ mt: 0.4 }}>
+                            <FormControl size="small" sx={{ minWidth: 78 }}>
+                              <Select aria-label={`${key}-font-size`} value={String(style.fontSize)} onChange={(event) => updateStyle('fontSize', Number(event.target.value))}>
+                                {[9, 10, 10.5, 11, 12, 13, 14].map((size) => <MenuItem key={size} value={String(size)}>{size}pt</MenuItem>)}
+                              </Select>
+                            </FormControl>
+                            <FormControl size="small" sx={{ minWidth: 78 }}>
+                              <Select aria-label={`${key}-font-weight`} value={String(style.fontWeight)} onChange={(event) => updateStyle('fontWeight', Number(event.target.value))}>
+                                <MenuItem value="400">常规</MenuItem>
+                                <MenuItem value="600">中等</MenuItem>
+                                <MenuItem value="700">粗体</MenuItem>
+                                <MenuItem value="800">特粗</MenuItem>
+                              </Select>
+                            </FormControl>
+                            <TextField size="small" type="color" value={style.color} onChange={(event) => updateStyle('color', event.target.value)} inputProps={{ 'aria-label': `${key}-font-color` }} sx={{ width: 52 }} />
+                          </Stack>
+                        </Box>
+                      );
+                    })}
+                </Stack>
               </Paper>
               <Paper sx={{ p: 2 }}>
                 <Typography variant="subtitle1" fontWeight={700}>章节显示</Typography>
