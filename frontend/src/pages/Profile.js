@@ -255,7 +255,7 @@ const Profile = () => {
                   label={currentUser?.has_resume ? `已上传简历：${currentUser.resume_file_name}` : '尚未上传简历'}
                   sx={{
                     bgcolor: currentUser?.has_resume ? 'rgba(52,211,153,0.14)' : 'rgba(245,158,11,0.12)',
-                    color: currentUser?.has_resume ? '#34d399' : '#fbbf24',
+                    color: currentUser?.has_resume ? '#047857' : '#a16207',
                   }}
                 />
                 <Stack direction="row" spacing={1.25} alignItems="center">
@@ -353,27 +353,27 @@ const Profile = () => {
                   mt: 2.5,
                   p: 2,
                   borderRadius: 2,
-                  bgcolor: 'rgba(255,255,255,0.03)',
-                  border: '1px solid rgba(125,211,252,0.10)',
+                  bgcolor: '#f8fafc',
+                  border: '1px solid rgba(71,85,105,0.18)',
                 }}
               >
-                <Typography variant="subtitle2" sx={{ color: '#f8fafc', mb: 1 }}>
+                <Typography variant="subtitle2" sx={{ color: '#0f172a', mb: 1 }}>
                   当前简历状态
                 </Typography>
                 {currentUser?.has_resume ? (
                   <>
-                    <Typography variant="body2" sx={{ color: '#e2e8f0', lineHeight: 1.8 }}>
+                    <Typography variant="body2" sx={{ color: '#1e293b', lineHeight: 1.8 }}>
                       文件名：{currentUser.resume_file_name}
                     </Typography>
-                    <Typography variant="body2" sx={{ color: '#94a3b8', lineHeight: 1.8 }}>
+                    <Typography variant="body2" sx={{ color: '#475569', lineHeight: 1.8 }}>
                       上传时间：{currentUser.resume_uploaded_at}
                     </Typography>
-                    <Typography variant="body2" sx={{ color: '#e2e8f0', mt: 1.2, lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>
+                    <Typography variant="body2" sx={{ color: '#334155', mt: 1.2, lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>
                       {currentUser.resume_excerpt}
                     </Typography>
                   </>
                 ) : (
-                  <Typography variant="body2" sx={{ color: '#fbbf24', lineHeight: 1.8 }}>
+                  <Typography variant="body2" sx={{ color: '#a16207', lineHeight: 1.8 }}>
                     还没有上传简历。开始新面试前建议先上传简历。
                   </Typography>
                 )}

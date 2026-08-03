@@ -52,6 +52,13 @@ const styleLabels = {
 
 const defaultSectionStyle = { fontSize: 10.5, fontWeight: 400, color: '#17202a' };
 
+const resumeFontFaceCss = `
+@font-face { font-family: 'Resume Times'; src: url('/api/v1/fonts/times.ttf') format('truetype'); font-style: normal; font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Resume Times'; src: url('/api/v1/fonts/timesbd.ttf') format('truetype'); font-style: normal; font-weight: 700; font-display: swap; }
+@font-face { font-family: 'Resume Times'; src: url('/api/v1/fonts/timesi.ttf') format('truetype'); font-style: italic; font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Resume SimSun'; src: url('/api/v1/fonts/simsun.ttc') format('truetype'); font-style: normal; font-weight: 400; font-display: swap; }
+`;
+
 const clone = (value) => JSON.parse(JSON.stringify(value || {}));
 
 const normalizeContent = (resume, user) => {
@@ -401,6 +408,7 @@ const ResumeOptimizer = () => {
 
   return (
     <Box sx={{ minHeight: '100vh' }}>
+      <style>{resumeFontFaceCss}</style>
       <AppBar position="sticky">
         <Toolbar sx={{ gap: 1.5 }}>
           <Button color="inherit" startIcon={<ArrowBackRoundedIcon />} onClick={() => navigate('/career')}>求职工作台</Button>
