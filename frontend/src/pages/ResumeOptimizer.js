@@ -6,6 +6,7 @@ import {
   Avatar,
   Box,
   Button,
+  Chip,
   CircularProgress,
   Container,
   FormControl,
