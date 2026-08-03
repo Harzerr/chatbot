@@ -95,7 +95,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
   const sectionHeading = (heading) => {
     const style = getSectionStyle(sectionKey(heading));
     return (
-      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.1, px: 1, py: 0.45, borderRadius: 1, bgcolor: '#f1f5f9', color: style.color, width: 'fit-content' }}>
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.1, px: 0, py: 0.45, color: style.color, width: 'fit-content' }}>
         <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#0f766e', flex: '0 0 auto' }} />
         <Typography sx={{ fontWeight: 800, fontSize: `${style.fontSize}pt`, color: 'inherit', letterSpacing: '0.02em' }}>
           {sectionLabels[heading] || heading || '其他经历'}
@@ -107,7 +107,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
   const renderEntry = (sectionIndex, heading, entry, entryIndex) => {
     const style = getSectionStyle(sectionKey(heading));
     return (
-    <Box sx={{ mb: 1.3, p: 1.2, borderRadius: 1.5, bgcolor: '#f8fbfd', breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${style.fontSize}pt`, fontWeight: style.fontWeight, color: style.color }}>
+    <Box sx={{ mb: 1.3, p: 0, breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${style.fontSize}pt`, fontWeight: style.fontWeight, color: style.color }}>
       <Stack direction="row" spacing={1} alignItems="baseline" justifyContent="space-between">
         <TextField
           variant="standard"
@@ -141,7 +141,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
         />
       )}
       {entry.tech_stack?.length > 0 && <Stack direction="row" spacing={0.5} useFlexGap flexWrap="wrap" sx={{ mt: 0.7 }}>
-        {entry.tech_stack.map((technology) => <Chip key={technology} label={technology} size="small" sx={{ height: 22, bgcolor: '#f1f5f9', color: '#334155', fontSize: '0.82em' }} />)}
+        {entry.tech_stack.map((technology) => <Chip key={technology} label={technology} size="small" variant="outlined" sx={{ height: 22, color: '#475569', borderColor: '#cbd5e1', fontSize: '0.82em' }} />)}
       </Stack>}
       {(entry.items || []).map((item, itemIndex) => (
         <TextField
@@ -163,7 +163,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
   blocks.push({
     key: 'header',
     node: (
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, p: 1.8, borderRadius: 2, bgcolor: '#f8fafc', mb: 2.2 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, p: 0, mb: 2.2 }}>
         <Box sx={{ minWidth: 0 }}>
           <Typography variant="overline" sx={{ color: '#0f766e', fontWeight: 800, letterSpacing: '0.14em', lineHeight: 1.2 }}>PROFESSIONAL PROFILE</Typography>
           <Typography sx={{ fontSize: `${Math.max(fontSize + 7, 17)}pt`, fontWeight: 800 }}>{user?.full_name || '姓名待确认'}</Typography>
@@ -178,7 +178,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
     key: 'summary',
     node: (() => {
       const style = getSectionStyle('summary');
-      return <Box sx={{ mb: 2, p: 1.5, borderRadius: 1.5, bgcolor: '#fffaf0' }}><Typography variant="caption" sx={{ display: 'block', mb: 0.35, color: '#9a6b16', fontWeight: 800, letterSpacing: '0.04em' }}>职业摘要</Typography><TextField fullWidth variant="standard" placeholder="用 2-3 句话概括你的核心能力与求职方向" value={content.summary || ''} onChange={(event) => onChange({ ...content, summary: event.target.value })} multiline sx={{ fontSize: `${style.fontSize}pt`, color: style.color, '& .MuiInputBase-root': { fontSize: 'inherit', fontWeight: style.fontWeight, color: style.color } }} /> </Box>;
+      return <Box sx={{ mb: 2, p: 0 }}><Typography variant="caption" sx={{ display: 'block', mb: 0.35, color: '#475569', fontWeight: 800, letterSpacing: '0.04em' }}>职业摘要</Typography><TextField fullWidth variant="standard" placeholder="用 2-3 句话概括你的核心能力与求职方向" value={content.summary || ''} onChange={(event) => onChange({ ...content, summary: event.target.value })} multiline sx={{ fontSize: `${style.fontSize}pt`, color: style.color, '& .MuiInputBase-root': { fontSize: 'inherit', fontWeight: style.fontWeight, color: style.color } }} /> </Box>;
     })(),
   });
 
@@ -186,7 +186,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
     const educationStyle = getSectionStyle('education');
     content.education.forEach((item, index) => blocks.push({
       key: `education-${index}`,
-      node: <Box sx={{ mb: 1.1, p: 1.1, borderRadius: 1.5, bgcolor: '#f8fbfd', breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${educationStyle.fontSize}pt`, fontWeight: educationStyle.fontWeight, color: educationStyle.color }}>{index === 0 && sectionHeading('education')}<Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}><Typography fontWeight={700}>{[item.school, item.major, item.degree].filter(Boolean).join(' · ') || item.title || '教育经历'}</Typography><Typography sx={{ whiteSpace: 'nowrap', color: '#52606d' }}>{[item.start_date, item.end_date].filter(Boolean).join(' - ')}</Typography></Box></Box>,
+      node: <Box sx={{ mb: 1.1, p: 0, breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${educationStyle.fontSize}pt`, fontWeight: educationStyle.fontWeight, color: educationStyle.color }}>{index === 0 && sectionHeading('education')}<Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}><Typography fontWeight={700}>{[item.school, item.major, item.degree].filter(Boolean).join(' · ') || item.title || '教育经历'}</Typography><Typography sx={{ whiteSpace: 'nowrap', color: '#52606d' }}>{[item.start_date, item.end_date].filter(Boolean).join(' - ')}</Typography></Box></Box>,
     }));
   }
 
@@ -207,8 +207,6 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
       })(),
     }));
   });
-  blocks.push({ key: 'footer', node: <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', textAlign: 'right', mt: 3 }}>职引 · 仅使用已确认职业事实</Typography> });
-
   useLayoutEffect(() => {
     if (!measureRef.current) return;
     const pageHeight = (297 - padding * 2) * (96 / 25.4);
