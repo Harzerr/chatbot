@@ -44,6 +44,7 @@ import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import RestoreRoundedIcon from '@mui/icons-material/RestoreRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import RecordVoiceOverRoundedIcon from '@mui/icons-material/RecordVoiceOverRounded';
+import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
 import careerService from '../services/careerService';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -392,6 +393,7 @@ const CareerStudio = () => {
         <Toolbar sx={{ gap: 1.5 }}>
           <Button color="inherit" startIcon={<ArrowBackRoundedIcon />} onClick={() => navigate('/profile')}>个人档案</Button>
           <Typography variant="h6" sx={{ flexGrow: 1 }}>求职工作台</Typography>
+          <Button color="inherit" startIcon={<TuneRoundedIcon />} onClick={() => navigate('/resume-optimizer')}>A4 编辑器</Button>
           <Chip label={`${facts.filter((fact) => fact.is_verified).length} 条已确认事实`} color="primary" variant="outlined" />
         </Toolbar>
       </AppBar>

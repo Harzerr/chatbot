@@ -11,6 +11,7 @@ import VoiceAssistantPage from './pages/VoiceAssistantPage';
 import Profile from './pages/Profile';
 import CareerStudio from './pages/CareerStudio';
 import TrainingCamp from './pages/TrainingCamp';
+import ResumeOptimizer from './pages/ResumeOptimizer';
 
 const interviewTheme = createTheme({
   palette: {
@@ -114,6 +115,7 @@ const App = () => {
               <Route path="/chat" element={<Chat />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/career" element={<CareerStudio />} />
+              <Route path="/resume-optimizer" element={<ResumeOptimizer />} />
               <Route path="/training" element={<TrainingCamp />} />
               <Route path="/voice" element={<VoiceAssistantPage />} />
             </Route>

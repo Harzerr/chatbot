@@ -20,6 +20,9 @@ from app.schemas.career import (
     JobPostingRead,
     JobPostingUpdate,
     ResumeDocumentRead,
+    ResumeDocumentUpdate,
+    ResumeProfileImportRequest,
+    ResumeProfileImportResponse,
     TailoredResumeRequest,
 )
 from app.services.career_studio import CareerStudioService
@@ -107,6 +110,105 @@ def _source_highlights(evidence: str, fact_id: int) -> list[dict[str, Any]]:
         text = parts[1].strip() if len(parts) == 2 else item
         highlights.append({"fact_ids": [fact_id], "label": label, "text": text})
     return highlights
+
+
+def _resume_profile_root(draft: dict[str, Any]) -> dict[str, Any]:
+    if isinstance(draft.get("profiles"), dict):
+        active_name = draft.get("activeName")
+        profiles = draft["profiles"]
+        if active_name in profiles and isinstance(profiles[active_name], dict):
+            return profiles[active_name]
+        first_profile = next((value for value in profiles.values() if isinstance(value, dict)), None)
+        if first_profile:
+            return first_profile
+    return draft
+
+
+def _profile_section(root: dict[str, Any], name: str) -> list[Any]:
+    source = root.get("sourceResume") if isinstance(root.get("sourceResume"), dict) else root
+    values = source.get(name)
+    if isinstance(values, list):
+        return values
+    parsed = root.get("parsed")
+    if isinstance(parsed, dict) and isinstance(parsed.get("sections"), dict):
+        parsed_values = parsed["sections"].get(name)
+        if isinstance(parsed_values, list):
+            return parsed_values
+    return []
+
+
+def _profile_personal(root: dict[str, Any]) -> dict[str, Any]:
+    source = root.get("sourceResume") if isinstance(root.get("sourceResume"), dict) else root
+    personal = source.get("personal")
+    return personal if isinstance(personal, dict) else {}
+
+
+def _profile_value(value: Any, *keys: str) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        for key in keys:
+            candidate = value.get(key)
+            if candidate is not None and str(candidate).strip():
+                return str(candidate).strip()
+    return ""
+
+
+def _profile_entry(entry: Any) -> tuple[str, list[str]]:
+    if isinstance(entry, str):
+        return entry.strip(), []
+    if not isinstance(entry, dict):
+        return "", []
+    title = _profile_value(entry, "title", "name", "organization", "school", "company")
+    date = _profile_value(entry, "date", "period", "startDate", "start_date")
+    if entry.get("endDate") and date and entry.get("endDate") not in date:
+        date = f"{date} - {entry['endDate']}"
+    details = entry.get("details") or entry.get("responsibilities") or entry.get("highlights") or []
+    if isinstance(details, str):
+        details = [details]
+    if not isinstance(details, list):
+        details = []
+    lines = [str(item).strip() for item in details if str(item).strip()]
+    return "｜".join(part for part in (title, _profile_value(entry, "role", "position")) if part), ([date] if date else []) + lines
+
+
+def _imported_fact_payload(root: dict[str, Any]) -> list[dict[str, Any]]:
+    facts: list[dict[str, Any]] = []
+    sections = (
+        ("experience", "experience"),
+        ("projects", "project"),
+        ("campus", "other"),
+        ("honors", "award"),
+    )
+    for section_name, fact_type in sections:
+        for entry in _profile_section(root, section_name):
+            title, lines = _profile_entry(entry)
+            if not title and lines:
+                title, lines = lines[0], lines[1:]
+            if not title:
+                continue
+            facts.append({
+                "fact_type": fact_type,
+                "title": title[:255],
+                "content": {"summary": lines[0] if lines else "", "highlights": lines[1:] if lines else []},
+                "tags": [],
+                "evidence": "\n".join(lines)[:10000] or title,
+                "is_verified": False,
+            })
+
+    skills = _profile_section(root, "skills")
+    for skill in skills:
+        text = _profile_value(skill)[:10000]
+        if text:
+            facts.append({
+                "fact_type": "skill",
+                "title": text[:255],
+                "content": {"summary": text, "highlights": []},
+                "tags": [],
+                "evidence": text,
+                "is_verified": False,
+            })
+    return facts
 
 
 def _enrich_entries_from_evidence(generated: dict[str, Any], facts: list[dict[str, Any]]) -> None:
@@ -325,6 +427,82 @@ async def extract_resume_facts(
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
+@router.post("/profile/import", response_model=ResumeProfileImportResponse)
+async def import_resume_profile(
+    payload: ResumeProfileImportRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> ResumeProfileImportResponse:
+    """Import the prototype's JSON format into the authenticated user's workspace."""
+    root = _resume_profile_root(payload.draft)
+    personal = _profile_personal(root)
+    contact = personal.get("contact") if isinstance(personal.get("contact"), dict) else {}
+
+    full_name = _profile_value(personal, "name", "full_name")
+    target_role = _profile_value(personal, "target", "target_role")
+    phone = _profile_value(contact, "手机", "phone") or _profile_value(root, "phone")
+    email = _profile_value(contact, "邮箱", "email") or _profile_value(root, "email")
+    if full_name:
+        current_user.full_name = full_name[:255]
+    if target_role:
+        current_user.target_role = target_role[:255]
+    if phone:
+        current_user.phone = phone[:64]
+    if email:
+        current_user.email = email[:255]
+
+    education_records: list[dict[str, str]] = []
+    for entry in _profile_section(root, "education"):
+        if isinstance(entry, str):
+            education_records.append({"school": entry[:255], "degree": "", "major": "", "start_date": "", "end_date": "", "details": ""})
+            continue
+        if not isinstance(entry, dict):
+            continue
+        education_records.append({
+            "school": _profile_value(entry, "school", "title")[:255],
+            "degree": _profile_value(entry, "degree")[:128],
+            "major": _profile_value(entry, "major")[:255],
+            "start_date": _profile_value(entry, "startDate", "start_date")[:32],
+            "end_date": _profile_value(entry, "endDate", "end_date")[:32],
+            "rank": _profile_value(entry, "rank")[:128],
+            "gpa": _profile_value(entry, "gpa")[:64],
+            "english_level": _profile_value(entry, "english_level", "englishLevel")[:128],
+            "details": _profile_value(entry, "details")[:2000],
+        })
+    if education_records:
+        current_user.education_json = json.dumps(education_records, ensure_ascii=False)
+
+    existing_rows = (await db.scalars(select(CareerFact).where(CareerFact.user_id == current_user.id))).all()
+    existing_keys = {(fact.fact_type, fact.title.strip().lower()) for fact in existing_rows}
+    imported = 0
+    skipped = 0
+    for item in _imported_fact_payload(root):
+        key = (item["fact_type"], item["title"].strip().lower())
+        if key in existing_keys:
+            skipped += 1
+            continue
+        db.add(CareerFact(
+            user_id=current_user.id,
+            fact_type=item["fact_type"],
+            title=item["title"],
+            content_json=json.dumps(item["content"], ensure_ascii=False),
+            tags_json=json.dumps(item["tags"], ensure_ascii=False),
+            evidence=item["evidence"],
+            source_resume_name=current_user.resume_file_name or "prototype-json-import",
+            is_verified=False,
+        ))
+        existing_keys.add(key)
+        imported += 1
+
+    await db.commit()
+    return ResumeProfileImportResponse(
+        imported_facts=imported,
+        skipped_facts=skipped,
+        updated_profile=bool(full_name or target_role or phone or email or education_records),
+        education_records=len(education_records),
+    )
+
+
 @router.get("/jobs", response_model=list[JobPostingRead])
 async def list_jobs(
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -479,6 +657,28 @@ async def download_resume_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": 'attachment; filename="tailored-resume.pdf"'},
     )
+
+
+@router.put("/resumes/{resume_id}", response_model=ResumeDocumentRead)
+async def update_resume_document(
+    resume_id: int,
+    payload: ResumeDocumentUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> ResumeDocumentRead:
+    document = await _owned_resume(db, current_user.id, resume_id)
+    updates = payload.model_dump(exclude_unset=True)
+    if "content" in updates:
+        content = updates.pop("content")
+        if not isinstance(content, dict) or not content:
+            raise HTTPException(status_code=422, detail="Resume content must be a non-empty object")
+        document.content_json = json.dumps(content, ensure_ascii=False)
+        document.status = "edited"
+    for field, value in updates.items():
+        setattr(document, field, value)
+    await db.commit()
+    await db.refresh(document)
+    return _resume_response(document)
 
 
 @router.post("/resumes/generate", response_model=ResumeDocumentRead, status_code=status.HTTP_201_CREATED)

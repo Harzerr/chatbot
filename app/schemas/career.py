@@ -47,6 +47,17 @@ class FactExtractionResponse(BaseModel):
     facts: list[CareerFactCreate]
 
 
+class ResumeProfileImportRequest(BaseModel):
+    draft: dict[str, Any]
+
+
+class ResumeProfileImportResponse(BaseModel):
+    imported_facts: int
+    skipped_facts: int
+    updated_profile: bool
+    education_records: int
+
+
 class JobImportRequest(BaseModel):
     source_url: HttpUrl | None = None
     raw_content: str | None = Field(default=None, max_length=50000)
@@ -98,3 +109,9 @@ class ResumeDocumentRead(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
+
+
+class ResumeDocumentUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    content: dict[str, Any] | None = None
+    status: str | None = Field(default=None, pattern=r"^[a-z_]{1,32}$")
