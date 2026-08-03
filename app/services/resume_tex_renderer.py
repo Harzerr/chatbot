@@ -68,7 +68,8 @@ def _section_style(content: dict[str, Any], key: str) -> tuple[float, int, str]:
 
 def _styled_block(content: dict[str, Any], key: str, block: str) -> str:
     size, weight, color = _section_style(content, key)
-    leading = size * 1.5
+    line_spacing = _layout_value(_layout(content).get("lineSpacing"), 1, 1, 1.8)
+    leading = size * line_spacing
     weight_command = r"\bfseries" if weight >= 600 else r"\mdseries"
     return (
         "\\begingroup\n"
@@ -221,7 +222,8 @@ def render_resume_tex(content: dict[str, Any], user: Any, title: str = "", avata
     template = TEMPLATE_PATH.read_text(encoding="utf-8")
     layout = _layout(content)
     body_size = _layout_value(layout.get("fontSize"), 10.5, 9.5, 16)
-    body_leading = body_size * 1.5
+    line_spacing = _layout_value(layout.get("lineSpacing"), 1, 1, 1.8)
+    body_leading = body_size * line_spacing
     section_title_size = _layout_value(layout.get("sectionTitleFontSize"), 12, 11, 18)
     section_title_leading = section_title_size * 1.25
     padding = _layout_value(layout.get("padding"), 15, 8, 24)

@@ -128,6 +128,9 @@ assets/fonts/
 .deploy/
 chatbot_deploy_key*
 frontend/build.previous/
+frontend/build
+frontend/build-a/
+frontend/build-b/
 resume-optimizer-separated-20260802/
 resume-optimizer-separated-20260802.zip
 *.pdf

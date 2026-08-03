@@ -58,6 +58,11 @@ const clampFontSize = (value, fallback = 10.5, minimum = 9.5, maximum = 16) => {
   return Number.isFinite(parsed) ? Math.max(minimum, Math.min(maximum, parsed)) : fallback;
 };
 
+const clampLineSpacing = (value, fallback = 1) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(1, Math.min(1.8, parsed)) : fallback;
+};
+
 const resumeFontFaceCss = `
 @font-face { font-family: 'Resume Times'; src: url('/api/v1/fonts/times.ttf') format('truetype'); font-style: normal; font-weight: 400; font-display: swap; }
 @font-face { font-family: 'Resume Times'; src: url('/api/v1/fonts/timesbd.ttf') format('truetype'); font-style: normal; font-weight: 700; font-display: swap; }
@@ -84,7 +89,7 @@ const updateSection = (content, index, updater) => {
   return next;
 };
 
-const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionStyles, fontSize, sectionTitleSize, padding, onChange }) => {
+const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionStyles, fontSize, sectionTitleSize, lineSpacing, padding, onChange }) => {
   const measureRef = useRef(null);
   const [pageGroups, setPageGroups] = useState([]);
   const getSectionStyle = (key) => {
@@ -235,7 +240,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
     });
     if (current.length) groups.push(current);
     setPageGroups(groups);
-  }, [content, hiddenSections, hiddenProjects, sectionStyles, fontSize, padding]);
+  }, [content, hiddenSections, hiddenProjects, sectionStyles, fontSize, lineSpacing, padding]);
 
   const groups = pageGroups.length ? pageGroups : [blocks.map((_, index) => index)];
   const pageSx = {
@@ -246,11 +251,12 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
     color: '#17202a',
     p: `${padding}mm`,
     fontSize: `${fontSize}pt`,
-    lineHeight: 1.55,
+    lineHeight: lineSpacing,
     overflowWrap: 'anywhere',
     fontFamily: '"Resume Times", "Times New Roman", "Resume SimSun", SimSun, "Songti SC", serif',
     boxSizing: 'border-box',
     '& .MuiInput-underline:before, & .MuiInput-underline:after': { display: 'none' },
+    '& .MuiInputBase-input': { lineHeight: lineSpacing },
   };
 
   return (
@@ -282,6 +288,7 @@ const ResumeOptimizer = () => {
   const [visibilityTarget, setVisibilityTarget] = useState('education');
   const [fontSize, setFontSize] = useState(10.5);
   const [sectionTitleSize, setSectionTitleSize] = useState(12);
+  const [lineSpacing, setLineSpacing] = useState(1);
   const [padding, setPadding] = useState(15);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
@@ -316,8 +323,10 @@ const ResumeOptimizer = () => {
     setSectionStyles(nextContent.layout?.sectionStyles || {});
     const storedFontSize = Number(nextContent.layout?.fontSize);
     const storedSectionTitleSize = Number(nextContent.layout?.sectionTitleFontSize);
+    const storedLineSpacing = Number(nextContent.layout?.lineSpacing);
     setFontSize(clampFontSize(storedFontSize, 10.5, 9.5, 14));
     setSectionTitleSize(Number.isFinite(storedSectionTitleSize) ? Math.max(11, Math.min(16, storedSectionTitleSize)) : 12);
+    setLineSpacing(clampLineSpacing(storedLineSpacing));
     setPadding(nextContent.layout?.padding || 15);
     setTitle(selectedResume.title || '定制简历');
   }, [selectedResume, currentUser]);
@@ -332,6 +341,7 @@ const ResumeOptimizer = () => {
           ...(content.layout || {}),
           fontSize,
           sectionTitleFontSize: sectionTitleSize,
+          lineSpacing,
           padding,
           sectionStyles,
         },
@@ -463,7 +473,7 @@ const ResumeOptimizer = () => {
             </Stack>
 
             <Paper sx={{ p: { xs: 1, md: 3 }, bgcolor: '#e9eef5', height: { xs: 'auto', lg: 'calc(100vh - 170px)' }, maxHeight: { xs: 'none', lg: 'calc(100vh - 170px)' }, overflowY: { xs: 'visible', lg: 'auto' }, overflowX: 'auto', minWidth: 0 }}>
-              {content && <ResumePaper content={content} user={currentUser} hiddenSections={hiddenSections} hiddenProjects={hiddenProjects} sectionStyles={sectionStyles} fontSize={fontSize} sectionTitleSize={sectionTitleSize} padding={padding} onChange={setContent} />}
+              {content && <ResumePaper content={content} user={currentUser} hiddenSections={hiddenSections} hiddenProjects={hiddenProjects} sectionStyles={sectionStyles} fontSize={fontSize} sectionTitleSize={sectionTitleSize} lineSpacing={lineSpacing} padding={padding} onChange={setContent} />}
             </Paper>
 
             <Stack spacing={2}>
@@ -473,6 +483,14 @@ const ResumeOptimizer = () => {
                 <Slider value={fontSize} min={9.5} max={14} step={0.5} onChange={(_, value) => setFontSize(value)} size="small" />
                 <Typography variant="caption" color="text.secondary">章节标题字号：{sectionTitleSize}pt</Typography>
                 <Slider value={sectionTitleSize} min={11} max={16} step={0.5} onChange={(_, value) => setSectionTitleSize(value)} size="small" />
+                <FormControl fullWidth size="small" sx={{ mt: 1 }}>
+                  <InputLabel>内容行距</InputLabel>
+                  <Select label="内容行距" value={String(lineSpacing)} onChange={(event) => setLineSpacing(clampLineSpacing(event.target.value))}>
+                    <MenuItem value="1">单倍行距</MenuItem>
+                    <MenuItem value="1.15">1.15 倍</MenuItem>
+                    <MenuItem value="1.5">1.5 倍</MenuItem>
+                  </Select>
+                </FormControl>
                 <Typography variant="caption" color="text.secondary">页边距：{padding}mm</Typography>
                 <Slider value={padding} min={8} max={24} step={1} onChange={(_, value) => setPadding(value)} size="small" />
               </Paper>
