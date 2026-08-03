@@ -10,6 +10,14 @@ from typing import Any
 
 
 TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "templates" / "resume_master.tex"
+FONT_DIR = Path(__file__).resolve().parents[2] / "assets" / "fonts"
+PROJECT_FONT_FILES = (
+    "simsun.ttc",
+    "times.ttf",
+    "timesbd.ttf",
+    "timesi.ttf",
+    "timesbi.ttf",
+)
 MAX_COMPILE_SECONDS = 35
 
 _TEX_ESCAPES = {
@@ -179,13 +187,37 @@ def _content(content: dict[str, Any]) -> str:
 
 def _photo_block(avatar_name: str | None) -> str:
     if not avatar_name:
-        return ""
-    return (
-        r"\put(497.127,-24.351){\raisebox{-\height}{\begingroup\setlength{\fboxsep}{0pt}"
-        r"\setlength{\fboxrule}{0.70pt}\fcolorbox{ResumeBorder}{white}{"
-        rf"\includegraphics[width=68pt,height=84pt,keepaspectratio]{{{avatar_name}}}"
-        r"}\endgroup}}"
-    )
+        return r"\rule{0pt}{84pt}\hspace{68pt}"
+    return rf"\includegraphics[width=68pt,height=84pt,keepaspectratio]{{{avatar_name}}}"
+
+
+def _project_font_config() -> str:
+    available = {name: FONT_DIR / name for name in PROJECT_FONT_FILES if (FONT_DIR / name).is_file()}
+    config: list[str] = []
+    if "times.ttf" in available:
+        times_options = ["Path=fonts/", "UprightFont=times.ttf"]
+        times_options.extend(
+            [
+                "BoldFont=timesbd.ttf" if "timesbd.ttf" in available else "",
+                "ItalicFont=timesi.ttf" if "timesi.ttf" in available else "",
+                "BoldItalicFont=timesbi.ttf" if "timesbi.ttf" in available else "",
+            ]
+        )
+        options = ",\n  ".join(option for option in times_options if option)
+        config.append(rf"\setmainfont[{options}]{{times}}")
+        config.append(rf"\setsansfont[{options}]{{times}}")
+    else:
+        config.append(
+            r"\IfFontExistsTF{Times New Roman}{\setmainfont{Times New Roman}\setsansfont{Times New Roman}}{\setmainfont{Tinos}\setsansfont{Tinos}}"
+        )
+    if "simsun.ttc" in available:
+        config.append(r"\setCJKmainfont[Path=fonts/,Extension=.ttc]{simsun}")
+        config.append(r"\setCJKsansfont[Path=fonts/,Extension=.ttc]{simsun}")
+    else:
+        config.append(
+            r"\IfFontExistsTF{SimSun}{\setCJKmainfont{SimSun}\setCJKsansfont{SimSun}}{\setCJKmainfont{Noto Serif CJK SC}\setCJKsansfont{Noto Serif CJK SC}}"
+        )
+    return "\n".join(config)
 
 
 def render_resume_tex(content: dict[str, Any], user: Any, title: str = "", avatar_name: str | None = None) -> str:
@@ -205,6 +237,7 @@ def render_resume_tex(content: dict[str, Any], user: Any, title: str = "", avata
     role = _escape_tex(content.get("headline") or getattr(user, "target_role", "") or title or "求职简历")
     replacements = {
         "%%GEOMETRY%%": f"\\usepackage[left={padding:.1f}mm,right={padding:.1f}mm,top={padding:.1f}mm,bottom={padding:.1f}mm,headheight=0pt,headsep=0pt,footskip=0pt]{{geometry}}",
+        "%%FONT_CONFIG%%": _project_font_config(),
         "%%BODY_FONT%%": f"\\fontsize{{{body_size:.1f}pt}}{{{body_leading:.2f}pt}}\\selectfont",
         "%%NAME%%": _escape_tex(getattr(user, "full_name", "") or "未填写姓名"),
         "%%CONTACT%%": contact,
@@ -234,6 +267,10 @@ def build_tex_bundle(content: dict[str, Any], user: Any, title: str = "") -> byt
         archive.writestr("resume.tex", tex)
         if avatar and avatar_name:
             archive.write(avatar, avatar_name)
+        for font_name in PROJECT_FONT_FILES:
+            font_path = FONT_DIR / font_name
+            if font_path.is_file():
+                archive.write(font_path, f"fonts/{font_name}")
     return output.getvalue()
 
 
@@ -249,6 +286,12 @@ def compile_resume_pdf(content: dict[str, Any], user: Any, title: str = "") -> b
         tex_path.write_text(tex, encoding="utf-8")
         if avatar and avatar_name:
             shutil.copyfile(avatar, workspace / avatar_name)
+        font_workspace = workspace / "fonts"
+        for font_name in PROJECT_FONT_FILES:
+            font_path = FONT_DIR / font_name
+            if font_path.is_file():
+                font_workspace.mkdir(exist_ok=True)
+                shutil.copyfile(font_path, font_workspace / font_name)
         result = subprocess.run(
             ["xelatex", "-interaction=nonstopmode", "-halt-on-error", "-no-shell-escape", "resume.tex"],
             cwd=workspace,

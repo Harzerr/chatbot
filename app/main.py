@@ -76,5 +76,9 @@ AVATAR_UPLOAD_DIR = Path(__file__).resolve().parents[1] / "uploads" / "avatars"
 AVATAR_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/media/avatars", StaticFiles(directory=str(AVATAR_UPLOAD_DIR)), name="avatar-media")
 
+FONT_DIR = Path(__file__).resolve().parents[1] / "assets" / "fonts"
+if FONT_DIR.is_dir():
+    app.mount(f"{settings.API_V1_STR}/fonts", StaticFiles(directory=str(FONT_DIR)), name="font-media")
+
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

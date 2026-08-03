@@ -6,7 +6,6 @@ import {
   Avatar,
   Box,
   Button,
-  Chip,
   CircularProgress,
   Container,
   FormControl,
@@ -35,6 +34,7 @@ import { useAuth } from '../contexts/AuthContext';
 
 const sectionLabels = {
   education: '教育背景',
+  summary: '职业摘要',
   '实习经历': '实习经历',
   '项目经历': '项目经历',
   '专业技能': '专业技能',
@@ -95,11 +95,12 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
   const sectionHeading = (heading) => {
     const style = getSectionStyle(sectionKey(heading));
     return (
-      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.1, px: 0, py: 0.45, color: style.color, width: 'fit-content' }}>
-        <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#0f766e', flex: '0 0 auto' }} />
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.1, color: style.color, width: '100%' }}>
+        <Box sx={{ width: 3, height: 15, bgcolor: '#b21f35', flex: '0 0 auto' }} />
         <Typography sx={{ fontWeight: 800, fontSize: `${style.fontSize}pt`, color: 'inherit', letterSpacing: '0.02em' }}>
           {sectionLabels[heading] || heading || '其他经历'}
         </Typography>
+        <Box sx={{ flex: 1, height: '1px', bgcolor: '#cbd5e1' }} />
       </Stack>
     );
   };
@@ -140,9 +141,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
           sx={{ mt: 0.4, '& .MuiInputBase-root': { fontSize: '0.96em' } }}
         />
       )}
-      {entry.tech_stack?.length > 0 && <Stack direction="row" spacing={0.5} useFlexGap flexWrap="wrap" sx={{ mt: 0.7 }}>
-        {entry.tech_stack.map((technology) => <Chip key={technology} label={technology} size="small" variant="outlined" sx={{ height: 22, color: '#475569', borderColor: '#cbd5e1', fontSize: '0.82em' }} />)}
-      </Stack>}
+      {entry.tech_stack?.length > 0 && <Typography variant="body2" sx={{ mt: 0.5, color: '#475569' }}>技术栈：{entry.tech_stack.join('、')}</Typography>}
       {(entry.items || []).map((item, itemIndex) => (
         <TextField
           key={`${item.label}-${itemIndex}`}
@@ -152,7 +151,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
           value={item.text || ''}
           onChange={(event) => updateEntry(sectionIndex, entryIndex, 'items', (entry.items || []).map((current, index) => index === itemIndex ? { ...current, text: event.target.value } : current))}
           sx={{ mt: 0.35, '& .MuiInputBase-root': { fontSize: '0.96em' } }}
-          InputProps={{ startAdornment: <Box component="span" sx={{ mr: 0.7, color: '#0f766e' }}>•</Box> }}
+          InputProps={{ startAdornment: <Box component="span" sx={{ mr: 0.7, color: '#b21f35' }}>•</Box> }}
         />
       ))}
     </Box>
@@ -163,14 +162,13 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
   blocks.push({
     key: 'header',
     node: (
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, p: 0, mb: 2.2 }}>
-        <Box sx={{ minWidth: 0 }}>
-          <Typography variant="overline" sx={{ color: '#0f766e', fontWeight: 800, letterSpacing: '0.14em', lineHeight: 1.2 }}>PROFESSIONAL PROFILE</Typography>
+      <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, borderLeft: '3px solid #b21f35', pl: 1.8, mb: 2.2 }}>
+        <Avatar src={user?.avatar_url || undefined} alt="证件照" variant="square" sx={{ width: 76, height: 100, flex: '0 0 auto', bgcolor: '#fff', color: '#64748b', border: '1px solid #cbd5e1', boxShadow: 'none', borderRadius: 0, fontSize: 12 }}>证件照</Avatar>
+        <Box sx={{ minWidth: 0, pt: 0.2 }}>
           <Typography sx={{ fontSize: `${Math.max(fontSize + 7, 17)}pt`, fontWeight: 800 }}>{user?.full_name || '姓名待确认'}</Typography>
-          <Typography sx={{ color: '#0f766e', fontWeight: 700, mt: 0.25 }}>{content.headline}</Typography>
-          <Typography variant="body2" sx={{ color: '#52606d', mt: 1, lineHeight: 1.8 }}>{[user?.phone, user?.email, user?.target_role].filter(Boolean).join('  ·  ') || '请在个人档案补充联系方式'}</Typography>
+          <Typography sx={{ color: '#b21f35', fontWeight: 700, mt: 0.25 }}>{content.headline}</Typography>
+          <Typography variant="body2" sx={{ color: '#52606d', mt: 1, lineHeight: 1.8 }}>{[user?.phone, user?.email].filter(Boolean).join('    ') || '请在个人档案补充联系方式'}</Typography>
         </Box>
-        <Avatar src={user?.avatar_url || undefined} alt="证件照" variant="square" sx={{ width: 76, height: 96, flex: '0 0 auto', bgcolor: '#fff', color: '#64748b', border: '3px solid #fff', boxShadow: '0 4px 12px rgba(15, 118, 110, 0.16)', borderRadius: 1.5, fontSize: 12 }}>证件照</Avatar>
       </Box>
     ),
   });
@@ -178,7 +176,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
     key: 'summary',
     node: (() => {
       const style = getSectionStyle('summary');
-      return <Box sx={{ mb: 2, p: 0 }}><Typography variant="caption" sx={{ display: 'block', mb: 0.35, color: '#475569', fontWeight: 800, letterSpacing: '0.04em' }}>职业摘要</Typography><TextField fullWidth variant="standard" placeholder="用 2-3 句话概括你的核心能力与求职方向" value={content.summary || ''} onChange={(event) => onChange({ ...content, summary: event.target.value })} multiline sx={{ fontSize: `${style.fontSize}pt`, color: style.color, '& .MuiInputBase-root': { fontSize: 'inherit', fontWeight: style.fontWeight, color: style.color } }} /> </Box>;
+      return <Box sx={{ mb: 2, p: 0 }}>{sectionHeading('summary')}<TextField fullWidth variant="standard" placeholder="用 2-3 句话概括你的核心能力与求职方向" value={content.summary || ''} onChange={(event) => onChange({ ...content, summary: event.target.value })} multiline sx={{ fontSize: `${style.fontSize}pt`, color: style.color, '& .MuiInputBase-root': { fontSize: 'inherit', fontWeight: style.fontWeight, color: style.color } }} /> </Box>;
     })(),
   });
 
@@ -203,7 +201,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
       key: `${key}-item-${itemIndex}`,
       node: (() => {
         const style = getSectionStyle(key);
-        return <Box sx={{ breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${style.fontSize}pt`, fontWeight: style.fontWeight, color: style.color }}>{itemIndex === 0 && visibleEntries.length === 0 && sectionHeading(section.heading)}<TextField variant="standard" fullWidth multiline value={item.text || item.label || ''} onChange={(event) => updateItem(sectionIndex, itemIndex, event.target.value)} sx={{ mb: 0.35, '& .MuiInputBase-root': { fontSize: '0.96em', fontWeight: style.fontWeight, color: style.color } }} InputProps={{ startAdornment: <Box component="span" sx={{ mr: 0.7, color: '#0f766e', fontWeight: 800 }}>•</Box> }} /></Box>;
+        return <Box sx={{ breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${style.fontSize}pt`, fontWeight: style.fontWeight, color: style.color }}>{itemIndex === 0 && visibleEntries.length === 0 && sectionHeading(section.heading)}<TextField variant="standard" fullWidth multiline value={item.text || item.label || ''} onChange={(event) => updateItem(sectionIndex, itemIndex, event.target.value)} sx={{ mb: 0.35, '& .MuiInputBase-root': { fontSize: '0.96em', fontWeight: style.fontWeight, color: style.color } }} InputProps={{ startAdornment: <Box component="span" sx={{ mr: 0.7, color: '#b21f35', fontWeight: 800 }}>•</Box> }} /></Box>;
       })(),
     }));
   });
@@ -239,7 +237,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
     fontSize: `${fontSize}pt`,
     lineHeight: 1.55,
     overflowWrap: 'anywhere',
-    fontFamily: 'Arial, "Microsoft YaHei", sans-serif',
+    fontFamily: '"Resume Times", "Times New Roman", "Resume SimSun", SimSun, "Songti SC", serif',
     boxSizing: 'border-box',
     '& .MuiInput-underline:before, & .MuiInput-underline:after': { display: 'none' },
   };

@@ -124,6 +124,7 @@ merging_index/
 backups/
 logs/tmux/
 uploads/
+assets/fonts/
 .deploy/
 chatbot_deploy_key*
 frontend/build.previous/

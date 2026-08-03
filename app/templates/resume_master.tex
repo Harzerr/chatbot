@@ -13,15 +13,12 @@
 
 \newif\ifresumeicons
 \IfFileExists{fontawesome5.sty}{\resumeiconstrue\usepackage{fontawesome5}}{\resumeiconsfalse}
-% Linux server fallbacks; visually close to the Windows fonts in the supplied master.
-\setmainfont{Nimbus Sans}
-\setsansfont{Nimbus Sans}
-\setCJKmainfont{Noto Sans CJK SC}
-\setCJKsansfont{Noto Sans CJK SC}
+%%FONT_CONFIG%%
 
 \definecolor{ResumeText}{HTML}{1A1A1A}
 \definecolor{ResumeSecondary}{HTML}{333333}
-\definecolor{ResumeRule}{HTML}{6B7280}
+\definecolor{ResumeRule}{HTML}{CBD5E1}
+\definecolor{ResumeAccent}{HTML}{B21F35}
 \definecolor{ResumeBorder}{HTML}{E5E7EB}
 \pagestyle{empty}
 \pagecolor{white}
@@ -32,7 +29,7 @@
 \hyphenpenalty=10000
 \exhyphenpenalty=10000
 \emergencystretch=1em
-\renewcommand{\familydefault}{\sfdefault}
+\renewcommand{\familydefault}{\rmdefault}
 \renewcommand{\labelitemi}{\textbullet}
 \linespread{1}
 
@@ -44,25 +41,34 @@
 \newcommand{\ResumePhoto}{%%PHOTO_BLOCK%%}
 \newcommand{\ResumeSectionFont}{\fontsize{12pt}{14.5pt}\selectfont}
 
-% Header geometry and visual treatment follow the supplied example.tex master.
-\newcommand{\PlaceResumeHeader}{%
-  \AddToShipoutPictureFG*{%
-    \AtPageUpperLeft{%
-      \setlength{\unitlength}{1pt}%
-      \put(0,-32.1){\raisebox{-\height}{\makebox[\paperwidth][c]{\fontsize{24pt}{24pt}\selectfont\bfseries \ResumeName}}}%
-      \put(0,-70.2){\raisebox{-\height}{\makebox[\paperwidth][c]{\ResumeBodyFont \ResumeContact}}}%
-      \put(0,-90.4){\raisebox{-\height}{\makebox[\paperwidth][c]{\hspace{1.25em}\ResumeIcon{\faBullseye}{\ResumeTargetRole}}}}%
-      \ResumePhoto
-    }%
-  }%
+% Header follows the supplied resume reference: accent rule, rectangular photo, and contact block.
+\newcommand{\ResumeHeader}{%
+  \noindent
+  \begin{minipage}[t][105pt][t]{2.2pt}
+    \vspace{-105pt}%
+    {\color{ResumeAccent}\rule{\linewidth}{105pt}}
+  \end{minipage}\hspace{8pt}%
+  \begin{minipage}[t][105pt][t]{70pt}
+    \setlength{\fboxsep}{0pt}\setlength{\fboxrule}{0.6pt}%
+    \fcolorbox{ResumeBorder}{white}{\ResumePhoto}
+  \end{minipage}\hspace{12pt}%
+  \begin{minipage}[t][105pt][t]{340pt}
+    {\fontsize{24pt}{26pt}\selectfont\bfseries \ResumeName\par}
+    \vspace{2pt}
+    {\ResumeBodyFont\color{ResumeAccent}\bfseries \ResumeTargetRole\par}
+    \vspace{7pt}
+    {\ResumeBodyFont \ResumeContact\par}
+  \end{minipage}
+  \par\vspace{6mm}%
 }
 
 \newcommand{\ResumeSection}[2][2.8mm]{%
   \par\vspace{#1}%
-  {\ResumeSectionFont\bfseries #2\par}%
+  \noindent{\color{ResumeAccent}\rule{2.2pt}{12pt}}\hspace{5pt}%
+  {\ResumeSectionFont\bfseries\color{ResumeText} #2}\par%
   \vspace{1.55mm}%
-  {\color{ResumeRule}\hrule height 1.5pt}%
-  \vspace{3.35mm}%
+  {\color{ResumeRule}\hrule height 0.5pt}%
+  \vspace{2.6mm}%
 }
 \newcommand{\ResumeEntry}[3]{%
   \noindent\parbox[t]{0.4\linewidth}{\raggedright\strut #1}%
@@ -72,10 +78,9 @@
 \newenvironment{ResumeItems}{\begin{itemize}[leftmargin=5.29mm,labelwidth=1.4mm,labelsep=1.75mm,itemindent=0pt,topsep=0pt,partopsep=0pt,parsep=0pt,itemsep=3pt]}{\end{itemize}}
 
 \begin{document}
-\sffamily
+\rmfamily
 \ResumeBodyFont
 \color{ResumeText}
-\PlaceResumeHeader
-\vspace*{32.1mm}
+\ResumeHeader
 %%CONTENT%%
 \end{document}
