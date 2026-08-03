@@ -95,16 +95,19 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
   const sectionHeading = (heading) => {
     const style = getSectionStyle(sectionKey(heading));
     return (
-      <Typography sx={{ borderLeft: '3px solid #0f766e', pl: 1, mb: 1, fontWeight: 800, fontSize: `${style.fontSize}pt`, color: style.color }}>
-      {sectionLabels[heading] || heading || '其他经历'}
-      </Typography>
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.1, px: 1, py: 0.45, borderRadius: 1, bgcolor: '#eff8f6', color: style.color, width: 'fit-content' }}>
+        <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#0f766e', flex: '0 0 auto' }} />
+        <Typography sx={{ fontWeight: 800, fontSize: `${style.fontSize}pt`, color: 'inherit', letterSpacing: '0.02em' }}>
+          {sectionLabels[heading] || heading || '其他经历'}
+        </Typography>
+      </Stack>
     );
   };
 
   const renderEntry = (sectionIndex, heading, entry, entryIndex) => {
     const style = getSectionStyle(sectionKey(heading));
     return (
-    <Box sx={{ mb: 1.3, breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${style.fontSize}pt`, fontWeight: style.fontWeight, color: style.color }}>
+    <Box sx={{ mb: 1.3, p: 1.2, borderRadius: 1.5, bgcolor: '#f8fbfd', breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${style.fontSize}pt`, fontWeight: style.fontWeight, color: style.color }}>
       <Stack direction="row" spacing={1} alignItems="baseline" justifyContent="space-between">
         <TextField
           variant="standard"
@@ -137,7 +140,9 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
           sx={{ mt: 0.4, '& .MuiInputBase-root': { fontSize: '0.96em' } }}
         />
       )}
-      {entry.tech_stack?.length > 0 && <Typography variant="caption" sx={{ display: 'block', mt: 0.4, color: '#0f766e' }}>技术栈：{entry.tech_stack.join('、')}</Typography>}
+      {entry.tech_stack?.length > 0 && <Stack direction="row" spacing={0.5} useFlexGap flexWrap="wrap" sx={{ mt: 0.7 }}>
+        {entry.tech_stack.map((technology) => <Chip key={technology} label={technology} size="small" sx={{ height: 22, bgcolor: '#e6f4f1', color: '#0f766e', fontSize: '0.82em' }} />)}
+      </Stack>}
       {(entry.items || []).map((item, itemIndex) => (
         <TextField
           key={`${item.label}-${itemIndex}`}
@@ -158,13 +163,14 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
   blocks.push({
     key: 'header',
     node: (
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, borderLeft: '4px solid #0f766e', pl: 2, mb: 2.5 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, p: 1.8, borderRadius: 2, bgcolor: '#f1f8f7', mb: 2.2 }}>
         <Box sx={{ minWidth: 0 }}>
+          <Typography variant="overline" sx={{ color: '#0f766e', fontWeight: 800, letterSpacing: '0.14em', lineHeight: 1.2 }}>PROFESSIONAL PROFILE</Typography>
           <Typography sx={{ fontSize: `${Math.max(fontSize + 7, 17)}pt`, fontWeight: 800 }}>{user?.full_name || '姓名待确认'}</Typography>
           <Typography sx={{ color: '#0f766e', fontWeight: 700, mt: 0.25 }}>{content.headline}</Typography>
-          <Typography variant="body2" sx={{ color: '#52606d', mt: 1 }}>{[user?.phone, user?.email, user?.target_role].filter(Boolean).join('  ·  ') || '请在个人档案补充联系方式'}</Typography>
+          <Typography variant="body2" sx={{ color: '#52606d', mt: 1, lineHeight: 1.8 }}>{[user?.phone, user?.email, user?.target_role].filter(Boolean).join('  ·  ') || '请在个人档案补充联系方式'}</Typography>
         </Box>
-        <Avatar src={user?.avatar_url || undefined} alt="证件照" variant="square" sx={{ width: 76, height: 96, flex: '0 0 auto', bgcolor: '#f1f5f9', color: '#64748b', border: '1px solid #cbd5e1', fontSize: 12 }}>证件照</Avatar>
+        <Avatar src={user?.avatar_url || undefined} alt="证件照" variant="square" sx={{ width: 76, height: 96, flex: '0 0 auto', bgcolor: '#fff', color: '#64748b', border: '3px solid #fff', boxShadow: '0 4px 12px rgba(15, 118, 110, 0.16)', borderRadius: 1.5, fontSize: 12 }}>证件照</Avatar>
       </Box>
     ),
   });
@@ -172,7 +178,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
     key: 'summary',
     node: (() => {
       const style = getSectionStyle('summary');
-      return <TextField fullWidth variant="standard" label="职业摘要（可编辑）" value={content.summary || ''} onChange={(event) => onChange({ ...content, summary: event.target.value })} multiline sx={{ mb: 2, fontSize: `${style.fontSize}pt`, color: style.color, '& .MuiInputBase-root': { fontSize: 'inherit', fontWeight: style.fontWeight, color: style.color } }} />;
+      return <Box sx={{ mb: 2, p: 1.5, borderRadius: 1.5, bgcolor: '#fffaf0' }}><Typography variant="caption" sx={{ display: 'block', mb: 0.35, color: '#9a6b16', fontWeight: 800, letterSpacing: '0.04em' }}>职业摘要</Typography><TextField fullWidth variant="standard" placeholder="用 2-3 句话概括你的核心能力与求职方向" value={content.summary || ''} onChange={(event) => onChange({ ...content, summary: event.target.value })} multiline sx={{ fontSize: `${style.fontSize}pt`, color: style.color, '& .MuiInputBase-root': { fontSize: 'inherit', fontWeight: style.fontWeight, color: style.color } }} /> </Box>;
     })(),
   });
 
@@ -180,7 +186,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
     const educationStyle = getSectionStyle('education');
     content.education.forEach((item, index) => blocks.push({
       key: `education-${index}`,
-      node: <Box sx={{ mb: 1.1, breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${educationStyle.fontSize}pt`, fontWeight: educationStyle.fontWeight, color: educationStyle.color }}>{index === 0 && sectionHeading('education')}<Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}><Typography fontWeight={700}>{[item.school, item.major, item.degree].filter(Boolean).join(' · ') || item.title || '教育经历'}</Typography><Typography sx={{ whiteSpace: 'nowrap', color: '#52606d' }}>{[item.start_date, item.end_date].filter(Boolean).join(' - ')}</Typography></Box></Box>,
+      node: <Box sx={{ mb: 1.1, p: 1.1, borderRadius: 1.5, bgcolor: '#f8fbfd', breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${educationStyle.fontSize}pt`, fontWeight: educationStyle.fontWeight, color: educationStyle.color }}>{index === 0 && sectionHeading('education')}<Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}><Typography fontWeight={700}>{[item.school, item.major, item.degree].filter(Boolean).join(' · ') || item.title || '教育经历'}</Typography><Typography sx={{ whiteSpace: 'nowrap', color: '#52606d' }}>{[item.start_date, item.end_date].filter(Boolean).join(' - ')}</Typography></Box></Box>,
     }));
   }
 
@@ -197,7 +203,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
       key: `${key}-item-${itemIndex}`,
       node: (() => {
         const style = getSectionStyle(key);
-        return <Box sx={{ breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${style.fontSize}pt`, fontWeight: style.fontWeight, color: style.color }}>{itemIndex === 0 && visibleEntries.length === 0 && sectionHeading(section.heading)}<TextField variant="standard" fullWidth multiline value={item.text || item.label || ''} onChange={(event) => updateItem(sectionIndex, itemIndex, event.target.value)} sx={{ mb: 0.35, '& .MuiInputBase-root': { fontSize: '0.96em', fontWeight: style.fontWeight, color: style.color } }} InputProps={{ startAdornment: <Box component="span" sx={{ mr: 0.7, color: '#0f766e' }}>•</Box> }} /></Box>;
+        return <Box sx={{ breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${style.fontSize}pt`, fontWeight: style.fontWeight, color: style.color }}>{itemIndex === 0 && visibleEntries.length === 0 && sectionHeading(section.heading)}<TextField variant="standard" fullWidth multiline value={item.text || item.label || ''} onChange={(event) => updateItem(sectionIndex, itemIndex, event.target.value)} sx={{ mb: 0.35, '& .MuiInputBase-root': { fontSize: '0.96em', fontWeight: style.fontWeight, color: style.color } }} InputProps={{ startAdornment: <Box component="span" sx={{ mr: 0.7, color: '#0f766e', fontWeight: 800 }}>•</Box> }} /></Box>;
       })(),
     }));
   });
@@ -265,6 +271,7 @@ const ResumeOptimizer = () => {
   const [hiddenSections, setHiddenSections] = useState({});
   const [hiddenProjects, setHiddenProjects] = useState({});
   const [sectionStyles, setSectionStyles] = useState({});
+  const [styleTarget, setStyleTarget] = useState('summary');
   const [fontSize, setFontSize] = useState(10.5);
   const [padding, setPadding] = useState(15);
   const [loading, setLoading] = useState(true);
@@ -380,6 +387,14 @@ const ResumeOptimizer = () => {
     }));
   };
 
+  const styleKeys = useMemo(() => ['summary', 'education', ...(content?.sections || []).map((section) => sectionKey(section.heading))]
+    .filter((value, index, array) => array.indexOf(value) === index), [content]);
+  useEffect(() => {
+    if (styleKeys.length && !styleKeys.includes(styleTarget)) setStyleTarget(styleKeys[0]);
+  }, [styleKeys, styleTarget]);
+  const activeStyle = { ...defaultSectionStyle, fontSize, ...(sectionStyles[styleTarget] || {}) };
+  const updateActiveStyle = (field, value) => setSectionStyles((current) => ({ ...current, [styleTarget]: { ...activeStyle, [field]: value } }));
+
   if (loading) return <Box sx={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}><CircularProgress /></Box>;
 
   return (
@@ -441,35 +456,30 @@ const ResumeOptimizer = () => {
               </Paper>
               <Paper sx={{ p: 2 }}>
                 <Typography variant="subtitle1" fontWeight={700}>分区字体</Typography>
-                <Typography variant="caption" color="text.secondary">分别调整摘要、教育和各段经历的字号、粗细与颜色。</Typography>
-                <Stack spacing={1.2} sx={{ mt: 1 }}>
-                  {['summary', 'education', ...(content?.sections || []).map((section) => sectionKey(section.heading))]
-                    .filter((value, index, array) => array.indexOf(value) === index)
-                    .map((key) => {
-                      const style = { ...defaultSectionStyle, fontSize, ...(sectionStyles[key] || {}) };
-                      const updateStyle = (field, value) => setSectionStyles((current) => ({ ...current, [key]: { ...style, [field]: value } }));
-                      return (
-                        <Box key={key}>
-                          <Typography variant="caption" color="text.secondary">{styleLabels[key] || key}</Typography>
-                          <Stack direction="row" spacing={0.5} sx={{ mt: 0.4 }}>
-                            <FormControl size="small" sx={{ minWidth: 78 }}>
-                              <Select aria-label={`${key}-font-size`} value={String(style.fontSize)} onChange={(event) => updateStyle('fontSize', Number(event.target.value))}>
-                                {[9, 10, 10.5, 11, 12, 13, 14].map((size) => <MenuItem key={size} value={String(size)}>{size}pt</MenuItem>)}
-                              </Select>
-                            </FormControl>
-                            <FormControl size="small" sx={{ minWidth: 78 }}>
-                              <Select aria-label={`${key}-font-weight`} value={String(style.fontWeight)} onChange={(event) => updateStyle('fontWeight', Number(event.target.value))}>
-                                <MenuItem value="400">常规</MenuItem>
-                                <MenuItem value="600">中等</MenuItem>
-                                <MenuItem value="700">粗体</MenuItem>
-                                <MenuItem value="800">特粗</MenuItem>
-                              </Select>
-                            </FormControl>
-                            <TextField size="small" type="color" value={style.color} onChange={(event) => updateStyle('color', event.target.value)} inputProps={{ 'aria-label': `${key}-font-color` }} sx={{ width: 52 }} />
-                          </Stack>
-                        </Box>
-                      );
-                    })}
+                <Typography variant="caption" color="text.secondary">先选择一个分区，再调整字号、粗细和颜色，避免重复堆叠控件。</Typography>
+                <FormControl fullWidth size="small" sx={{ mt: 1 }}>
+                  <InputLabel>选择分区</InputLabel>
+                  <Select label="选择分区" value={styleTarget} onChange={(event) => setStyleTarget(event.target.value)}>
+                    {styleKeys.map((key) => <MenuItem key={key} value={key}>{styleLabels[key] || key}</MenuItem>)}
+                  </Select>
+                </FormControl>
+                <Stack direction="row" spacing={0.6} sx={{ mt: 1 }}>
+                  <FormControl size="small" sx={{ minWidth: 86, flex: 1 }}>
+                    <InputLabel>字号</InputLabel>
+                    <Select label="字号" aria-label={`${styleTarget}-font-size`} value={String(activeStyle.fontSize)} onChange={(event) => updateActiveStyle('fontSize', Number(event.target.value))}>
+                      {[9, 10, 10.5, 11, 12, 13, 14].map((size) => <MenuItem key={size} value={String(size)}>{size}pt</MenuItem>)}
+                    </Select>
+                  </FormControl>
+                  <FormControl size="small" sx={{ minWidth: 86, flex: 1 }}>
+                    <InputLabel>字重</InputLabel>
+                    <Select label="字重" aria-label={`${styleTarget}-font-weight`} value={String(activeStyle.fontWeight)} onChange={(event) => updateActiveStyle('fontWeight', Number(event.target.value))}>
+                      <MenuItem value="400">常规</MenuItem>
+                      <MenuItem value="600">中等</MenuItem>
+                      <MenuItem value="700">粗体</MenuItem>
+                      <MenuItem value="800">特粗</MenuItem>
+                    </Select>
+                  </FormControl>
+                  <TextField size="small" type="color" label="颜色" value={activeStyle.color} onChange={(event) => updateActiveStyle('color', event.target.value)} inputProps={{ 'aria-label': `${styleTarget}-font-color` }} sx={{ width: 64 }} />
                 </Stack>
               </Paper>
               <Paper sx={{ p: 2 }}>
