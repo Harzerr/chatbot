@@ -24,6 +24,7 @@ import {
 } from '@mui/material';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
+import FormatBoldRoundedIcon from '@mui/icons-material/FormatBoldRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
 import KeyboardArrowUpRoundedIcon from '@mui/icons-material/KeyboardArrowUpRounded';
@@ -84,7 +85,76 @@ const updateSection = (content, index, updater) => {
   return next;
 };
 
-const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionStyles, fontSize, sectionTitleSize, padding, onChange }) => {
+const normalizeRichTextHtml = (value) => {
+  const source = String(value || '');
+  const container = document.createElement('div');
+  const appendText = (parent, text) => {
+    text.split('\n').forEach((line, index) => {
+      if (index) parent.appendChild(document.createElement('br'));
+      parent.appendChild(document.createTextNode(line));
+    });
+  };
+  const copyNode = (node, parent) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      parent.appendChild(document.createTextNode(node.nodeValue || ''));
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const tagName = node.tagName.toLowerCase();
+    if (tagName === 'br') {
+      parent.appendChild(document.createElement('br'));
+      return;
+    }
+    if (tagName === 'strong' || tagName === 'b') {
+      const strong = document.createElement('strong');
+      [...node.childNodes].forEach((child) => copyNode(child, strong));
+      parent.appendChild(strong);
+      return;
+    }
+    [...node.childNodes].forEach((child) => copyNode(child, parent));
+  };
+  if (/[<>]/.test(source)) {
+    const template = document.createElement('template');
+    template.innerHTML = source;
+    [...template.content.childNodes].forEach((node) => copyNode(node, container));
+  } else {
+    appendText(container, source);
+  }
+  return container.innerHTML;
+};
+
+const RichTextEditor = ({ value, onChange, placeholder = '' }) => {
+  const editorRef = useRef(null);
+  useLayoutEffect(() => {
+    if (editorRef.current && document.activeElement !== editorRef.current) {
+      editorRef.current.innerHTML = normalizeRichTextHtml(value);
+    }
+  }, [value]);
+  const toggleBold = () => {
+    editorRef.current?.focus();
+    document.execCommand('bold');
+    onChange(editorRef.current?.innerHTML || '');
+  };
+  return (
+    <Box sx={{ position: 'relative', flex: 1, minWidth: 0 }}>
+      <Box
+        ref={editorRef}
+        contentEditable
+        suppressContentEditableWarning
+        onInput={(event) => onChange(event.currentTarget.innerHTML)}
+        data-placeholder={placeholder}
+        sx={{ minHeight: '1em', pr: 3, outline: 'none', lineHeight: 1, '&:empty:before': { content: 'attr(data-placeholder)', color: '#94a3b8' } }}
+      />
+      <Tooltip title="选中文字后加粗">
+        <IconButton size="small" onMouseDown={(event) => event.preventDefault()} onClick={toggleBold} sx={{ position: 'absolute', right: -2, top: -7, p: 0.25 }}>
+          <FormatBoldRoundedIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
+  </Box>
+  );
+};
+
+const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionStyles, fontSize, sectionTitleSize, padding, onChange, onFormatSection }) => {
   const measureRef = useRef(null);
   const [pageGroups, setPageGroups] = useState([]);
   const getSectionStyle = (key) => {
@@ -106,6 +176,20 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
       next.items[itemIndex] = { ...next.items[itemIndex], text: value };
       return next;
     }));
+  };
+
+  const deleteEntry = (sectionIndex, entryIndex) => {
+    onChange(updateSection(content, sectionIndex, (section) => ({
+      ...section,
+      entries: (section.entries || []).filter((_, index) => index !== entryIndex),
+    })));
+  };
+
+  const deleteItem = (sectionIndex, itemIndex) => {
+    onChange(updateSection(content, sectionIndex, (section) => ({
+      ...section,
+      items: (section.items || []).filter((_, index) => index !== itemIndex),
+    })));
   };
 
   const sectionHeading = (heading) => {
@@ -130,14 +214,20 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
           variant="standard"
           value={entry.title || ''}
           onChange={(event) => updateEntry(sectionIndex, entryIndex, 'title', event.target.value)}
-          sx={{ flex: 1, '& .MuiInputBase-root': { fontWeight: 700, fontSize: 'inherit' } }}
+          sx={{ flex: 1, '& .MuiInputBase-root': { fontWeight: 700, fontSize: 'inherit', p: 0 } }}
         />
         <TextField
           variant="standard"
           value={entry.period || ''}
           onChange={(event) => updateEntry(sectionIndex, entryIndex, 'period', event.target.value)}
-          sx={{ width: 125, '& .MuiInputBase-root': { fontSize: '0.92em', color: '#52606d' } }}
+          sx={{ width: 125, '& .MuiInputBase-root': { fontSize: '0.92em', color: '#52606d', p: 0 } }}
         />
+        <Tooltip title={style.fontWeight >= 700 ? '取消加粗' : '整段加粗'}>
+          <IconButton size="small" onClick={() => onFormatSection(sectionKey(heading), 'fontWeight', style.fontWeight >= 700 ? 400 : 700)}><FormatBoldRoundedIcon fontSize="small" /></IconButton>
+        </Tooltip>
+        <Tooltip title="删除整段经历">
+          <IconButton size="small" color="error" onClick={() => deleteEntry(sectionIndex, entryIndex)}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton>
+        </Tooltip>
       </Stack>
       <TextField
         variant="standard"
@@ -145,30 +235,18 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
         value={entry.subtitle || ''}
         onChange={(event) => updateEntry(sectionIndex, entryIndex, 'subtitle', event.target.value)}
         placeholder="角色 / 职位"
-        sx={{ '& .MuiInputBase-root': { fontSize: '0.94em', color: '#52606d' } }}
+        sx={{ '& .MuiInputBase-root': { fontSize: '0.94em', color: '#52606d', p: 0 } }}
       />
       {entry.summary && (
-        <TextField
-          variant="standard"
-          fullWidth
-          multiline
-          value={entry.summary || ''}
-          onChange={(event) => updateEntry(sectionIndex, entryIndex, 'summary', event.target.value)}
-          sx={{ mt: 0, '& .MuiInputBase-root': { fontSize: '0.96em' } }}
-        />
+        <RichTextEditor value={entry.summary} onChange={(value) => updateEntry(sectionIndex, entryIndex, 'summary', value)} />
       )}
       {entry.tech_stack?.length > 0 && <Typography variant="body2" sx={{ mt: 0, color: '#475569' }}>技术栈：{entry.tech_stack.join('、')}</Typography>}
       {(entry.items || []).map((item, itemIndex) => (
-        <TextField
-          key={`${item.label}-${itemIndex}`}
-          variant="standard"
-          fullWidth
-          multiline
-          value={item.text || ''}
-          onChange={(event) => updateEntry(sectionIndex, entryIndex, 'items', (entry.items || []).map((current, index) => index === itemIndex ? { ...current, text: event.target.value } : current))}
-          sx={{ mt: 0, '& .MuiInputBase-root': { fontSize: '0.96em' } }}
-          InputProps={{ startAdornment: <Box component="span" sx={{ mr: 0.7, color: '#b21f35' }}>•</Box> }}
-        />
+        <Box key={`${item.label}-${itemIndex}`} sx={{ position: 'relative', display: 'flex', alignItems: 'flex-start', width: '100%' }}>
+          <Box component="span" sx={{ flex: '0 0 12px', pt: 0.1, color: '#b21f35' }}>•</Box>
+          <RichTextEditor value={item.text} onChange={(value) => updateEntry(sectionIndex, entryIndex, 'items', (entry.items || []).map((current, index) => index === itemIndex ? { ...current, text: value } : current))} />
+          <Tooltip title="删除要点"><IconButton size="small" color="error" onClick={() => deleteItem(sectionIndex, itemIndex)} sx={{ position: 'absolute', right: -26, top: -4, p: 0.25 }}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></Tooltip>
+        </Box>
       ))}
     </Box>
     );
@@ -212,7 +290,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
       key: `${key}-item-${itemIndex}`,
       node: (() => {
         const style = getSectionStyle(key);
-        return <Box sx={{ breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${style.fontSize}pt`, fontWeight: style.fontWeight, color: style.color }}>{itemIndex === 0 && visibleEntries.length === 0 && sectionHeading(section.heading)}<TextField variant="standard" fullWidth multiline value={item.text || item.label || ''} onChange={(event) => updateItem(sectionIndex, itemIndex, event.target.value)} sx={{ mb: 0, '& .MuiInputBase-root': { fontSize: '0.96em', fontWeight: style.fontWeight, color: style.color } }} InputProps={{ startAdornment: <Box component="span" sx={{ mr: 0.7, color: '#b21f35', fontWeight: 800 }}>•</Box> }} /></Box>;
+        return <Box sx={{ breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${style.fontSize}pt`, fontWeight: style.fontWeight, color: style.color }}>{itemIndex === 0 && visibleEntries.length === 0 && sectionHeading(section.heading)}<Box sx={{ position: 'relative', display: 'flex', alignItems: 'flex-start', width: '100%' }}><Box component="span" sx={{ flex: '0 0 12px', pt: 0.1, color: '#b21f35', fontWeight: 800 }}>•</Box><RichTextEditor value={item.text || item.label || ''} onChange={(value) => updateItem(sectionIndex, itemIndex, value)} /><Tooltip title="删除要点"><IconButton size="small" color="error" onClick={() => deleteItem(sectionIndex, itemIndex)} sx={{ position: 'absolute', right: -26, top: -4, p: 0.25 }}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></Tooltip></Box></Box>;
       })(),
     }));
   });
@@ -414,6 +492,7 @@ const ResumeOptimizer = () => {
   const activeStyle = { ...defaultSectionStyle, fontSize, ...(sectionStyles[styleTarget] || {}) };
   activeStyle.fontSize = clampFontSize(activeStyle.fontSize, fontSize);
   const updateActiveStyle = (field, value) => setSectionStyles((current) => ({ ...current, [styleTarget]: { ...activeStyle, [field]: value } }));
+  const formatSection = (key, field, value) => setSectionStyles((current) => ({ ...current, [key]: { ...(current[key] || {}), [field]: value } }));
 
   if (loading) return <Box sx={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}><CircularProgress /></Box>;
 
@@ -464,7 +543,7 @@ const ResumeOptimizer = () => {
             </Stack>
 
             <Paper sx={{ p: { xs: 1, md: 3 }, bgcolor: '#e9eef5', height: { xs: 'auto', lg: 'calc(100vh - 170px)' }, maxHeight: { xs: 'none', lg: 'calc(100vh - 170px)' }, overflowY: { xs: 'visible', lg: 'auto' }, overflowX: 'auto', minWidth: 0 }}>
-              {content && <ResumePaper content={content} user={currentUser} hiddenSections={hiddenSections} hiddenProjects={hiddenProjects} sectionStyles={sectionStyles} fontSize={fontSize} sectionTitleSize={sectionTitleSize} padding={padding} onChange={setContent} />}
+              {content && <ResumePaper content={content} user={currentUser} hiddenSections={hiddenSections} hiddenProjects={hiddenProjects} sectionStyles={sectionStyles} fontSize={fontSize} sectionTitleSize={sectionTitleSize} padding={padding} onChange={setContent} onFormatSection={formatSection} />}
             </Paper>
 
             <Stack spacing={2}>

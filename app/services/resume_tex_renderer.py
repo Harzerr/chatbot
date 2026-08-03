@@ -39,6 +39,21 @@ def _escape_tex(value: Any) -> str:
     return "".join(_TEX_ESCAPES.get(char, char) for char in text).replace("\r", " ").replace("\n", " ").strip()
 
 
+def _rich_text(value: Any) -> str:
+    text = str(value or "")
+    parts = re.split(r"(<(?:strong|b)>.*?</(?:strong|b)>)", text, flags=re.IGNORECASE | re.DOTALL)
+    rendered: list[str] = []
+    for part in parts:
+        match = re.fullmatch(r"<(?:strong|b)>(.*?)</(?:strong|b)>", part, flags=re.IGNORECASE | re.DOTALL)
+        if match:
+            inner = re.sub(r"<br\s*/?>", " ", match.group(1), flags=re.IGNORECASE)
+            rendered.append(rf"\textbf{{{_escape_tex(re.sub(r'<[^>]+>', '', inner))}}}")
+        else:
+            plain = re.sub(r"<br\s*/?>", " ", part, flags=re.IGNORECASE)
+            rendered.append(_escape_tex(re.sub(r"<[^>]+>", "", plain)))
+    return "".join(rendered)
+
+
 def _layout_value(value: Any, default: float, minimum: float, maximum: float) -> float:
     try:
         parsed = float(value)
@@ -84,7 +99,7 @@ def _items(items: list[Any]) -> str:
     rendered = []
     for item in items:
         value = item.get("text", "") if isinstance(item, dict) else item
-        text = _escape_tex(value)
+        text = _rich_text(value)
         if text:
             label = _escape_tex(item.get("label")) if isinstance(item, dict) else ""
             rendered.append(f"  \\item \\textbf{{{label}：}} {text}" if label else f"  \\item {text}")
@@ -104,14 +119,14 @@ def _entries(entries: Any, heading: str) -> str:
         if not title:
             continue
         rendered.append(f"\\ResumeEntry{{\\textbf{{{title}}}}}{{\\textbf{{{subtitle}}}}}{{{period}}}")
-        summary = _escape_tex(entry.get("summary"))
+        summary = entry.get("summary")
         if summary:
             label = "项目简介" if heading == "项目经历" else "个人职责与成果"
-            rendered.append(f"\\textbf{{{label}：}} {summary}\\par")
+            rendered.append(f"\\textbf{{{label}：}} {_rich_text(summary)}\\par")
         tech_stack = entry.get("tech_stack")
         if isinstance(tech_stack, list):
-            tech_stack = "、".join(_escape_tex(item) for item in tech_stack if _escape_tex(item))
-        tech_stack = _escape_tex(tech_stack)
+            tech_stack = "、".join(str(item) for item in tech_stack if str(item).strip())
+        tech_stack = _rich_text(tech_stack)
         if tech_stack:
             rendered.append(f"\\textbf{{技术栈：}} {tech_stack}\\par")
         items = _items(entry.get("items") if isinstance(entry.get("items"), list) else [])
