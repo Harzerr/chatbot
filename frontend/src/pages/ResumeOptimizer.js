@@ -53,6 +53,11 @@ const styleLabels = {
 
 const defaultSectionStyle = { fontSize: 10.5, fontWeight: 400, color: '#17202a' };
 
+const clampFontSize = (value, fallback = 10.5, minimum = 9.5, maximum = 16) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(minimum, Math.min(maximum, parsed)) : fallback;
+};
+
 const resumeFontFaceCss = `
 @font-face { font-family: 'Resume Times'; src: url('/api/v1/fonts/times.ttf') format('truetype'); font-style: normal; font-weight: 400; font-display: swap; }
 @font-face { font-family: 'Resume Times'; src: url('/api/v1/fonts/timesbd.ttf') format('truetype'); font-style: normal; font-weight: 700; font-display: swap; }
@@ -79,10 +84,13 @@ const updateSection = (content, index, updater) => {
   return next;
 };
 
-const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionStyles, fontSize, padding, onChange }) => {
+const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionStyles, fontSize, sectionTitleSize, padding, onChange }) => {
   const measureRef = useRef(null);
   const [pageGroups, setPageGroups] = useState([]);
-  const getSectionStyle = (key) => ({ ...defaultSectionStyle, fontSize, ...(sectionStyles[key] || {}) });
+  const getSectionStyle = (key) => {
+    const style = { ...defaultSectionStyle, fontSize, ...(sectionStyles[key] || {}) };
+    return { ...style, fontSize: clampFontSize(style.fontSize, fontSize) };
+  };
 
   const updateEntry = (sectionIndex, entryIndex, field, value) => {
     onChange(updateSection(content, sectionIndex, (section) => {
@@ -105,7 +113,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
     return (
       <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.1, color: style.color, width: '100%' }}>
         <Box sx={{ width: 3, height: 15, bgcolor: '#b21f35', flex: '0 0 auto' }} />
-        <Typography sx={{ fontWeight: 800, fontSize: `${style.fontSize}pt`, color: 'inherit', letterSpacing: '0.02em' }}>
+        <Typography sx={{ fontWeight: 800, fontSize: `${sectionTitleSize}pt`, color: 'inherit', letterSpacing: '0.02em' }}>
           {sectionLabels[heading] || heading || '其他经历'}
         </Typography>
         <Box sx={{ flex: 1, height: '1px', bgcolor: '#cbd5e1' }} />
@@ -174,20 +182,15 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
         <Avatar src={user?.avatar_url || undefined} alt="证件照" variant="square" sx={{ width: 76, height: 100, flex: '0 0 auto', bgcolor: '#fff', color: '#64748b', border: '1px solid #cbd5e1', boxShadow: 'none', borderRadius: 0, fontSize: 12 }}>证件照</Avatar>
         <Box sx={{ minWidth: 0, pt: 0.2 }}>
           <Typography sx={{ fontSize: `${Math.max(fontSize + 7, 17)}pt`, fontWeight: 800 }}>{user?.full_name || '姓名待确认'}</Typography>
-          <Typography sx={{ color: '#b21f35', fontWeight: 700, mt: 0.25 }}>{content.headline}</Typography>
-          <Typography variant="body2" sx={{ color: '#52606d', mt: 1, lineHeight: 1.8 }}>{[user?.phone, user?.email].filter(Boolean).join('    ') || '请在个人档案补充联系方式'}</Typography>
+          <Typography sx={{ color: '#b21f35', fontWeight: 700, mt: 0.25 }}>求职意向：{content.headline}</Typography>
+          <Typography variant="body2" sx={{ color: '#52606d', mt: 1, lineHeight: 1.8 }}>{[
+            user?.phone && `手机：${user.phone}`,
+            user?.email && `邮箱：${user.email}`,
+          ].filter(Boolean).join('    ') || '请在个人档案补充联系方式'}</Typography>
         </Box>
       </Box>
     ),
   });
-  blocks.push({
-    key: 'summary',
-    node: (() => {
-      const style = getSectionStyle('summary');
-      return <Box sx={{ mb: 2, p: 0 }}>{sectionHeading('summary')}<TextField fullWidth variant="standard" placeholder="用 2-3 句话概括你的核心能力与求职方向" value={content.summary || ''} onChange={(event) => onChange({ ...content, summary: event.target.value })} multiline sx={{ fontSize: `${style.fontSize}pt`, color: style.color, '& .MuiInputBase-root': { fontSize: 'inherit', fontWeight: style.fontWeight, color: style.color } }} /> </Box>;
-    })(),
-  });
-
   if (!hiddenSections.education && content.education?.length > 0) {
     const educationStyle = getSectionStyle('education');
     content.education.forEach((item, index) => blocks.push({
@@ -275,9 +278,10 @@ const ResumeOptimizer = () => {
   const [hiddenSections, setHiddenSections] = useState({});
   const [hiddenProjects, setHiddenProjects] = useState({});
   const [sectionStyles, setSectionStyles] = useState({});
-  const [styleTarget, setStyleTarget] = useState('summary');
+  const [styleTarget, setStyleTarget] = useState('education');
   const [visibilityTarget, setVisibilityTarget] = useState('education');
   const [fontSize, setFontSize] = useState(10.5);
+  const [sectionTitleSize, setSectionTitleSize] = useState(12);
   const [padding, setPadding] = useState(15);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
@@ -310,7 +314,10 @@ const ResumeOptimizer = () => {
     const nextContent = normalizeContent(selectedResume, currentUser);
     setContent(nextContent);
     setSectionStyles(nextContent.layout?.sectionStyles || {});
-    setFontSize(nextContent.layout?.fontSize || 10.5);
+    const storedFontSize = Number(nextContent.layout?.fontSize);
+    const storedSectionTitleSize = Number(nextContent.layout?.sectionTitleFontSize);
+    setFontSize(clampFontSize(storedFontSize, 10.5, 9.5, 14));
+    setSectionTitleSize(Number.isFinite(storedSectionTitleSize) ? Math.max(11, Math.min(16, storedSectionTitleSize)) : 12);
     setPadding(nextContent.layout?.padding || 15);
     setTitle(selectedResume.title || '定制简历');
   }, [selectedResume, currentUser]);
@@ -324,6 +331,7 @@ const ResumeOptimizer = () => {
         layout: {
           ...(content.layout || {}),
           fontSize,
+          sectionTitleFontSize: sectionTitleSize,
           padding,
           sectionStyles,
         },
@@ -392,7 +400,7 @@ const ResumeOptimizer = () => {
     }));
   };
 
-  const styleKeys = useMemo(() => ['summary', 'education', ...(content?.sections || []).map((section) => sectionKey(section.heading))]
+  const styleKeys = useMemo(() => ['education', ...(content?.sections || []).map((section) => sectionKey(section.heading))]
     .filter((value, index, array) => array.indexOf(value) === index), [content]);
   const visibilityKeys = useMemo(() => ['education', ...(content?.sections || []).map((section) => sectionKey(section.heading))]
     .filter((value, index, array) => array.indexOf(value) === index), [content]);
@@ -403,6 +411,7 @@ const ResumeOptimizer = () => {
     if (visibilityKeys.length && !visibilityKeys.includes(visibilityTarget)) setVisibilityTarget(visibilityKeys[0]);
   }, [visibilityKeys, visibilityTarget]);
   const activeStyle = { ...defaultSectionStyle, fontSize, ...(sectionStyles[styleTarget] || {}) };
+  activeStyle.fontSize = clampFontSize(activeStyle.fontSize, fontSize);
   const updateActiveStyle = (field, value) => setSectionStyles((current) => ({ ...current, [styleTarget]: { ...activeStyle, [field]: value } }));
 
   if (loading) return <Box sx={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}><CircularProgress /></Box>;
@@ -454,14 +463,16 @@ const ResumeOptimizer = () => {
             </Stack>
 
             <Paper sx={{ p: { xs: 1, md: 3 }, bgcolor: '#e9eef5', height: { xs: 'auto', lg: 'calc(100vh - 170px)' }, maxHeight: { xs: 'none', lg: 'calc(100vh - 170px)' }, overflowY: { xs: 'visible', lg: 'auto' }, overflowX: 'auto', minWidth: 0 }}>
-              {content && <ResumePaper content={content} user={currentUser} hiddenSections={hiddenSections} hiddenProjects={hiddenProjects} sectionStyles={sectionStyles} fontSize={fontSize} padding={padding} onChange={setContent} />}
+              {content && <ResumePaper content={content} user={currentUser} hiddenSections={hiddenSections} hiddenProjects={hiddenProjects} sectionStyles={sectionStyles} fontSize={fontSize} sectionTitleSize={sectionTitleSize} padding={padding} onChange={setContent} />}
             </Paper>
 
             <Stack spacing={2}>
               <Paper sx={{ p: 2 }}>
                 <Stack direction="row" spacing={1} alignItems="center"><TuneRoundedIcon color="primary" /><Typography variant="subtitle1" fontWeight={700}>排版设置</Typography></Stack>
-                <Typography variant="caption" color="text.secondary">字号：{fontSize}pt</Typography>
-                <Slider value={fontSize} min={8} max={14} step={0.5} onChange={(_, value) => setFontSize(value)} size="small" />
+                <Typography variant="caption" color="text.secondary">内容字号：{fontSize}pt</Typography>
+                <Slider value={fontSize} min={9.5} max={14} step={0.5} onChange={(_, value) => setFontSize(value)} size="small" />
+                <Typography variant="caption" color="text.secondary">章节标题字号：{sectionTitleSize}pt</Typography>
+                <Slider value={sectionTitleSize} min={11} max={16} step={0.5} onChange={(_, value) => setSectionTitleSize(value)} size="small" />
                 <Typography variant="caption" color="text.secondary">页边距：{padding}mm</Typography>
                 <Slider value={padding} min={8} max={24} step={1} onChange={(_, value) => setPadding(value)} size="small" />
               </Paper>
@@ -478,7 +489,7 @@ const ResumeOptimizer = () => {
                   <FormControl size="small" sx={{ minWidth: 86, flex: 1 }}>
                     <InputLabel>字号</InputLabel>
                     <Select label="字号" aria-label={`${styleTarget}-font-size`} value={String(activeStyle.fontSize)} onChange={(event) => updateActiveStyle('fontSize', Number(event.target.value))}>
-                      {[9, 10, 10.5, 11, 12, 13, 14].map((size) => <MenuItem key={size} value={String(size)}>{size}pt</MenuItem>)}
+                      {[9.5, 10, 10.5, 11, 12, 13, 14].map((size) => <MenuItem key={size} value={String(size)}>{size}pt</MenuItem>)}
                     </Select>
                   </FormControl>
                   <FormControl size="small" sx={{ minWidth: 86, flex: 1 }}>

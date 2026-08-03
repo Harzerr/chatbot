@@ -24,6 +24,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            frontend
+            .github/workflows
+          sparse-checkout-cone-mode: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -34,12 +39,13 @@ jobs:
 
       - name: Install dependencies
         working-directory: frontend
-        run: npm ci
+        run: npm ci --prefer-offline --no-audit --no-fund
 
       - name: Build frontend
         working-directory: frontend
         env:
           CI: "false"
+          GENERATE_SOURCEMAP: "false"
         run: npm run build
 
       - name: Prepare SSH
@@ -61,27 +67,45 @@ jobs:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
           SERVER_PORT: ${{ secrets.SERVER_PORT || '22' }}
-          REMOTE_TMP_DIR: /srv/chatbot/frontend/build.next
+          REMOTE_ROOT: /srv/chatbot/frontend
         run: |
           test -n "${SERVER_USER}"
-          ssh -i ~/.ssh/deploy_key -p "${SERVER_PORT}" "${SERVER_USER}@${SERVER_HOST}" "rm -rf '${REMOTE_TMP_DIR}' && mkdir -p '${REMOTE_TMP_DIR}'"
-          rsync -az --delete -e "ssh -i ~/.ssh/deploy_key -p ${SERVER_PORT}" frontend/build/ "${SERVER_USER}@${SERVER_HOST}:${REMOTE_TMP_DIR}/"
+          ACTIVE_SLOT=$(ssh -i ~/.ssh/deploy_key -p "${SERVER_PORT}" "${SERVER_USER}@${SERVER_HOST}" "if [ -L '${REMOTE_ROOT}/build' ]; then basename \"\$(readlink '${REMOTE_ROOT}/build')\"; else echo legacy; fi")
+          if [ "${ACTIVE_SLOT}" = "legacy" ]; then
+            ssh -i ~/.ssh/deploy_key -p "${SERVER_PORT}" "${SERVER_USER}@${SERVER_HOST}" "mkdir -p '${REMOTE_ROOT}/build-a' '${REMOTE_ROOT}/build-b'; if [ -d '${REMOTE_ROOT}/build' ] && [ ! -L '${REMOTE_ROOT}/build' ]; then cp -a '${REMOTE_ROOT}/build/.' '${REMOTE_ROOT}/build-a/'; cp -a '${REMOTE_ROOT}/build/.' '${REMOTE_ROOT}/build-b/'; fi"
+            STAGING_SLOT=build-a
+          elif [ "${ACTIVE_SLOT}" = "build-a" ]; then
+            STAGING_SLOT=build-b
+          else
+            STAGING_SLOT=build-a
+          fi
+          ssh -i ~/.ssh/deploy_key -p "${SERVER_PORT}" "${SERVER_USER}@${SERVER_HOST}" "mkdir -p '${REMOTE_ROOT}/${STAGING_SLOT}'"
+          rsync -az --delete --partial --timeout=60 -e "ssh -i ~/.ssh/deploy_key -p ${SERVER_PORT}" frontend/build/ "${SERVER_USER}@${SERVER_HOST}:${REMOTE_ROOT}/${STAGING_SLOT}/"
 
       - name: Activate build on server
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
           SERVER_PORT: ${{ secrets.SERVER_PORT || '22' }}
+          REMOTE_ROOT: /srv/chatbot/frontend
         run: |
           ssh -i ~/.ssh/deploy_key -p "${SERVER_PORT}" "${SERVER_USER}@${SERVER_HOST}" <<'EOF'
           set -Eeuo pipefail
           cd /srv/chatbot/frontend
-          test -f build.next/index.html
-          rm -rf build.previous
-          if [ -d build ]; then
-            mv build build.previous
+          ACTIVE_SLOT=$(if [ -L build ]; then basename "$(readlink build)"; else echo legacy; fi)
+          if [ "${ACTIVE_SLOT}" = "legacy" ]; then
+            STAGING_SLOT=build-a
+            rm -rf build.previous
+            if [ -d build ]; then
+              mv build build.previous
+            fi
+          elif [ "${ACTIVE_SLOT}" = "build-a" ]; then
+            STAGING_SLOT=build-b
+          else
+            STAGING_SLOT=build-a
           fi
-          mv build.next build
+          test -f "${STAGING_SLOT}/index.html"
+          ln -sfn "${STAGING_SLOT}" build
           EOF
 
       - name: Verify deployment

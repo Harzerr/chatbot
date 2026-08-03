@@ -58,7 +58,7 @@ def _section_style(content: dict[str, Any], key: str) -> tuple[float, int, str]:
     layout = _layout(content)
     styles = layout.get("sectionStyles") if isinstance(layout.get("sectionStyles"), dict) else {}
     style = styles.get(key) if isinstance(styles.get(key), dict) else {}
-    size = _layout_value(style.get("fontSize", layout.get("fontSize", 10.5)), 10.5, 8, 16)
+    size = _layout_value(style.get("fontSize", layout.get("fontSize", 10.5)), 10.5, 9.5, 16)
     weight = int(_layout_value(style.get("fontWeight", 400), 400, 400, 800))
     color = str(style.get("color") or "#17202a")
     if not re.fullmatch(r"#[0-9A-Fa-f]{6}", color):
@@ -158,9 +158,6 @@ def _education(entries: Any) -> str:
 
 def _content(content: dict[str, Any]) -> str:
     blocks: list[str] = []
-    summary = _escape_tex(content.get("summary"))
-    if summary:
-        blocks.append(_styled_block(content, "summary", f"\\ResumeSection[0pt]{{职业摘要}}\n{summary}\\par"))
     education = _education(content.get("education"))
     if education:
         blocks.append(_styled_block(content, "education", education))
@@ -223,22 +220,25 @@ def _project_font_config() -> str:
 def render_resume_tex(content: dict[str, Any], user: Any, title: str = "", avatar_name: str | None = None) -> str:
     template = TEMPLATE_PATH.read_text(encoding="utf-8")
     layout = _layout(content)
-    body_size = _layout_value(layout.get("fontSize"), 10.5, 8, 16)
+    body_size = _layout_value(layout.get("fontSize"), 10.5, 9.5, 16)
     body_leading = body_size * 1.5
+    section_title_size = _layout_value(layout.get("sectionTitleFontSize"), 12, 11, 18)
+    section_title_leading = section_title_size * 1.25
     padding = _layout_value(layout.get("padding"), 15, 8, 24)
     phone = _escape_tex(getattr(user, "phone", ""))
     email = _escape_tex(getattr(user, "email", ""))
     contact_parts = []
     if phone:
-        contact_parts.append(rf"\ResumeIcon{{\faPhone}}{{\href{{tel:{phone}}}{{{phone}}}}}")
+        contact_parts.append(rf"\ResumeIcon{{\faPhone}}{{\textbf{{手机：}}\href{{tel:{phone}}}{{{phone}}}}}")
     if email:
-        contact_parts.append(rf"\ResumeIcon{{\faEnvelope}}{{\href{{mailto:{email}}}{{{email}}}}}")
+        contact_parts.append(rf"\ResumeIcon{{\faEnvelope}}{{\textbf{{邮箱：}}\href{{mailto:{email}}}{{{email}}}}}")
     contact = "\\hspace{2.2em}".join(contact_parts)
     role = _escape_tex(content.get("headline") or getattr(user, "target_role", "") or title or "求职简历")
     replacements = {
         "%%GEOMETRY%%": f"\\usepackage[left={padding:.1f}mm,right={padding:.1f}mm,top={padding:.1f}mm,bottom={padding:.1f}mm,headheight=0pt,headsep=0pt,footskip=0pt]{{geometry}}",
         "%%FONT_CONFIG%%": _project_font_config(),
         "%%BODY_FONT%%": f"\\fontsize{{{body_size:.1f}pt}}{{{body_leading:.2f}pt}}\\selectfont",
+        "%%SECTION_TITLE_FONT%%": f"\\fontsize{{{section_title_size:.1f}pt}}{{{section_title_leading:.2f}pt}}\\selectfont",
         "%%NAME%%": _escape_tex(getattr(user, "full_name", "") or "未填写姓名"),
         "%%CONTACT%%": contact,
         "%%TARGET_ROLE%%": role,
