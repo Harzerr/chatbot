@@ -68,8 +68,7 @@ def _section_style(content: dict[str, Any], key: str) -> tuple[float, int, str]:
 
 def _styled_block(content: dict[str, Any], key: str, block: str) -> str:
     size, weight, color = _section_style(content, key)
-    line_spacing = _layout_value(_layout(content).get("lineSpacing"), 1, 1, 1.8)
-    leading = size * line_spacing
+    leading = size
     weight_command = r"\bfseries" if weight >= 600 else r"\mdseries"
     return (
         "\\begingroup\n"
@@ -108,18 +107,17 @@ def _entries(entries: Any, heading: str) -> str:
         summary = _escape_tex(entry.get("summary"))
         if summary:
             label = "项目简介" if heading == "项目经历" else "个人职责与成果"
-            rendered.append(f"\\vspace{{3pt}}\n\\textbf{{{label}：}} {summary}\\par")
+            rendered.append(f"\\textbf{{{label}：}} {summary}\\par")
         tech_stack = entry.get("tech_stack")
         if isinstance(tech_stack, list):
             tech_stack = "、".join(_escape_tex(item) for item in tech_stack if _escape_tex(item))
         tech_stack = _escape_tex(tech_stack)
         if tech_stack:
-            rendered.append(f"\\vspace{{3pt}}\n\\textbf{{技术栈：}} {tech_stack}\\par")
+            rendered.append(f"\\textbf{{技术栈：}} {tech_stack}\\par")
         items = _items(entry.get("items") if isinstance(entry.get("items"), list) else [])
         if items:
             label = "技术亮点" if heading == "项目经历" else "核心成果"
-            rendered.append(f"\\vspace{{3pt}}\n\\textbf{{{label}：}}\\par\n\\vspace{{3pt}}\n" + items)
-        rendered.append("\\vspace{6pt}")
+            rendered.append(f"\\textbf{{{label}：}}\\par\n" + items)
     return "\n".join(rendered)
 
 
@@ -148,10 +146,9 @@ def _education(entries: Any) -> str:
         if english_level:
             details.append(f"英语水平：{_escape_tex(english_level)}")
         if details:
-            rendered.append("\\vspace{3pt}\n" + "\\quad ".join(details) + "\\par")
+            rendered.append("\\quad ".join(details) + "\\par")
         if extra_details:
-            rendered.append("\\vspace{3pt}\n" + _escape_tex(extra_details) + "\\par")
-        rendered.append("\\vspace{6pt}")
+            rendered.append(_escape_tex(extra_details) + "\\par")
     if not rendered:
         return ""
     return "\\ResumeSection[0pt]{教育背景}\n" + "\n".join(rendered)
@@ -222,8 +219,7 @@ def render_resume_tex(content: dict[str, Any], user: Any, title: str = "", avata
     template = TEMPLATE_PATH.read_text(encoding="utf-8")
     layout = _layout(content)
     body_size = _layout_value(layout.get("fontSize"), 10.5, 9.5, 16)
-    line_spacing = _layout_value(layout.get("lineSpacing"), 1, 1, 1.8)
-    body_leading = body_size * line_spacing
+    body_leading = body_size
     section_title_size = _layout_value(layout.get("sectionTitleFontSize"), 12, 11, 18)
     section_title_leading = section_title_size * 1.25
     padding = _layout_value(layout.get("padding"), 15, 8, 24)
