@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Alert,
   AppBar,
+  Avatar,
   Box,
   Button,
   Chip,
@@ -28,6 +29,8 @@ import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
 import KeyboardArrowUpRoundedIcon from '@mui/icons-material/KeyboardArrowUpRounded';
 import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded';
+import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import careerService from '../services/careerService';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -89,16 +92,28 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, fontSize, 
         boxShadow: '0 16px 40px rgba(15, 23, 42, 0.14)',
         overflowWrap: 'anywhere',
         fontFamily: 'Arial, "Microsoft YaHei", sans-serif',
+        backgroundImage: 'repeating-linear-gradient(to bottom, #ffffff 0, #ffffff calc(297mm - 8px), #dbe4ef calc(297mm - 8px), #dbe4ef 297mm)',
+        '& .MuiInput-underline:before, & .MuiInput-underline:after': { display: 'none' },
       }}
     >
-      <Box sx={{ borderLeft: '4px solid #0f766e', pl: 2, mb: 2.5 }}>
-        <Typography sx={{ fontSize: `${Math.max(fontSize + 7, 17)}pt`, fontWeight: 800 }}>
-          {user?.full_name || '姓名待确认'}
-        </Typography>
-        <Typography sx={{ color: '#0f766e', fontWeight: 700, mt: 0.25 }}>{content.headline}</Typography>
-        <Typography variant="body2" sx={{ color: '#52606d', mt: 1 }}>
-          {[user?.phone, user?.email, user?.target_role].filter(Boolean).join('  ·  ') || '请在个人档案补充联系方式'}
-        </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, borderLeft: '4px solid #0f766e', pl: 2, mb: 2.5 }}>
+        <Box sx={{ minWidth: 0 }}>
+          <Typography sx={{ fontSize: `${Math.max(fontSize + 7, 17)}pt`, fontWeight: 800 }}>
+            {user?.full_name || '姓名待确认'}
+          </Typography>
+          <Typography sx={{ color: '#0f766e', fontWeight: 700, mt: 0.25 }}>{content.headline}</Typography>
+          <Typography variant="body2" sx={{ color: '#52606d', mt: 1 }}>
+            {[user?.phone, user?.email, user?.target_role].filter(Boolean).join('  ·  ') || '请在个人档案补充联系方式'}
+          </Typography>
+        </Box>
+        <Avatar
+          src={user?.avatar_url || undefined}
+          alt="证件照"
+          variant="square"
+          sx={{ width: 76, height: 96, flex: '0 0 auto', bgcolor: '#f1f5f9', color: '#64748b', border: '1px solid #cbd5e1', fontSize: 12 }}
+        >
+          证件照
+        </Avatar>
       </Box>
 
       <TextField
@@ -113,7 +128,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, fontSize, 
 
       {!hiddenSections.education && content.education?.length > 0 && (
         <Box sx={{ mb: 2 }}>
-          <Typography sx={{ borderBottom: '1px solid #cbd5e1', pb: 0.5, mb: 1, fontWeight: 800 }}>教育背景</Typography>
+          <Typography sx={{ borderLeft: '3px solid #0f766e', pl: 1, mb: 1, fontWeight: 800 }}>教育背景</Typography>
           {content.education.map((item, index) => (
             <Box key={`${item.school || item.title}-${index}`} sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, mb: 0.6 }}>
               <Typography fontWeight={700}>{[item.school, item.major, item.degree].filter(Boolean).join(' · ') || item.title || '教育经历'}</Typography>
@@ -128,7 +143,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, fontSize, 
         if (hiddenSections[key]) return null;
         return (
           <Box key={`${section.heading}-${sectionIndex}`} sx={{ mb: 2 }}>
-            <Typography sx={{ borderBottom: '1px solid #cbd5e1', pb: 0.5, mb: 1, fontWeight: 800 }}>
+            <Typography sx={{ borderLeft: '3px solid #0f766e', pl: 1, mb: 1, fontWeight: 800 }}>
               {sectionLabels[section.heading] || section.heading || '其他经历'}
             </Typography>
             {(section.entries || []).map((entry, entryIndex) => {
@@ -206,7 +221,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, fontSize, 
 
 const ResumeOptimizer = () => {
   const navigate = useNavigate();
-  const { currentUser } = useAuth();
+  const { currentUser, uploadAvatar, deleteAvatar } = useAuth();
   const importInput = useRef(null);
   const [resumes, setResumes] = useState([]);
   const [selectedId, setSelectedId] = useState('');
@@ -218,6 +233,7 @@ const ResumeOptimizer = () => {
   const [padding, setPadding] = useState(15);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
+  const [avatarWorking, setAvatarWorking] = useState(false);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
 
@@ -293,6 +309,33 @@ const ResumeOptimizer = () => {
     }
   };
 
+  const handleAvatarUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setAvatarWorking(true); setError(''); setNotice('');
+    try {
+      await uploadAvatar(file);
+      setNotice('证件照已上传，并会显示在简历预览和 PDF 中。');
+    } catch (err) {
+      setError(err.response?.data?.detail || '证件照上传失败。');
+    } finally {
+      setAvatarWorking(false);
+      event.target.value = '';
+    }
+  };
+
+  const handleAvatarDelete = async () => {
+    setAvatarWorking(true); setError(''); setNotice('');
+    try {
+      await deleteAvatar();
+      setNotice('证件照已移除。');
+    } catch (err) {
+      setError(err.response?.data?.detail || '证件照移除失败。');
+    } finally {
+      setAvatarWorking(false);
+    }
+  };
+
   const moveProject = (sectionIndex, entryIndex, direction) => {
     setContent((current) => updateSection(current, sectionIndex, (section) => {
       const entries = [...(section.entries || [])];
@@ -347,6 +390,15 @@ const ResumeOptimizer = () => {
                 <Typography variant="subtitle1" fontWeight={700}>导入原型资料</Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 0.7 }}>兼容原型的 `resume-profiles.json`，导入后进入事实库待确认。</Typography>
                 <Button fullWidth variant="outlined" startIcon={<ImportExportRoundedIcon />} sx={{ mt: 1.5 }} onClick={() => importInput.current?.click()} disabled={working}>选择 JSON 导入</Button>
+              </Paper>
+              <Paper sx={{ p: 2 }}>
+                <Typography variant="subtitle1" fontWeight={700}>证件照</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 0.7 }}>上传后显示在 A4 预览和后端 PDF 中，支持 PNG、JPG、WEBP，最大 5MB。</Typography>
+                <Button component="label" fullWidth variant="outlined" startIcon={<UploadFileRoundedIcon />} sx={{ mt: 1.5 }} disabled={avatarWorking}>
+                  {avatarWorking ? '处理中...' : currentUser?.avatar_url ? '更换证件照' : '上传证件照'}
+                  <input hidden type="file" accept="image/png,image/jpeg,image/webp" onChange={handleAvatarUpload} />
+                </Button>
+                {currentUser?.avatar_url && <Button fullWidth color="error" startIcon={<DeleteOutlineRoundedIcon />} onClick={handleAvatarDelete} disabled={avatarWorking} sx={{ mt: 0.5 }}>移除证件照</Button>}
               </Paper>
             </Stack>
 
