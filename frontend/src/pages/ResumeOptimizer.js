@@ -24,6 +24,7 @@ import {
 } from '@mui/material';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
+import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import FormatBoldRoundedIcon from '@mui/icons-material/FormatBoldRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
@@ -123,7 +124,7 @@ const normalizeRichTextHtml = (value) => {
   return container.innerHTML;
 };
 
-const RichTextEditor = ({ value, onChange, placeholder = '' }) => {
+const RichTextEditor = ({ value, onChange, placeholder = '', showTools }) => {
   const editorRef = useRef(null);
   useLayoutEffect(() => {
     if (editorRef.current && document.activeElement !== editorRef.current) {
@@ -145,16 +146,16 @@ const RichTextEditor = ({ value, onChange, placeholder = '' }) => {
         data-placeholder={placeholder}
         sx={{ minHeight: '1em', pr: 3, outline: 'none', lineHeight: 1, '&:empty:before': { content: 'attr(data-placeholder)', color: '#94a3b8' } }}
       />
-      <Tooltip title="选中文字后加粗">
+      {showTools && <Tooltip title="选中文字后加粗">
         <IconButton size="small" onMouseDown={(event) => event.preventDefault()} onClick={toggleBold} sx={{ position: 'absolute', right: -2, top: -7, p: 0.25 }}>
           <FormatBoldRoundedIcon fontSize="small" />
         </IconButton>
-      </Tooltip>
+      </Tooltip>}
   </Box>
   );
 };
 
-const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionStyles, fontSize, sectionTitleSize, padding, onChange, onFormatSection }) => {
+const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionStyles, fontSize, sectionTitleSize, padding, onChange, onFormatSection, showEditTools }) => {
   const measureRef = useRef(null);
   const [pageGroups, setPageGroups] = useState([]);
   const getSectionStyle = (key) => {
@@ -222,12 +223,12 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
           onChange={(event) => updateEntry(sectionIndex, entryIndex, 'period', event.target.value)}
           sx={{ width: 125, '& .MuiInputBase-root': { fontSize: '0.92em', color: '#52606d', p: 0 } }}
         />
-        <Tooltip title={style.fontWeight >= 700 ? '取消加粗' : '整段加粗'}>
+        {showEditTools && <Tooltip title={style.fontWeight >= 700 ? '取消加粗' : '整段加粗'}>
           <IconButton size="small" onClick={() => onFormatSection(sectionKey(heading), 'fontWeight', style.fontWeight >= 700 ? 400 : 700)}><FormatBoldRoundedIcon fontSize="small" /></IconButton>
-        </Tooltip>
-        <Tooltip title="删除整段经历">
+        </Tooltip>}
+        {showEditTools && <Tooltip title="删除整段经历">
           <IconButton size="small" color="error" onClick={() => deleteEntry(sectionIndex, entryIndex)}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton>
-        </Tooltip>
+        </Tooltip>}
       </Stack>
       <TextField
         variant="standard"
@@ -238,14 +239,14 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
         sx={{ '& .MuiInputBase-root': { fontSize: '0.94em', color: '#52606d', p: 0 } }}
       />
       {entry.summary && (
-        <RichTextEditor value={entry.summary} onChange={(value) => updateEntry(sectionIndex, entryIndex, 'summary', value)} />
+        <RichTextEditor value={entry.summary} onChange={(value) => updateEntry(sectionIndex, entryIndex, 'summary', value)} showTools={showEditTools} />
       )}
       {entry.tech_stack?.length > 0 && <Typography variant="body2" sx={{ mt: 0, color: '#475569' }}>技术栈：{entry.tech_stack.join('、')}</Typography>}
       {(entry.items || []).map((item, itemIndex) => (
         <Box key={`${item.label}-${itemIndex}`} sx={{ position: 'relative', display: 'flex', alignItems: 'flex-start', width: '100%' }}>
           <Box component="span" sx={{ flex: '0 0 12px', pt: 0.1, color: '#b21f35' }}>•</Box>
-          <RichTextEditor value={item.text} onChange={(value) => updateEntry(sectionIndex, entryIndex, 'items', (entry.items || []).map((current, index) => index === itemIndex ? { ...current, text: value } : current))} />
-          <Tooltip title="删除要点"><IconButton size="small" color="error" onClick={() => deleteItem(sectionIndex, itemIndex)} sx={{ position: 'absolute', right: -26, top: -4, p: 0.25 }}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></Tooltip>
+          <RichTextEditor value={item.text} onChange={(value) => updateEntry(sectionIndex, entryIndex, 'items', (entry.items || []).map((current, index) => index === itemIndex ? { ...current, text: value } : current))} showTools={showEditTools} />
+          {showEditTools && <Tooltip title="删除要点"><IconButton size="small" color="error" onClick={() => deleteItem(sectionIndex, itemIndex)} sx={{ position: 'absolute', right: -26, top: -4, p: 0.25 }}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></Tooltip>}
         </Box>
       ))}
     </Box>
@@ -290,7 +291,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
       key: `${key}-item-${itemIndex}`,
       node: (() => {
         const style = getSectionStyle(key);
-        return <Box sx={{ breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${style.fontSize}pt`, fontWeight: style.fontWeight, color: style.color }}>{itemIndex === 0 && visibleEntries.length === 0 && sectionHeading(section.heading)}<Box sx={{ position: 'relative', display: 'flex', alignItems: 'flex-start', width: '100%' }}><Box component="span" sx={{ flex: '0 0 12px', pt: 0.1, color: '#b21f35', fontWeight: 800 }}>•</Box><RichTextEditor value={item.text || item.label || ''} onChange={(value) => updateItem(sectionIndex, itemIndex, value)} /><Tooltip title="删除要点"><IconButton size="small" color="error" onClick={() => deleteItem(sectionIndex, itemIndex)} sx={{ position: 'absolute', right: -26, top: -4, p: 0.25 }}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></Tooltip></Box></Box>;
+        return <Box sx={{ breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${style.fontSize}pt`, fontWeight: style.fontWeight, color: style.color }}>{itemIndex === 0 && visibleEntries.length === 0 && sectionHeading(section.heading)}<Box sx={{ position: 'relative', display: 'flex', alignItems: 'flex-start', width: '100%' }}><Box component="span" sx={{ flex: '0 0 12px', pt: 0.1, color: '#b21f35', fontWeight: 800 }}>•</Box><RichTextEditor value={item.text || item.label || ''} onChange={(value) => updateItem(sectionIndex, itemIndex, value)} showTools={showEditTools} />{showEditTools && <Tooltip title="删除要点"><IconButton size="small" color="error" onClick={() => deleteItem(sectionIndex, itemIndex)} sx={{ position: 'absolute', right: -26, top: -4, p: 0.25 }}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></Tooltip>}</Box></Box>;
       })(),
     }));
   });
@@ -361,6 +362,7 @@ const ResumeOptimizer = () => {
   const [visibilityTarget, setVisibilityTarget] = useState('education');
   const [fontSize, setFontSize] = useState(10.5);
   const [sectionTitleSize, setSectionTitleSize] = useState(12);
+  const [showEditTools, setShowEditTools] = useState(false);
   const [padding, setPadding] = useState(15);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
@@ -529,6 +531,7 @@ const ResumeOptimizer = () => {
                 <Stack spacing={1} sx={{ mt: 1.5 }}>
                   <Button variant="contained" startIcon={<SaveRoundedIcon />} onClick={save} disabled={working}>保存当前版本</Button>
                   <Button variant="outlined" startIcon={<DownloadRoundedIcon />} onClick={exportPdf} disabled={working}>导出 PDF</Button>
+                  <Button variant="text" startIcon={<EditRoundedIcon />} onClick={() => setShowEditTools((current) => !current)}>{showEditTools ? '隐藏编辑工具' : '显示编辑工具'}</Button>
                 </Stack>
               </Paper>
               <Paper sx={{ p: 2 }}>
@@ -543,7 +546,7 @@ const ResumeOptimizer = () => {
             </Stack>
 
             <Paper sx={{ p: { xs: 1, md: 3 }, bgcolor: '#e9eef5', height: { xs: 'auto', lg: 'calc(100vh - 170px)' }, maxHeight: { xs: 'none', lg: 'calc(100vh - 170px)' }, overflowY: { xs: 'visible', lg: 'auto' }, overflowX: 'auto', minWidth: 0 }}>
-              {content && <ResumePaper content={content} user={currentUser} hiddenSections={hiddenSections} hiddenProjects={hiddenProjects} sectionStyles={sectionStyles} fontSize={fontSize} sectionTitleSize={sectionTitleSize} padding={padding} onChange={setContent} onFormatSection={formatSection} />}
+              {content && <ResumePaper content={content} user={currentUser} hiddenSections={hiddenSections} hiddenProjects={hiddenProjects} sectionStyles={sectionStyles} fontSize={fontSize} sectionTitleSize={sectionTitleSize} padding={padding} onChange={setContent} onFormatSection={formatSection} showEditTools={showEditTools} />}
             </Paper>
 
             <Stack spacing={2}>
