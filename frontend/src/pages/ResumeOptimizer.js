@@ -95,7 +95,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
   const sectionHeading = (heading) => {
     const style = getSectionStyle(sectionKey(heading));
     return (
-      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.1, px: 1, py: 0.45, borderRadius: 1, bgcolor: '#eff8f6', color: style.color, width: 'fit-content' }}>
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.1, px: 1, py: 0.45, borderRadius: 1, bgcolor: '#f1f5f9', color: style.color, width: 'fit-content' }}>
         <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#0f766e', flex: '0 0 auto' }} />
         <Typography sx={{ fontWeight: 800, fontSize: `${style.fontSize}pt`, color: 'inherit', letterSpacing: '0.02em' }}>
           {sectionLabels[heading] || heading || '其他经历'}
@@ -141,7 +141,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
         />
       )}
       {entry.tech_stack?.length > 0 && <Stack direction="row" spacing={0.5} useFlexGap flexWrap="wrap" sx={{ mt: 0.7 }}>
-        {entry.tech_stack.map((technology) => <Chip key={technology} label={technology} size="small" sx={{ height: 22, bgcolor: '#e6f4f1', color: '#0f766e', fontSize: '0.82em' }} />)}
+        {entry.tech_stack.map((technology) => <Chip key={technology} label={technology} size="small" sx={{ height: 22, bgcolor: '#f1f5f9', color: '#334155', fontSize: '0.82em' }} />)}
       </Stack>}
       {(entry.items || []).map((item, itemIndex) => (
         <TextField
@@ -163,7 +163,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
   blocks.push({
     key: 'header',
     node: (
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, p: 1.8, borderRadius: 2, bgcolor: '#f1f8f7', mb: 2.2 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, p: 1.8, borderRadius: 2, bgcolor: '#f8fafc', mb: 2.2 }}>
         <Box sx={{ minWidth: 0 }}>
           <Typography variant="overline" sx={{ color: '#0f766e', fontWeight: 800, letterSpacing: '0.14em', lineHeight: 1.2 }}>PROFESSIONAL PROFILE</Typography>
           <Typography sx={{ fontSize: `${Math.max(fontSize + 7, 17)}pt`, fontWeight: 800 }}>{user?.full_name || '姓名待确认'}</Typography>
@@ -272,6 +272,7 @@ const ResumeOptimizer = () => {
   const [hiddenProjects, setHiddenProjects] = useState({});
   const [sectionStyles, setSectionStyles] = useState({});
   const [styleTarget, setStyleTarget] = useState('summary');
+  const [visibilityTarget, setVisibilityTarget] = useState('education');
   const [fontSize, setFontSize] = useState(10.5);
   const [padding, setPadding] = useState(15);
   const [loading, setLoading] = useState(true);
@@ -389,9 +390,14 @@ const ResumeOptimizer = () => {
 
   const styleKeys = useMemo(() => ['summary', 'education', ...(content?.sections || []).map((section) => sectionKey(section.heading))]
     .filter((value, index, array) => array.indexOf(value) === index), [content]);
+  const visibilityKeys = useMemo(() => ['education', ...(content?.sections || []).map((section) => sectionKey(section.heading))]
+    .filter((value, index, array) => array.indexOf(value) === index), [content]);
   useEffect(() => {
     if (styleKeys.length && !styleKeys.includes(styleTarget)) setStyleTarget(styleKeys[0]);
   }, [styleKeys, styleTarget]);
+  useEffect(() => {
+    if (visibilityKeys.length && !visibilityKeys.includes(visibilityTarget)) setVisibilityTarget(visibilityKeys[0]);
+  }, [visibilityKeys, visibilityTarget]);
   const activeStyle = { ...defaultSectionStyle, fontSize, ...(sectionStyles[styleTarget] || {}) };
   const updateActiveStyle = (field, value) => setSectionStyles((current) => ({ ...current, [styleTarget]: { ...activeStyle, [field]: value } }));
 
@@ -484,10 +490,20 @@ const ResumeOptimizer = () => {
               </Paper>
               <Paper sx={{ p: 2 }}>
                 <Typography variant="subtitle1" fontWeight={700}>章节显示</Typography>
-                <Stack spacing={0.6} sx={{ mt: 1 }}>
-                  {['education', ...(content?.sections || []).map((section) => sectionKey(section.heading))].filter((value, index, array) => array.indexOf(value) === index).map((key) => (
-                    <Button key={key} size="small" variant={hiddenSections[key] ? 'outlined' : 'contained'} onClick={() => setHiddenSections((current) => ({ ...current, [key]: !current[key] }))}>{hiddenSections[key] ? '显示 ' : '隐藏 '}{sectionLabels[key] || key}</Button>
-                  ))}
+                <Stack spacing={1} sx={{ mt: 1 }}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>选择章节</InputLabel>
+                    <Select label="选择章节" value={visibilityTarget} onChange={(event) => setVisibilityTarget(event.target.value)}>
+                      {visibilityKeys.map((key) => <MenuItem key={key} value={key}>{sectionLabels[key] || key}</MenuItem>)}
+                    </Select>
+                  </FormControl>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>显示状态</InputLabel>
+                    <Select label="显示状态" value={hiddenSections[visibilityTarget] ? 'hidden' : 'visible'} onChange={(event) => setHiddenSections((current) => ({ ...current, [visibilityTarget]: event.target.value === 'hidden' }))}>
+                      <MenuItem value="visible">显示章节</MenuItem>
+                      <MenuItem value="hidden">隐藏章节</MenuItem>
+                    </Select>
+                  </FormControl>
                 </Stack>
               </Paper>
               {content?.sections.map((section, sectionIndex) => sectionKey(section.heading) === '项目经历' && (
