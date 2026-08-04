@@ -685,8 +685,8 @@ const ResumeOptimizer = () => {
             <Button variant="contained" sx={{ mt: 2 }} onClick={() => navigate('/career')}>去生成定制简历</Button>
           </Paper>
         ) : (
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '260px minmax(0, 1fr) 300px' }, gap: 2, alignItems: 'start' }}>
-            <Stack spacing={2}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '260px minmax(0, 1fr) 300px' }, gap: 2, alignItems: 'stretch' }}>
+            <Stack spacing={2} sx={{ height: '100%' }}>
               <Paper sx={{ p: 2 }}>
                 <Typography variant="subtitle1" fontWeight={700}>版本</Typography>
                 <FormControl fullWidth size="small" sx={{ mt: 1.5 }}>
@@ -708,7 +708,7 @@ const ResumeOptimizer = () => {
                   <Tooltip title="选中文字标红/取消标红"><IconButton size="small" onMouseDown={(event) => event.preventDefault()} onClick={toggleEditorAccentColor}><FormatColorTextRoundedIcon fontSize="small" sx={{ color: '#b21f35' }} /></IconButton></Tooltip>
                 </Stack>
               </Paper>
-              <Paper sx={{ p: 2 }}>
+              <Paper sx={{ p: 2, flex: 1, minHeight: 0 }}>
                 <Typography variant="subtitle1" fontWeight={700}>证件照</Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 0.7 }}>上传后显示在 A4 预览和后端 PDF 中，支持 PNG、JPG、WEBP，最大 5MB。</Typography>
                 <Button component="label" fullWidth variant="outlined" startIcon={<UploadFileRoundedIcon />} sx={{ mt: 1.5 }} disabled={avatarWorking}>
@@ -723,8 +723,8 @@ const ResumeOptimizer = () => {
               {content && <ResumePaper content={content} user={currentUser} hiddenSections={hiddenSections} hiddenProjects={hiddenProjects} sectionStyles={sectionStyles} fontSize={fontSize} sectionTitleSize={sectionTitleSize} padding={padding} onChange={setContent} onFormatSection={formatSection} showEditTools={showEditTools} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} />}
             </Paper>
 
-            <Stack spacing={2}>
-              <Paper sx={{ p: 2 }}>
+            <Stack spacing={2} sx={{ height: '100%' }}>
+              <Paper sx={{ p: 2, flex: 1, minHeight: 0 }}>
                 <Tabs value={settingsPanel} onChange={(_, value) => setSettingsPanel(value)} variant="fullWidth" sx={{ minHeight: 40, borderBottom: '1px solid', borderColor: 'divider', '& .MuiTab-root': { minHeight: 40, px: 0.5, fontSize: '0.78rem' } }}>
                   <Tab value="layout" label="排版" />
                   <Tab value="font" label="字体" />
