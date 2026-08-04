@@ -81,7 +81,11 @@
 \newcommand{\ResumeMeta}[2]{%
   \par\vspace{0.15mm}{\color{ResumeAccent}\bfseries #1：}{\color{ResumeSecondary} #2}\par
 }
-\newenvironment{ResumeItems}{\begin{itemize}[leftmargin=0pt,labelindent=0pt,labelwidth=0pt,labelsep=1.2mm,label=\textcolor{ResumeAccent}{\scriptsize\textbullet},itemindent=0pt,listparindent=0pt,topsep=0.4mm,partopsep=0pt,parsep=0pt,itemsep=0.8pt]}{\end{itemize}}
+\newcommand{\ResumeBullet}[1]{%
+  \par\noindent\hangindent=3.6mm\hangafter=1%
+  \makebox[3.6mm][l]{\textcolor{ResumeAccent}{\scriptsize\textbullet}}#1\par\vspace{0.8pt}%
+}
+\newenvironment{ResumeItems}{\begingroup\setlength{\parindent}{0pt}\setlength{\parskip}{0pt}}{\endgroup}
 
 \begin{document}
 \rmfamily

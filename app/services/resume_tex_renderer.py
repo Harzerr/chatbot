@@ -109,7 +109,8 @@ def _items(items: list[Any]) -> str:
         text = _rich_text(value)
         if text:
             label = _escape_tex(item.get("label")) if isinstance(item, dict) else ""
-            rendered.append(f"  \\item \\textbf{{{label}：}}\\hspace{{0.2em}}{text}" if label else f"  \\item {text}")
+            item_text = f"\\textbf{{{label}：}}\\hspace{{0.2em}}{text}" if label else text
+            rendered.append(f"  \\ResumeBullet{{{item_text}}}")
     return "\\begin{ResumeItems}\n" + "\n".join(rendered) + "\n\\end{ResumeItems}" if rendered else ""
 
 

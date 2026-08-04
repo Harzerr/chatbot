@@ -132,6 +132,16 @@ const normalizeRichTextHtml = (value) => {
   return container.innerHTML;
 };
 
+const editorValueForItem = (item) => {
+  const label = String(item?.label || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+  return label ? `<strong>${label}：</strong>${item?.text || ''}` : item?.text || '';
+};
+
 const RichTextEditor = ({ value, onChange, placeholder = '', activeEditorRef, activeSelectionRef, activeEditorChangeRef }) => {
   const editorRef = useRef(null);
   const captureSelection = () => {
@@ -252,9 +262,9 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
       )}
       {entry.tech_stack?.length > 0 && <Typography variant="body2" sx={{ mt: 0.2, color: '#4b5563', fontSize: '0.92em' }}><Box component="span" sx={{ color: '#b21f35', fontWeight: 700 }}>技术栈：</Box>{entry.tech_stack.join('、')}</Typography>}
       {(entry.items || []).map((item, itemIndex) => (
-        <Box key={`${item.label}-${itemIndex}`} sx={{ position: 'relative', display: 'flex', alignItems: 'flex-start', width: '100%', mt: 0.2 }}>
+        <Box key={`${sectionIndex}-${entryIndex}-${itemIndex}`} sx={{ position: 'relative', display: 'flex', alignItems: 'flex-start', width: '100%', mt: 0.2 }}>
           <Box component="span" sx={{ flex: '0 0 12px', pt: 0.1, color: '#b21f35', fontSize: '0.85em' }}>•</Box>
-          <Box sx={{ minWidth: 0, flex: 1, display: 'flex', alignItems: 'baseline' }}>{item.label && <Box component="span" sx={{ flex: '0 0 auto', fontWeight: 700, mr: 0.5 }}>{item.label}：</Box>}<RichTextEditor value={item.text} onChange={(value) => updateEntry(sectionIndex, entryIndex, 'items', (entry.items || []).map((current, index) => index === itemIndex ? { ...current, text: value } : current))} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>
+          <RichTextEditor value={editorValueForItem(item)} onChange={(value) => updateEntry(sectionIndex, entryIndex, 'items', (entry.items || []).map((current, index) => index === itemIndex ? { ...current, label: '', text: value } : current))} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} />
           {showEditTools && <Tooltip title="删除要点"><IconButton size="small" color="error" onClick={() => deleteItem(sectionIndex, itemIndex)} sx={{ position: 'absolute', right: -26, top: -4, p: 0.25 }}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></Tooltip>}
         </Box>
       ))}
