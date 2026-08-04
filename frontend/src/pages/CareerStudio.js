@@ -246,28 +246,34 @@ const CareerStudio = () => {
     setDraftFacts(extractedFacts);
   }, '已从现有简历提取待确认事实。确认后才会进入事实库。');
 
-  const saveDraftFact = (fact) => run(async () => {
+const saveDraftFact = (fact) => run(async () => {
     const saved = await careerService.createFact({ ...fact, is_verified: true });
     setFacts((items) => [saved, ...items]);
     setDraftFacts((items) => items.filter((item) => item !== fact));
   }, '事实已确认并保存。');
 
   const saveFact = () => run(async () => {
+    const isDraftFact = factEditor?.draftIndex !== undefined;
     const payload = {
       fact_type: factEditor.fact_type,
       title: factEditor.title.trim(),
       content: { summary: factEditor.summary.trim(), highlights: splitLines(factEditor.highlights) },
       tags: factEditor.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
       evidence: factEditor.evidence.trim() || undefined,
-      is_verified: factEditor.is_verified,
+      is_verified: isDraftFact ? false : factEditor.is_verified,
     };
+    if (isDraftFact) {
+      setDraftFacts((items) => items.map((item, index) => index === factEditor.draftIndex ? payload : item));
+      setFactEditor(null);
+      return;
+    }
     const saved = factEditor.id
       ? await careerService.updateFact(factEditor.id, payload)
       : await careerService.createFact(payload);
     setFacts((items) => factEditor.id ? items.map((fact) => fact.id === saved.id ? saved : fact) : [saved, ...items]);
     if (saved.is_verified) setSelectedFactIds((ids) => ids.includes(saved.id) ? ids : [...ids, saved.id]);
     setFactEditor(null);
-  }, factEditor?.id ? '事实已更新。' : '事实已保存。');
+  }, factEditor?.draftIndex !== undefined ? '待确认事实已更新。' : factEditor?.id ? '事实已更新。' : '事实已保存。');
 
   const archiveFact = (fact) => run(async () => {
     const saved = await careerService.archiveFact(fact.id);
@@ -446,8 +452,8 @@ const CareerStudio = () => {
                     {draftFacts.map((fact, index) => (
                       <Paper key={`${fact.title}-${index}`} variant="outlined" sx={{ p: 2, borderRadius: 1.5 }}>
                         <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} justifyContent="space-between">
-                          <Box><Chip size="small" label={factTypeLabels[fact.fact_type] || '其他'} /><Typography sx={{ mt: 1, fontWeight: 700 }}>{fact.title}</Typography><Typography variant="body2" color="text.secondary">{fact.content?.summary || fact.evidence || '无摘要'}</Typography></Box>
-                          <Button size="small" onClick={() => saveDraftFact(fact)} disabled={working}>确认事实</Button>
+                          <Box sx={{ minWidth: 0 }}><Chip size="small" label={factTypeLabels[fact.fact_type] || '其他'} /><Typography sx={{ mt: 1, fontWeight: 700 }}>{fact.title}</Typography><Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, whiteSpace: 'pre-wrap' }}>{fact.content?.summary || fact.evidence || '无摘要'}</Typography>{(fact.content?.highlights || []).map((highlight, highlightIndex) => <Typography key={`${fact.title}-highlight-${highlightIndex}`} variant="body2" color="text.secondary" sx={{ mt: 0.35 }}>• {highlight}</Typography>)}</Box>
+                          <Stack direction="row" spacing={0.5} alignItems="center"><Button size="small" startIcon={<EditRoundedIcon />} onClick={() => setFactEditor({ ...factToEditor(fact), draftIndex: index, is_verified: false })} disabled={working}>编辑</Button><Button size="small" onClick={() => saveDraftFact(fact)} disabled={working}>确认事实</Button></Stack>
                         </Stack>
                       </Paper>
                     ))}
@@ -544,7 +550,7 @@ const CareerStudio = () => {
       </Container>
 
       <Dialog open={Boolean(factEditor)} onClose={() => !working && setFactEditor(null)} fullWidth maxWidth="md">
-        <DialogTitle>{factEditor?.id ? '编辑职业事实' : '新建职业事实'}</DialogTitle>
+        <DialogTitle>{factEditor?.draftIndex !== undefined ? '编辑待确认事实' : factEditor?.id ? '编辑职业事实' : '新建职业事实'}</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2} sx={{ pt: 0.5 }}>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
@@ -555,10 +561,10 @@ const CareerStudio = () => {
             <TextField fullWidth multiline minRows={3} label="要点（每行一条）" value={factEditor?.highlights || ''} onChange={(event) => setFactEditor((item) => ({ ...item, highlights: event.target.value }))} />
             <TextField fullWidth label="标签（用逗号分隔）" value={factEditor?.tags || ''} onChange={(event) => setFactEditor((item) => ({ ...item, tags: event.target.value }))} />
             <TextField fullWidth multiline minRows={2} label="核查依据" helperText="例如原简历摘录、项目链接或证书名称。" value={factEditor?.evidence || ''} onChange={(event) => setFactEditor((item) => ({ ...item, evidence: event.target.value }))} />
-            <FormControlLabel control={<Switch checked={Boolean(factEditor?.is_verified)} onChange={(event) => setFactEditor((item) => ({ ...item, is_verified: event.target.checked }))} />} label="已确认，可用于生成简历" />
+            {factEditor?.draftIndex === undefined && <FormControlLabel control={<Switch checked={Boolean(factEditor?.is_verified)} onChange={(event) => setFactEditor((item) => ({ ...item, is_verified: event.target.checked }))} />} label="已确认，可用于生成简历" />}
           </Stack>
         </DialogContent>
-        <DialogActions><Button onClick={() => setFactEditor(null)} disabled={working}>取消</Button><Button variant="contained" startIcon={<SaveRoundedIcon />} onClick={saveFact} disabled={working || !factEditor?.title?.trim() || !factEditor?.summary?.trim()}>保存事实</Button></DialogActions>
+        <DialogActions><Button onClick={() => setFactEditor(null)} disabled={working}>取消</Button><Button variant="contained" startIcon={<SaveRoundedIcon />} onClick={saveFact} disabled={working || !factEditor?.title?.trim() || !(factEditor?.summary?.trim() || factEditor?.highlights?.trim() || factEditor?.evidence?.trim())}>保存事实</Button></DialogActions>
       </Dialog>
 
       <Dialog open={Boolean(jobEditor)} onClose={() => !working && setJobEditor(null)} fullWidth maxWidth="lg">
