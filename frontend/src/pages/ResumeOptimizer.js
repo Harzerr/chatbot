@@ -9,7 +9,6 @@ import {
   Chip,
   CircularProgress,
   Container,
-  Divider,
   FormControl,
   IconButton,
   InputLabel,
@@ -18,6 +17,8 @@ import {
   Select,
   Slider,
   Stack,
+  Tab,
+  Tabs,
   TextField,
   Toolbar,
   Tooltip,
@@ -469,6 +470,7 @@ const ResumeOptimizer = () => {
   const activeSelectionRef = useRef(null);
   const activeEditorChangeRef = useRef(null);
   const [padding, setPadding] = useState(15);
+  const [settingsPanel, setSettingsPanel] = useState('layout');
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [avatarWorking, setAvatarWorking] = useState(false);
@@ -723,8 +725,13 @@ const ResumeOptimizer = () => {
 
             <Stack spacing={2}>
               <Paper sx={{ p: 2 }}>
-                <Stack spacing={2} divider={<Divider flexItem />}>
-                  <Box>
+                <Tabs value={settingsPanel} onChange={(_, value) => setSettingsPanel(value)} variant="fullWidth" sx={{ minHeight: 40, borderBottom: '1px solid', borderColor: 'divider', '& .MuiTab-root': { minHeight: 40, px: 0.5, fontSize: '0.78rem' } }}>
+                  <Tab value="layout" label="排版" />
+                  <Tab value="font" label="字体" />
+                  <Tab value="visibility" label="显示与排序" />
+                </Tabs>
+                <Box sx={{ minHeight: 390, pt: 2 }}>
+                  {settingsPanel === 'layout' && <Box>
                     <Stack direction="row" spacing={1} alignItems="center"><TuneRoundedIcon color="primary" /><Typography variant="subtitle1" fontWeight={700}>排版设置</Typography></Stack>
                     <Typography variant="caption" color="text.secondary">内容字号：{fontSize}pt</Typography>
                     <Slider value={fontSize} min={9.5} max={14} step={0.5} onChange={(_, value) => setFontSize(value)} size="small" />
@@ -732,8 +739,8 @@ const ResumeOptimizer = () => {
                     <Slider value={sectionTitleSize} min={11} max={16} step={0.5} onChange={(_, value) => setSectionTitleSize(value)} size="small" />
                     <Typography variant="caption" color="text.secondary">页边距：{padding}mm</Typography>
                     <Slider value={padding} min={8} max={24} step={1} onChange={(_, value) => setPadding(value)} size="small" />
-                  </Box>
-                  <Box>
+                  </Box>}
+                  {settingsPanel === 'font' && <Box>
                     <Typography variant="subtitle1" fontWeight={700}>分区字体</Typography>
                     <Typography variant="caption" color="text.secondary">选择分区后调整字号、字重和颜色。</Typography>
                     <FormControl fullWidth size="small" sx={{ mt: 1 }}>
@@ -760,8 +767,8 @@ const ResumeOptimizer = () => {
                       </FormControl>
                       <TextField size="small" type="color" label="颜色" value={activeStyle.color} onChange={(event) => updateActiveStyle('color', event.target.value)} inputProps={{ 'aria-label': `${styleTarget}-font-color` }} sx={{ width: 64 }} />
                     </Stack>
-                  </Box>
-                  <Box>
+                  </Box>}
+                  {settingsPanel === 'visibility' && <Box>
                     <Typography variant="subtitle1" fontWeight={700}>显示与排序</Typography>
                     <Typography variant="caption" color="text.secondary">控制章节显示，并调整项目经历的顺序。</Typography>
                     <Stack spacing={1} sx={{ mt: 1 }}>
@@ -787,8 +794,8 @@ const ResumeOptimizer = () => {
                         </Stack>
                       </Box>
                     ))}
-                  </Box>
-                </Stack>
+                  </Box>}
+                </Box>
               </Paper>
               <Typography variant="caption" color="text.secondary">编辑内容会保存到当前用户的简历版本，不会修改原始事实库。导出 PDF 时会自动同步当前内容和排版设置。</Typography>
             </Stack>
