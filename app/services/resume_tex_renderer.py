@@ -204,7 +204,7 @@ def _content(content: dict[str, Any]) -> str:
         heading = _escape_tex(raw_heading)
         section_entries = section.get("entries")
         if raw_heading == "项目经历" and isinstance(section_entries, list):
-            section_entries = [entry for entry_index, entry in enumerate(section_entries) if isinstance(entry, dict) and not hidden_projects.get(_project_visibility_key(section_index, entry, entry_index))]
+            section_entries = [entry for entry_index, entry in enumerate(section_entries) if isinstance(entry, dict) and not entry.get("hidden") and not hidden_projects.get(_project_visibility_key(section_index, entry, entry_index))]
         entries = _entries(section_entries, heading)
         items = _items(section.get("items") if isinstance(section.get("items"), list) else [])
         section_body = entries or items

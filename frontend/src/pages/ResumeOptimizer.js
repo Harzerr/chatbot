@@ -239,6 +239,8 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
     })));
   };
 
+  const isProjectHidden = (sectionIndex, entry, entryIndex) => Boolean(entry.hidden || hiddenProjects[projectVisibilityKey(sectionIndex, entry, entryIndex)]);
+
   const sectionHeading = (heading) => {
     const style = getSectionStyle(sectionKey(heading));
     return (
@@ -326,7 +328,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
   content.sections.forEach((section, sectionIndex) => {
     const key = sectionKey(section.heading);
     if (hiddenSections[key]) return;
-    const visibleEntries = (section.entries || []).filter((entry, entryIndex) => key !== '项目经历' || !hiddenProjects[projectVisibilityKey(sectionIndex, entry, entryIndex)]);
+    const visibleEntries = (section.entries || []).filter((entry, entryIndex) => key !== '项目经历' || !isProjectHidden(sectionIndex, entry, entryIndex));
     visibleEntries.forEach((entry) => {
       const entryIndex = (section.entries || []).indexOf(entry);
       const style = getSectionStyle(key);
@@ -535,6 +537,20 @@ const ResumeOptimizer = () => {
     }));
   };
 
+  const toggleProjectVisibility = (sectionIndex, entryIndex) => {
+    const entry = content?.sections?.[sectionIndex]?.entries?.[entryIndex];
+    const key = projectVisibilityKey(sectionIndex, entry || {}, entryIndex);
+    const currentlyHidden = Boolean(entry?.hidden || hiddenProjects[key]);
+    setHiddenProjects((current) => ({ ...current, [key]: false }));
+    setContent((current) => updateSection(current, sectionIndex, (section) => {
+      const entries = [...(section.entries || [])];
+      const currentEntry = entries[entryIndex];
+      if (!currentEntry) return section;
+      entries[entryIndex] = { ...currentEntry, hidden: !currentlyHidden };
+      return { ...section, entries };
+    }));
+  };
+
   const styleKeys = useMemo(() => ['education', ...(content?.sections || []).map((section) => sectionKey(section.heading))]
     .filter((value, index, array) => array.indexOf(value) === index), [content]);
   const visibilityKeys = useMemo(() => ['education', ...(content?.sections || []).map((section) => sectionKey(section.heading))]
@@ -686,7 +702,8 @@ const ResumeOptimizer = () => {
                   <Stack spacing={0.7} sx={{ mt: 1 }}>
                     {(section.entries || []).map((entry, entryIndex) => {
                       const key = projectVisibilityKey(sectionIndex, entry, entryIndex);
-                      return <Stack key={key} direction="row" spacing={0.4} alignItems="center"><Button size="small" sx={{ flex: 1, justifyContent: 'flex-start', textAlign: 'left', color: hiddenProjects[key] ? 'text.disabled' : 'text.primary' }} onClick={() => setHiddenProjects((current) => ({ ...current, [key]: !current[key] }))}>{hiddenProjects[key] ? '显示' : '隐藏'} {entry.title || '未命名项目'}</Button><Tooltip title="上移"><span><IconButton size="small" onClick={() => moveProject(sectionIndex, entryIndex, -1)} disabled={entryIndex === 0}><KeyboardArrowUpRoundedIcon fontSize="small" /></IconButton></span></Tooltip><Tooltip title="下移"><span><IconButton size="small" onClick={() => moveProject(sectionIndex, entryIndex, 1)} disabled={entryIndex === section.entries.length - 1}><KeyboardArrowDownRoundedIcon fontSize="small" /></IconButton></span></Tooltip></Stack>;
+                      const hidden = Boolean(entry.hidden || hiddenProjects[key]);
+                      return <Stack key={key} direction="row" spacing={0.4} alignItems="center"><Button size="small" sx={{ flex: 1, justifyContent: 'flex-start', textAlign: 'left', color: hidden ? 'text.disabled' : 'text.primary' }} onClick={() => toggleProjectVisibility(sectionIndex, entryIndex)}>{hidden ? '显示' : '隐藏'} {entry.title || '未命名项目'}</Button><Tooltip title="上移"><span><IconButton size="small" onClick={() => moveProject(sectionIndex, entryIndex, -1)} disabled={entryIndex === 0}><KeyboardArrowUpRoundedIcon fontSize="small" /></IconButton></span></Tooltip><Tooltip title="下移"><span><IconButton size="small" onClick={() => moveProject(sectionIndex, entryIndex, 1)} disabled={entryIndex === section.entries.length - 1}><KeyboardArrowDownRoundedIcon fontSize="small" /></IconButton></span></Tooltip></Stack>;
                     })}
                   </Stack>
                 </Paper>
