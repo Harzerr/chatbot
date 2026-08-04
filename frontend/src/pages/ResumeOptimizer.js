@@ -457,6 +457,7 @@ const ResumeOptimizer = () => {
   const [searchParams] = useSearchParams();
   const { currentUser, uploadAvatar, deleteAvatar } = useAuth();
   const [resumes, setResumes] = useState([]);
+  const [jobs, setJobs] = useState([]);
   const [selectedId, setSelectedId] = useState('');
   const [content, setContent] = useState(null);
   const [title, setTitle] = useState('');
@@ -482,8 +483,9 @@ const ResumeOptimizer = () => {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await careerService.listResumes();
+      const [data, jobData] = await Promise.all([careerService.listResumes(), careerService.listJobs()]);
       setResumes(data);
+      setJobs(jobData);
       const requestedId = searchParams.get('resumeId');
       setSelectedId((current) => current || requestedId || (data[0] ? String(data[0].id) : ''));
     } catch (err) {
@@ -496,6 +498,7 @@ const ResumeOptimizer = () => {
   useEffect(() => { load(); }, [load]);
 
   const selectedResume = useMemo(() => resumes.find((item) => String(item.id) === String(selectedId)), [resumes, selectedId]);
+  const selectedJob = useMemo(() => jobs.find((item) => String(item.id) === String(selectedResume?.job_id)), [jobs, selectedResume]);
 
   useEffect(() => {
     if (!selectedResume) {
@@ -562,7 +565,12 @@ const ResumeOptimizer = () => {
       setContent(contentToSave);
       setResumes((items) => items.map((item) => item.id === saved.id ? saved : item));
       const pages = document.querySelectorAll('[data-resume-preview-page]');
-      await downloadResumePagesPdf(pages, title || 'tailored-resume');
+      const pdfFileName = [
+        currentUser?.full_name || '未填写姓名',
+        selectedJob?.company || '未指定公司',
+        selectedJob?.title || contentToSave.headline || '未指定岗位',
+      ].join('--');
+      await downloadResumePagesPdf(pages, pdfFileName);
       setNotice('PDF 已导出。');
     } catch (err) {
       setError(err.response?.data?.detail || '导出 PDF 失败。');

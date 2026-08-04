@@ -2,6 +2,7 @@ import asyncio
 import json
 import re
 from typing import Annotated, Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import delete, select
@@ -37,6 +38,11 @@ def _json_load(value: str, fallback: Any) -> Any:
         return json.loads(value)
     except (TypeError, json.JSONDecodeError):
         return fallback
+
+
+def _filename_part(value: Any, fallback: str) -> str:
+    text = re.sub(r"[\\/:*?\"<>|]+", "-", str(value or "")).strip(" .-")
+    return text or fallback
 
 
 def _fact_response(fact: CareerFact) -> CareerFactRead:
@@ -643,10 +649,14 @@ async def download_resume_pdf(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> Response:
     document = await _owned_resume(db, current_user.id, resume_id)
+    content = _json_load(document.content_json, {})
+    job = None
+    if document.job_id:
+        job = await db.scalar(select(JobPosting).where(JobPosting.id == document.job_id, JobPosting.user_id == current_user.id))
     try:
         pdf = await asyncio.to_thread(
             compile_resume_pdf,
-            _json_load(document.content_json, {}),
+            content,
             current_user,
             document.title,
         )
@@ -655,7 +665,21 @@ async def download_resume_pdf(
     return Response(
         content=pdf,
         media_type="application/pdf",
-        headers={"Content-Disposition": 'attachment; filename="tailored-resume.pdf"'},
+        headers={
+            "Content-Disposition": (
+                "attachment; filename*=UTF-8''"
+                + quote(
+                    "--".join(
+                        [
+                            _filename_part(current_user.full_name, "未填写姓名"),
+                            _filename_part(job.company if job else "", "未指定公司"),
+                            _filename_part((job.title if job else "") or content.get("headline"), "未指定岗位"),
+                        ]
+                    )
+                    + ".pdf"
+                )
+            )
+        },
     )
 
 
