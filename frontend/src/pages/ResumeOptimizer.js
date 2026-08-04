@@ -132,8 +132,16 @@ const normalizeRichTextHtml = (value) => {
   return container.innerHTML;
 };
 
-const RichTextEditor = ({ value, onChange, placeholder = '', activeEditorRef }) => {
+const RichTextEditor = ({ value, onChange, placeholder = '', activeEditorRef, activeSelectionRef, activeEditorChangeRef }) => {
   const editorRef = useRef(null);
+  const captureSelection = () => {
+    const editor = editorRef.current;
+    const selection = window.getSelection();
+    if (!editor || !selection?.rangeCount || !editor.contains(selection.anchorNode)) return;
+    activeEditorRef.current = editor;
+    activeSelectionRef.current = selection.getRangeAt(0).cloneRange();
+    activeEditorChangeRef.current = onChange;
+  };
   useLayoutEffect(() => {
     if (editorRef.current && document.activeElement !== editorRef.current) {
       editorRef.current.innerHTML = normalizeRichTextHtml(value);
@@ -145,7 +153,10 @@ const RichTextEditor = ({ value, onChange, placeholder = '', activeEditorRef }) 
         ref={editorRef}
         contentEditable
         suppressContentEditableWarning
-        onFocus={() => { activeEditorRef.current = editorRef.current; }}
+        onFocus={captureSelection}
+        onMouseUp={captureSelection}
+        onKeyUp={captureSelection}
+        onSelect={captureSelection}
         onInput={(event) => onChange(event.currentTarget.innerHTML)}
         data-placeholder={placeholder}
         sx={{ minHeight: '1em', pr: 1, outline: 'none', lineHeight: 1, '&:empty:before': { content: 'attr(data-placeholder)', color: '#94a3b8' }, '& ul, & ol': { m: 0, pl: 2 }, '& li': { m: 0, p: 0 } }}
@@ -154,7 +165,7 @@ const RichTextEditor = ({ value, onChange, placeholder = '', activeEditorRef }) 
   );
 };
 
-const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionStyles, fontSize, sectionTitleSize, padding, onChange, onFormatSection, showEditTools, activeEditorRef }) => {
+const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionStyles, fontSize, sectionTitleSize, padding, onChange, onFormatSection, showEditTools, activeEditorRef, activeSelectionRef, activeEditorChangeRef }) => {
   const measureRef = useRef(null);
   const [pageGroups, setPageGroups] = useState([]);
   const getSectionStyle = (key) => {
@@ -238,13 +249,13 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
         sx={{ '& .MuiInputBase-root': { fontSize: '0.94em', color: '#52606d', p: 0 }, '& .MuiInputBase-input': { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }}
       />
       {entry.summary && (
-        <RichTextEditor value={entry.summary} onChange={(value) => updateEntry(sectionIndex, entryIndex, 'summary', value)} activeEditorRef={activeEditorRef} />
+        <RichTextEditor value={entry.summary} onChange={(value) => updateEntry(sectionIndex, entryIndex, 'summary', value)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} />
       )}
       {entry.tech_stack?.length > 0 && <Typography variant="body2" sx={{ mt: 0, color: '#475569' }}>技术栈：{entry.tech_stack.join('、')}</Typography>}
       {(entry.items || []).map((item, itemIndex) => (
         <Box key={`${item.label}-${itemIndex}`} sx={{ position: 'relative', display: 'flex', alignItems: 'flex-start', width: '100%' }}>
           <Box component="span" sx={{ flex: '0 0 12px', pt: 0.1, color: '#b21f35' }}>•</Box>
-          <RichTextEditor value={item.text} onChange={(value) => updateEntry(sectionIndex, entryIndex, 'items', (entry.items || []).map((current, index) => index === itemIndex ? { ...current, text: value } : current))} activeEditorRef={activeEditorRef} />
+          <RichTextEditor value={item.text} onChange={(value) => updateEntry(sectionIndex, entryIndex, 'items', (entry.items || []).map((current, index) => index === itemIndex ? { ...current, text: value } : current))} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} />
           {showEditTools && <Tooltip title="删除要点"><IconButton size="small" color="error" onClick={() => deleteItem(sectionIndex, itemIndex)} sx={{ position: 'absolute', right: -26, top: -4, p: 0.25 }}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></Tooltip>}
         </Box>
       ))}
@@ -290,7 +301,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
       key: `${key}-item-${itemIndex}`,
       node: (() => {
         const style = getSectionStyle(key);
-        return <Box sx={{ breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${style.fontSize}pt`, fontWeight: style.fontWeight, color: style.color }}>{itemIndex === 0 && visibleEntries.length === 0 && sectionHeading(section.heading)}<Box sx={{ position: 'relative', display: 'flex', alignItems: 'flex-start', width: '100%' }}><Box component="span" sx={{ flex: '0 0 12px', pt: 0.1, color: '#b21f35', fontWeight: 800 }}>•</Box><RichTextEditor value={item.text || item.label || ''} onChange={(value) => updateItem(sectionIndex, itemIndex, value)} activeEditorRef={activeEditorRef} />{showEditTools && <Tooltip title="删除要点"><IconButton size="small" color="error" onClick={() => deleteItem(sectionIndex, itemIndex)} sx={{ position: 'absolute', right: -26, top: -4, p: 0.25 }}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></Tooltip>}</Box></Box>;
+        return <Box sx={{ breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${style.fontSize}pt`, fontWeight: style.fontWeight, color: style.color }}>{itemIndex === 0 && visibleEntries.length === 0 && sectionHeading(section.heading)}<Box sx={{ position: 'relative', display: 'flex', alignItems: 'flex-start', width: '100%' }}><Box component="span" sx={{ flex: '0 0 12px', pt: 0.1, color: '#b21f35', fontWeight: 800 }}>•</Box><RichTextEditor value={item.text || item.label || ''} onChange={(value) => updateItem(sectionIndex, itemIndex, value)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} />{showEditTools && <Tooltip title="删除要点"><IconButton size="small" color="error" onClick={() => deleteItem(sectionIndex, itemIndex)} sx={{ position: 'absolute', right: -26, top: -4, p: 0.25 }}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></Tooltip>}</Box></Box>;
       })(),
     }));
   });
@@ -363,6 +374,8 @@ const ResumeOptimizer = () => {
   const [sectionTitleSize, setSectionTitleSize] = useState(12);
   const [showEditTools, setShowEditTools] = useState(false);
   const activeEditorRef = useRef(null);
+  const activeSelectionRef = useRef(null);
+  const activeEditorChangeRef = useRef(null);
   const [padding, setPadding] = useState(15);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
@@ -496,13 +509,19 @@ const ResumeOptimizer = () => {
   const updateActiveStyle = (field, value) => setSectionStyles((current) => ({ ...current, [styleTarget]: { ...activeStyle, [field]: value } }));
   const formatSection = (key, field, value) => setSectionStyles((current) => ({ ...current, [key]: { ...(current[key] || {}), [field]: value } }));
   const executeEditorCommand = (command) => {
-    if (!activeEditorRef.current) {
+    const editor = activeEditorRef.current;
+    if (!editor) {
       setNotice('请先点击需要编辑的正文段落。');
       return;
     }
-    activeEditorRef.current.focus();
+    editor.focus();
+    const selection = window.getSelection();
+    if (activeSelectionRef.current && selection) {
+      selection.removeAllRanges();
+      selection.addRange(activeSelectionRef.current);
+    }
     document.execCommand(command);
-    activeEditorRef.current.dispatchEvent(new Event('input', { bubbles: true }));
+    activeEditorChangeRef.current?.(editor.innerHTML);
   };
 
   if (loading) return <Box sx={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}><CircularProgress /></Box>;
@@ -561,7 +580,7 @@ const ResumeOptimizer = () => {
             </Stack>
 
             <Paper sx={{ p: { xs: 1, md: 3 }, bgcolor: '#e9eef5', height: { xs: 'auto', lg: 'calc(100vh - 170px)' }, maxHeight: { xs: 'none', lg: 'calc(100vh - 170px)' }, overflowY: { xs: 'visible', lg: 'auto' }, overflowX: 'auto', minWidth: 0 }}>
-              {content && <ResumePaper content={content} user={currentUser} hiddenSections={hiddenSections} hiddenProjects={hiddenProjects} sectionStyles={sectionStyles} fontSize={fontSize} sectionTitleSize={sectionTitleSize} padding={padding} onChange={setContent} onFormatSection={formatSection} showEditTools={showEditTools} activeEditorRef={activeEditorRef} />}
+              {content && <ResumePaper content={content} user={currentUser} hiddenSections={hiddenSections} hiddenProjects={hiddenProjects} sectionStyles={sectionStyles} fontSize={fontSize} sectionTitleSize={sectionTitleSize} padding={padding} onChange={setContent} onFormatSection={formatSection} showEditTools={showEditTools} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} />}
             </Paper>
 
             <Stack spacing={2}>
