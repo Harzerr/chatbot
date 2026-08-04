@@ -761,7 +761,8 @@ const ResumeOptimizer = () => {
                 </Stack>
               </Paper>
               <Paper sx={{ p: 2 }}>
-                <Typography variant="subtitle1" fontWeight={700}>章节显示</Typography>
+                <Typography variant="subtitle1" fontWeight={700}>显示与排序</Typography>
+                <Typography variant="caption" color="text.secondary">控制章节显示，并调整项目经历的顺序。</Typography>
                 <Stack spacing={1} sx={{ mt: 1 }}>
                   <FormControl fullWidth size="small">
                     <InputLabel>选择章节</InputLabel>
@@ -779,19 +780,19 @@ const ResumeOptimizer = () => {
                     {hiddenSections[visibilityTarget] ? '显示章节' : '隐藏章节'}
                   </Button>
                 </Stack>
+                {content?.sections.map((section, sectionIndex) => sectionKey(section.heading) === '项目经历' && (
+                  <Box key={`projects-${sectionIndex}`} sx={{ mt: 2, pt: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
+                    <Typography variant="body2" fontWeight={700}>项目顺序</Typography>
+                    <Stack spacing={0.35} sx={{ mt: 0.8 }}>
+                      {(section.entries || []).map((entry, entryIndex) => {
+                        const key = projectVisibilityKey(sectionIndex, entry, entryIndex);
+                        const hidden = Boolean(entry.hidden || hiddenProjects[key]);
+                        return <Stack key={key} direction="row" spacing={0.25} alignItems="center"><Typography variant="body2" sx={{ flex: 1, minWidth: 0, color: hidden ? 'text.disabled' : 'text.primary', overflowWrap: 'anywhere', fontSize: '0.82rem' }}>{entry.title || '未命名项目'}</Typography><Button size="small" variant={hidden ? 'outlined' : 'text'} color={hidden ? 'inherit' : 'primary'} onClick={() => toggleProjectVisibility(sectionIndex, entryIndex)} sx={{ minWidth: 44, px: 0.5 }}>{hidden ? '显示' : '隐藏'}</Button><Tooltip title="上移"><span><IconButton size="small" onClick={() => moveProject(sectionIndex, entryIndex, -1)} disabled={entryIndex === 0}><KeyboardArrowUpRoundedIcon fontSize="small" /></IconButton></span></Tooltip><Tooltip title="下移"><span><IconButton size="small" onClick={() => moveProject(sectionIndex, entryIndex, 1)} disabled={entryIndex === section.entries.length - 1}><KeyboardArrowDownRoundedIcon fontSize="small" /></IconButton></span></Tooltip></Stack>;
+                      })}
+                    </Stack>
+                  </Box>
+                ))}
               </Paper>
-              {content?.sections.map((section, sectionIndex) => sectionKey(section.heading) === '项目经历' && (
-                <Paper key={`projects-${sectionIndex}`} sx={{ p: 2 }}>
-                  <Typography variant="subtitle1" fontWeight={700}>项目顺序与显示</Typography>
-                  <Stack spacing={0.7} sx={{ mt: 1 }}>
-                    {(section.entries || []).map((entry, entryIndex) => {
-                      const key = projectVisibilityKey(sectionIndex, entry, entryIndex);
-                      const hidden = Boolean(entry.hidden || hiddenProjects[key]);
-                      return <Stack key={key} direction="row" spacing={0.4} alignItems="center"><Typography variant="body2" sx={{ flex: 1, minWidth: 0, color: hidden ? 'text.disabled' : 'text.primary', overflowWrap: 'anywhere' }}>{entry.title || '未命名项目'}</Typography><Button size="small" variant={hidden ? 'outlined' : 'text'} color={hidden ? 'inherit' : 'primary'} onClick={() => toggleProjectVisibility(sectionIndex, entryIndex)}>{hidden ? '显示' : '隐藏'}</Button><Tooltip title="上移"><span><IconButton size="small" onClick={() => moveProject(sectionIndex, entryIndex, -1)} disabled={entryIndex === 0}><KeyboardArrowUpRoundedIcon fontSize="small" /></IconButton></span></Tooltip><Tooltip title="下移"><span><IconButton size="small" onClick={() => moveProject(sectionIndex, entryIndex, 1)} disabled={entryIndex === section.entries.length - 1}><KeyboardArrowDownRoundedIcon fontSize="small" /></IconButton></span></Tooltip></Stack>;
-                    })}
-                  </Stack>
-                </Paper>
-              ))}
               <Typography variant="caption" color="text.secondary">编辑内容会保存到当前用户的简历版本，不会修改原始事实库。导出 PDF 时会自动同步当前内容和排版设置。</Typography>
             </Stack>
           </Box>
