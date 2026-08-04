@@ -49,6 +49,16 @@ import careerService from '../services/careerService';
 import { useAuth } from '../contexts/AuthContext';
 
 const factTypes = ['experience', 'project', 'skill', 'education', 'certificate', 'award', 'language', 'other'];
+const factTypeLabels = {
+  experience: '实习/工作经历',
+  project: '项目经历',
+  skill: '专业技能',
+  education: '教育背景',
+  certificate: '证书',
+  award: '竞赛与荣誉',
+  language: '语言能力',
+  other: '其他',
+};
 
 const downloadBlob = (blob, name) => {
   const url = URL.createObjectURL(blob);
@@ -436,7 +446,7 @@ const CareerStudio = () => {
                     {draftFacts.map((fact, index) => (
                       <Paper key={`${fact.title}-${index}`} variant="outlined" sx={{ p: 2, borderRadius: 1.5 }}>
                         <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} justifyContent="space-between">
-                          <Box><Chip size="small" label={fact.fact_type} /><Typography sx={{ mt: 1, fontWeight: 700 }}>{fact.title}</Typography><Typography variant="body2" color="text.secondary">{fact.content?.summary || fact.evidence || '无摘要'}</Typography></Box>
+                          <Box><Chip size="small" label={factTypeLabels[fact.fact_type] || '其他'} /><Typography sx={{ mt: 1, fontWeight: 700 }}>{fact.title}</Typography><Typography variant="body2" color="text.secondary">{fact.content?.summary || fact.evidence || '无摘要'}</Typography></Box>
                           <Button size="small" onClick={() => saveDraftFact(fact)} disabled={working}>确认事实</Button>
                         </Stack>
                       </Paper>
@@ -463,7 +473,7 @@ const CareerStudio = () => {
                 {activeFacts.map((fact) => <Paper key={fact.id} elevation={0} sx={{ p: 2, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
                   <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} justifyContent="space-between">
                     <Box sx={{ minWidth: 0 }}>
-                      <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap"><Chip size="small" label={fact.fact_type} /><Typography fontWeight={700}>{fact.title}</Typography><Chip size="small" color={fact.is_verified ? 'success' : 'warning'} label={fact.is_verified ? '已确认' : '待确认'} /></Stack>
+                      <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap"><Chip size="small" label={factTypeLabels[fact.fact_type] || '其他'} /><Typography fontWeight={700}>{fact.title}</Typography><Chip size="small" color={fact.is_verified ? 'success' : 'warning'} label={fact.is_verified ? '已确认' : '待确认'} /></Stack>
                       <Typography variant="body2" color="text.secondary" sx={{ mt: 0.85, whiteSpace: 'pre-wrap' }}>{fact.content?.summary || fact.evidence || '无摘要'}</Typography>
                       {!!fact.evidence && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>依据：{fact.evidence}</Typography>}
                     </Box>
@@ -538,7 +548,7 @@ const CareerStudio = () => {
         <DialogContent dividers>
           <Stack spacing={2} sx={{ pt: 0.5 }}>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-              <FormControl sx={{ minWidth: 155 }}><InputLabel>事实类型</InputLabel><Select label="事实类型" value={factEditor?.fact_type || 'project'} onChange={(event) => setFactEditor((item) => ({ ...item, fact_type: event.target.value }))}>{factTypes.map((type) => <MenuItem key={type} value={type}>{type}</MenuItem>)}</Select></FormControl>
+              <FormControl sx={{ minWidth: 155 }}><InputLabel>事实类型</InputLabel><Select label="事实类型" value={factEditor?.fact_type || 'project'} onChange={(event) => setFactEditor((item) => ({ ...item, fact_type: event.target.value }))}>{factTypes.map((type) => <MenuItem key={type} value={type}>{factTypeLabels[type]}</MenuItem>)}</Select></FormControl>
               <TextField fullWidth required label="事实标题" value={factEditor?.title || ''} onChange={(event) => setFactEditor((item) => ({ ...item, title: event.target.value }))} />
             </Stack>
             <TextField fullWidth required multiline minRows={3} label="事实描述" helperText="只写真实、可核查的经历和成果。" value={factEditor?.summary || ''} onChange={(event) => setFactEditor((item) => ({ ...item, summary: event.target.value }))} />

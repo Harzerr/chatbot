@@ -32,7 +32,8 @@ class CareerStudioService:
 
     async def extract_facts(self, resume_text: str) -> list[dict[str, Any]]:
         prompt = f"""Extract only explicit, verifiable career facts from this resume.
-Return JSON only: {{"facts":[{{"fact_type":"experience|project|skill|education|certificate|award|language|other","title":"short label","content":{{"summary":"...","highlights":["..."]}},"tags":["..."],"evidence":"exact source excerpt","is_verified":false}}]}}.
+Return JSON only: {{"facts":[{{"fact_type":"experience|project|skill|education|certificate|award|language|other","title":"中文事实标题","content":{{"summary":"中文事实摘要","highlights":["中文事实要点"]}},"tags":["中文标签"],"evidence":"exact source excerpt","is_verified":false}}]}}.
+除公司名、学校名、产品名、技术名词、证书或竞赛官方名称外，title、summary、highlights 和 tags 必须使用中文；不要输出英文解释或英文分类名称。evidence 保留简历原文。
 Never invent details, metrics, employers, dates, skills, or qualifications. Keep each fact atomic.
 
 RESUME:
