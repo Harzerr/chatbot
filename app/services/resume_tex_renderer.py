@@ -140,7 +140,7 @@ def _entries(entries: Any, heading: str) -> str:
         if items:
             label = "技术亮点" if heading == "项目经历" else "核心成果"
             rendered.append(f"\\ResumeMeta{{{label}}}{{}}\n" + items)
-        rendered.append("\\par\\vspace{2.4mm}")
+        rendered.append("\\par\\vspace{1.0mm}")
     return "\n".join(rendered)
 
 

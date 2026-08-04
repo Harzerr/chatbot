@@ -60,26 +60,26 @@
     \vspace{7pt}
     {\ResumeBodyFont \ResumeContact\par}
   \end{minipage}
-  \par\vspace{6mm}%
+  \par\vspace{4mm}%
 }
 
-\newcommand{\ResumeSection}[2][2.8mm]{%
+\newcommand{\ResumeSection}[2][1.8mm]{%
   \par\vspace{#1}%
   \noindent{\color{ResumeAccent}\rule{2.2pt}{12pt}}\hspace{5pt}%
   {\ResumeSectionFont\bfseries\color{ResumeText} #2}\par%
-  \vspace{1.55mm}%
+  \vspace{1.1mm}%
   {\color{ResumeRule}\hrule height 0.5pt}%
-  \vspace{2.6mm}%
+  \vspace{1.5mm}%
 }
 \newcommand{\ResumeEntry}[3]{%
   \Needspace{5\baselineskip}%
   \noindent\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}X>{\centering\arraybackslash}p{0.23\linewidth}>{\raggedleft\arraybackslash}p{0.24\linewidth}@{}}%
     #1 & \mbox{\strut #2} & {\color{ResumeSecondary}\strut #3}\\
   \end{tabularx}%
-  \par\vspace{1.4mm}%
+  \par\vspace{0.5mm}%
 }
 \newcommand{\ResumeMeta}[2]{%
-  \par\vspace{0.4mm}{\color{ResumeAccent}\bfseries #1：}{\color{ResumeSecondary} #2}\par
+  \par\vspace{0.15mm}{\color{ResumeAccent}\bfseries #1：}{\color{ResumeSecondary} #2}\par
 }
 \newenvironment{ResumeItems}{\begin{itemize}[leftmargin=4.8mm,label=\textcolor{ResumeAccent}{\scriptsize\textbullet},labelsep=1.6mm,itemindent=0pt,topsep=0.6mm,partopsep=0pt,parsep=0pt,itemsep=1.1pt]}{\end{itemize}}
 

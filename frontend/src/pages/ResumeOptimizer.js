@@ -206,7 +206,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
   const sectionHeading = (heading) => {
     const style = getSectionStyle(sectionKey(heading));
     return (
-      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.1, color: style.color, width: '100%' }}>
+      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.7, color: style.color, width: '100%' }}>
         <Box sx={{ width: 3, height: 15, bgcolor: '#b21f35', flex: '0 0 auto' }} />
         <Typography sx={{ fontWeight: 800, fontSize: `${sectionTitleSize}pt`, color: 'inherit', letterSpacing: '0.02em' }}>
           {sectionLabels[heading] || heading || '其他经历'}
@@ -219,7 +219,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
   const renderEntry = (sectionIndex, heading, entry, entryIndex) => {
     const style = getSectionStyle(sectionKey(heading));
     return (
-    <Box sx={{ mb: 1.35, p: 0, breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${style.fontSize}pt`, fontWeight: style.fontWeight, color: style.color }}>
+    <Box sx={{ mb: 0.65, p: 0, breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${style.fontSize}pt`, fontWeight: style.fontWeight, color: style.color }}>
       <Stack direction="row" spacing={1.2} alignItems="baseline">
         <TextField
           variant="standard"
@@ -248,11 +248,11 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
         </Tooltip>}
       </Stack>
       {entry.summary && (
-        <Box sx={{ mt: 0.5 }}><Typography component="span" sx={{ color: '#b21f35', fontWeight: 700, fontSize: '0.92em' }}>{heading === '项目经历' ? '项目简介：' : '个人职责与成果：'}</Typography><RichTextEditor value={entry.summary} onChange={(value) => updateEntry(sectionIndex, entryIndex, 'summary', value)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>
+        <Box sx={{ mt: 0.25 }}><Typography component="span" sx={{ color: '#b21f35', fontWeight: 700, fontSize: '0.92em' }}>{heading === '项目经历' ? '项目简介：' : '个人职责与成果：'}</Typography><RichTextEditor value={entry.summary} onChange={(value) => updateEntry(sectionIndex, entryIndex, 'summary', value)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>
       )}
-      {entry.tech_stack?.length > 0 && <Typography variant="body2" sx={{ mt: 0.45, color: '#4b5563', fontSize: '0.92em' }}><Box component="span" sx={{ color: '#b21f35', fontWeight: 700 }}>技术栈：</Box>{entry.tech_stack.join('、')}</Typography>}
+      {entry.tech_stack?.length > 0 && <Typography variant="body2" sx={{ mt: 0.2, color: '#4b5563', fontSize: '0.92em' }}><Box component="span" sx={{ color: '#b21f35', fontWeight: 700 }}>技术栈：</Box>{entry.tech_stack.join('、')}</Typography>}
       {(entry.items || []).map((item, itemIndex) => (
-        <Box key={`${item.label}-${itemIndex}`} sx={{ position: 'relative', display: 'flex', alignItems: 'flex-start', width: '100%', mt: 0.45 }}>
+        <Box key={`${item.label}-${itemIndex}`} sx={{ position: 'relative', display: 'flex', alignItems: 'flex-start', width: '100%', mt: 0.2 }}>
           <Box component="span" sx={{ flex: '0 0 12px', pt: 0.1, color: '#b21f35', fontSize: '0.85em' }}>•</Box>
           <Box sx={{ minWidth: 0, flex: 1 }}>{item.label && <Box component="span" sx={{ fontWeight: 700, mr: 0.5 }}>{item.label}：</Box>}<RichTextEditor value={item.text} onChange={(value) => updateEntry(sectionIndex, entryIndex, 'items', (entry.items || []).map((current, index) => index === itemIndex ? { ...current, text: value } : current))} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>
           {showEditTools && <Tooltip title="删除要点"><IconButton size="small" color="error" onClick={() => deleteItem(sectionIndex, itemIndex)} sx={{ position: 'absolute', right: -26, top: -4, p: 0.25 }}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></Tooltip>}
