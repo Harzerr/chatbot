@@ -258,6 +258,8 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
 
   const renderEntry = (sectionIndex, heading, entry, entryIndex) => {
     const style = getSectionStyle(sectionKey(heading));
+    const isProject = heading === '项目经历';
+    const techStackText = Array.isArray(entry.tech_stack) ? entry.tech_stack.join('、') : (entry.tech_stack || '');
     return (
     <Box sx={{ mb: 0.65, p: 0, breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${style.fontSize}pt`, fontWeight: style.fontWeight, color: style.color }}>
       <Stack direction="row" spacing={1.2} alignItems="baseline">
@@ -287,10 +289,10 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
           <IconButton size="small" color="error" onClick={() => deleteEntry(sectionIndex, entryIndex)}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton>
         </Tooltip>}
       </Stack>
-      {entry.summary && (
-        <Box sx={{ mt: 0.25 }}>{heading === '项目经历' && <Typography component="span" sx={{ color: '#b21f35', fontWeight: 700, fontSize: '0.92em' }}>项目简介：</Typography>}<RichTextEditor value={entry.summary} onChange={(value) => updateEntry(sectionIndex, entryIndex, 'summary', value)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>
+      {(entry.summary || isProject) && (
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', mt: 0.25, fontSize: '0.92em' }}><Typography component="span" sx={{ flex: '0 0 auto', color: '#b21f35', fontWeight: 700 }}>项目简介：</Typography><RichTextEditor value={entry.summary || ''} placeholder="点击输入项目简介" onChange={(value) => updateEntry(sectionIndex, entryIndex, 'summary', value)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>
       )}
-      {entry.tech_stack?.length > 0 && <Typography variant="body2" sx={{ mt: 0.2, color: '#4b5563', fontSize: '0.92em' }}><Box component="span" sx={{ color: '#b21f35', fontWeight: 700 }}>技术栈：</Box>{entry.tech_stack.join('、')}</Typography>}
+      {(techStackText || isProject) && <Box sx={{ display: 'flex', alignItems: 'flex-start', mt: 0.2, color: '#4b5563', fontSize: '0.92em' }}><Typography component="span" sx={{ flex: '0 0 auto', color: '#b21f35', fontWeight: 700 }}>技术栈：</Typography><RichTextEditor value={techStackText} placeholder="点击输入技术栈" onChange={(value) => updateEntry(sectionIndex, entryIndex, 'tech_stack', value)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>}
       {(entry.items || []).map((item, itemIndex) => (
         <Box key={`${sectionIndex}-${entryIndex}-${itemIndex}`} sx={{ position: 'relative', display: 'flex', alignItems: 'flex-start', width: '100%', mt: 0.2 }}>
           <ResumeBulletMarker editable={showEditTools} onDelete={() => deleteItem(sectionIndex, itemIndex)} />
