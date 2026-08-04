@@ -15,6 +15,34 @@ from langchain_openai import ChatOpenAI
 from app.core.config import settings
 
 
+_FACT_TYPE_ALIASES = {
+    "实习经历": "experience",
+    "工作经历": "experience",
+    "项目经历": "project",
+    "专业技能": "skill",
+    "教育背景": "education",
+    "证书": "certificate",
+    "竞赛与荣誉": "award",
+    "语言能力": "language",
+    "其他": "other",
+}
+_FACT_TAG_ALIASES = {
+    "education": "教育背景",
+    "experience": "经历",
+    "internship": "实习经历",
+    "project": "项目经历",
+    "skill": "专业技能",
+    "certificate": "证书",
+    "award": "竞赛与荣誉",
+    "language": "语言能力",
+    "master": "硕士",
+    "bachelor": "本科",
+    "phd": "博士",
+    "research": "科研经历",
+    "work": "工作经历",
+}
+
+
 class _NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
@@ -39,7 +67,19 @@ Never invent details, metrics, employers, dates, skills, or qualifications. Keep
 RESUME:
 {resume_text[:18000]}"""
         payload = await self._invoke_json(prompt)
-        return payload.get("facts", []) if isinstance(payload.get("facts"), list) else []
+        raw_facts = payload.get("facts", []) if isinstance(payload.get("facts"), list) else []
+        normalized_facts = []
+        for item in raw_facts:
+            if not isinstance(item, dict):
+                continue
+            normalized = dict(item)
+            fact_type = str(normalized.get("fact_type") or "").strip()
+            normalized["fact_type"] = _FACT_TYPE_ALIASES.get(fact_type, fact_type)
+            tags = normalized.get("tags")
+            if isinstance(tags, list):
+                normalized["tags"] = [_FACT_TAG_ALIASES.get(str(tag).strip().lower(), str(tag).strip()) for tag in tags if str(tag).strip()]
+            normalized_facts.append(normalized)
+        return normalized_facts
 
     async def normalize_job(self, raw_content: str, source_url: str | None) -> dict[str, Any]:
         prompt = f"""Convert this job description into JSON only. Use this shape:

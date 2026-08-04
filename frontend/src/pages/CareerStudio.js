@@ -59,6 +59,22 @@ const factTypeLabels = {
   language: '语言能力',
   other: '其他',
 };
+const factTagLabels = {
+  education: '教育背景',
+  experience: '经历',
+  internship: '实习经历',
+  project: '项目经历',
+  skill: '专业技能',
+  certificate: '证书',
+  award: '竞赛与荣誉',
+  language: '语言能力',
+  master: '硕士',
+  bachelor: '本科',
+  phd: '博士',
+  research: '科研经历',
+  work: '工作经历',
+};
+const localizeFactTag = (tag) => factTagLabels[String(tag || '').trim().toLowerCase()] || tag;
 
 const downloadBlob = (blob, name) => {
   const url = URL.createObjectURL(blob);
@@ -80,7 +96,7 @@ const factToEditor = (fact) => ({
   title: fact?.title || '',
   summary: fact?.content?.summary || '',
   highlights: joinLines(fact?.content?.highlights),
-  tags: (fact?.tags || []).join(', '),
+  tags: (fact?.tags || []).map(localizeFactTag).join(', '),
   evidence: fact?.evidence || '',
   is_verified: fact?.is_verified ?? true,
 });
@@ -484,7 +500,7 @@ const saveDraftFact = (fact) => run(async () => {
                       {!!fact.evidence && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>依据：{fact.evidence}</Typography>}
                     </Box>
                     <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap flexWrap="wrap">
-                      {fact.tags.map((tag) => <Chip key={tag} size="small" label={tag} />)}
+                      {fact.tags.map((tag) => <Chip key={tag} size="small" label={localizeFactTag(tag)} />)}
                       <Button size="small" startIcon={<EditRoundedIcon />} onClick={() => setFactEditor(factToEditor(fact))}>编辑</Button>
                       <Button size="small" color="warning" startIcon={<ArchiveRoundedIcon />} onClick={() => archiveFact(fact)} disabled={working}>归档</Button>
                       <Button size="small" color="error" startIcon={<DeleteOutlineRoundedIcon />} onClick={() => deleteFact(fact)} disabled={working}>删除</Button>
