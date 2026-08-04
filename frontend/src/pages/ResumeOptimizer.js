@@ -204,6 +204,7 @@ const ResumeBulletMarker = ({ editable, onDelete }) => editable ? (
 const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionStyles, fontSize, sectionTitleSize, padding, onChange, onFormatSection, showEditTools, activeEditorRef, activeSelectionRef, activeEditorChangeRef }) => {
   const measureRef = useRef(null);
   const [pageGroups, setPageGroups] = useState([]);
+  const [pageGroupSignature, setPageGroupSignature] = useState('');
   const getSectionStyle = (key) => {
     const style = { ...defaultSectionStyle, fontSize, ...(sectionStyles[key] || {}) };
     if (key === 'education') style.fontSize = fontSize;
@@ -343,6 +344,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
       })(),
     }));
   });
+  const blockSignature = blocks.map((block) => block.key).join('|');
   useLayoutEffect(() => {
     if (!measureRef.current) return;
     const pageHeight = (297 - padding * 2) * (96 / 25.4);
@@ -362,9 +364,11 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
     });
     if (current.length) groups.push(current);
     setPageGroups(groups);
-  }, [content, hiddenSections, hiddenProjects, sectionStyles, fontSize, padding]);
+    setPageGroupSignature(blockSignature);
+  }, [blockSignature, content, hiddenSections, hiddenProjects, sectionStyles, fontSize, padding, sectionTitleSize, showEditTools]);
 
-  const groups = pageGroups.length ? pageGroups : [blocks.map((_, index) => index)];
+  const pageGroupsAreCurrent = pageGroupSignature === blockSignature && pageGroups.every((group) => group.every((blockIndex) => blocks[blockIndex]));
+  const groups = pageGroupsAreCurrent ? pageGroups : [blocks.map((_, index) => index)];
   const pageSx = {
     width: '210mm',
     minHeight: '297mm',
@@ -710,13 +714,15 @@ const ResumeOptimizer = () => {
                       {visibilityKeys.map((key) => <MenuItem key={key} value={key}>{sectionLabels[key] || key}</MenuItem>)}
                     </Select>
                   </FormControl>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>显示状态</InputLabel>
-                    <Select label="显示状态" value={hiddenSections[visibilityTarget] ? 'hidden' : 'visible'} onChange={(event) => setHiddenSections((current) => ({ ...current, [visibilityTarget]: event.target.value === 'hidden' }))}>
-                      <MenuItem value="visible">显示章节</MenuItem>
-                      <MenuItem value="hidden">隐藏章节</MenuItem>
-                    </Select>
-                  </FormControl>
+                  <Button
+                    fullWidth
+                    size="small"
+                    variant={hiddenSections[visibilityTarget] ? 'outlined' : 'contained'}
+                    color={hiddenSections[visibilityTarget] ? 'inherit' : 'primary'}
+                    onClick={() => setHiddenSections((current) => ({ ...current, [visibilityTarget]: !current[visibilityTarget] }))}
+                  >
+                    {hiddenSections[visibilityTarget] ? '显示章节' : '隐藏章节'}
+                  </Button>
                 </Stack>
               </Paper>
               {content?.sections.map((section, sectionIndex) => sectionKey(section.heading) === '项目经历' && (
@@ -726,12 +732,12 @@ const ResumeOptimizer = () => {
                     {(section.entries || []).map((entry, entryIndex) => {
                       const key = projectVisibilityKey(sectionIndex, entry, entryIndex);
                       const hidden = Boolean(entry.hidden || hiddenProjects[key]);
-                      return <Stack key={key} direction="row" spacing={0.4} alignItems="center"><Button size="small" sx={{ flex: 1, justifyContent: 'flex-start', textAlign: 'left', color: hidden ? 'text.disabled' : 'text.primary' }} onClick={() => toggleProjectVisibility(sectionIndex, entryIndex)}>{hidden ? '显示' : '隐藏'} {entry.title || '未命名项目'}</Button><Tooltip title="上移"><span><IconButton size="small" onClick={() => moveProject(sectionIndex, entryIndex, -1)} disabled={entryIndex === 0}><KeyboardArrowUpRoundedIcon fontSize="small" /></IconButton></span></Tooltip><Tooltip title="下移"><span><IconButton size="small" onClick={() => moveProject(sectionIndex, entryIndex, 1)} disabled={entryIndex === section.entries.length - 1}><KeyboardArrowDownRoundedIcon fontSize="small" /></IconButton></span></Tooltip></Stack>;
+                      return <Stack key={key} direction="row" spacing={0.4} alignItems="center"><Typography variant="body2" sx={{ flex: 1, minWidth: 0, color: hidden ? 'text.disabled' : 'text.primary', overflowWrap: 'anywhere' }}>{entry.title || '未命名项目'}</Typography><Button size="small" variant={hidden ? 'outlined' : 'text'} color={hidden ? 'inherit' : 'primary'} onClick={() => toggleProjectVisibility(sectionIndex, entryIndex)}>{hidden ? '显示' : '隐藏'}</Button><Tooltip title="上移"><span><IconButton size="small" onClick={() => moveProject(sectionIndex, entryIndex, -1)} disabled={entryIndex === 0}><KeyboardArrowUpRoundedIcon fontSize="small" /></IconButton></span></Tooltip><Tooltip title="下移"><span><IconButton size="small" onClick={() => moveProject(sectionIndex, entryIndex, 1)} disabled={entryIndex === section.entries.length - 1}><KeyboardArrowDownRoundedIcon fontSize="small" /></IconButton></span></Tooltip></Stack>;
                     })}
                   </Stack>
                 </Paper>
               ))}
-              <Typography variant="caption" color="text.secondary">编辑内容会保存到当前用户的简历版本，不会修改原始事实库。导出前请先点击“保存当前版本”。</Typography>
+              <Typography variant="caption" color="text.secondary">编辑内容会保存到当前用户的简历版本，不会修改原始事实库。导出 PDF 时会自动同步当前内容和排版设置。</Typography>
             </Stack>
           </Box>
         )}

@@ -49,11 +49,11 @@
     \vspace{-105pt}%
     {\color{ResumeAccent}\rule{\linewidth}{105pt}}
   \end{minipage}\hspace{8pt}%
-  \begin{minipage}[t][105pt][t]{70pt}
+  \begin{minipage}[t][105pt][t]{78pt}
     \setlength{\fboxsep}{0pt}\setlength{\fboxrule}{0.6pt}%
     \fcolorbox{ResumeBorder}{white}{\ResumePhoto}
   \end{minipage}\hspace{12pt}%
-  \begin{minipage}[t][105pt][t]{340pt}
+  \begin{minipage}[t][105pt][t]{332pt}
     {\fontsize{24pt}{26pt}\selectfont\bfseries \ResumeName\par}
     \vspace{2pt}
     {\ResumeBodyFont\color{ResumeAccent}\bfseries \ResumeTargetRole\par}
@@ -77,6 +77,12 @@
     #1 & \mbox{\strut #2} & {\color{ResumeSecondary}\strut #3}\\
   \end{tabularx}%
   \par\vspace{0.5mm}%
+}
+\newcommand{\ResumeEducationEntry}[2]{%
+  \noindent\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}X>{\raggedleft\arraybackslash}p{0.24\linewidth}@{}}%
+    #1 & {\color{ResumeSecondary}\strut #2}\\
+  \end{tabularx}%
+  \par\vspace{0.2mm}%
 }
 \newcommand{\ResumeMeta}[2]{%
   \par\vspace{0.15mm}{\color{ResumeAccent}\bfseries #1：}{\color{ResumeSecondary} #2}\par

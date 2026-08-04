@@ -103,7 +103,6 @@ def _styled_block(content: dict[str, Any], key: str, block: str) -> str:
     return (
         "\\begingroup\n"
         f"\\fontsize{{{size:.1f}pt}}{{{leading:.2f}pt}}\\selectfont\n"
-        f"\\renewcommand{{\\ResumeSectionFont}}{{\\fontsize{{{size:.1f}pt}}{{{leading:.2f}pt}}\\selectfont}}\n"
         f"{weight_command}\\color[HTML]{{{color}}}\n"
         f"{block}\n"
         "\\endgroup"
@@ -162,9 +161,10 @@ def _education(entries: Any) -> str:
     for entry in entries:
         if not isinstance(entry, dict) or not entry.get("school"):
             continue
-        program = " ".join(part for part in [_escape_tex(entry.get("major")), _escape_tex(entry.get("degree"))] if part)
+        program = " · ".join(part for part in [_escape_tex(entry.get("major")), _escape_tex(entry.get("degree"))] if part)
         period = " - ".join(part for part in [_escape_tex(entry.get("start_date")), _escape_tex(entry.get("end_date"))] if part)
-        rendered.append(f"\\ResumeEntry{{{_escape_tex(entry.get('school'))}}}{{{program}}}{{{period}}}")
+        school = " · ".join(part for part in [_escape_tex(entry.get("school")), program] if part)
+        rendered.append(f"\\ResumeEducationEntry{{{school}}}{{{period}}}")
         details = []
         if entry.get("rank"):
             details.append(f"综合排名：{_escape_tex(entry.get('rank'))}")
@@ -232,8 +232,8 @@ def _content(content: dict[str, Any]) -> str:
 
 def _photo_block(avatar_name: str | None) -> str:
     if not avatar_name:
-        return r"\rule{0pt}{84pt}\hspace{68pt}"
-    return rf"\includegraphics[width=68pt,height=84pt,keepaspectratio]{{{avatar_name}}}"
+        return r"\rule{0pt}{100pt}\hspace{76pt}"
+    return rf"\includegraphics[width=76pt,height=100pt,keepaspectratio]{{{avatar_name}}}"
 
 
 def _project_font_config() -> str:
