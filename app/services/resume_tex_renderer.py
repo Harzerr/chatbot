@@ -41,13 +41,20 @@ def _escape_tex(value: Any) -> str:
 
 def _rich_text(value: Any) -> str:
     text = str(value or "")
-    parts = re.split(r"(<(?:strong|b)>.*?</(?:strong|b)>)", text, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r"<li[^>]*>(.*?)</li>", r"• \1 ", text, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r"</?(?:ul|ol)[^>]*>", "", text, flags=re.IGNORECASE)
+    parts = re.split(r"(<(?:strong|b)>.*?</(?:strong|b)>|<(?:em|i)>.*?</(?:em|i)>)", text, flags=re.IGNORECASE | re.DOTALL)
     rendered: list[str] = []
     for part in parts:
         match = re.fullmatch(r"<(?:strong|b)>(.*?)</(?:strong|b)>", part, flags=re.IGNORECASE | re.DOTALL)
         if match:
             inner = re.sub(r"<br\s*/?>", " ", match.group(1), flags=re.IGNORECASE)
             rendered.append(rf"\textbf{{{_escape_tex(re.sub(r'<[^>]+>', '', inner))}}}")
+            continue
+        match = re.fullmatch(r"<(?:em|i)>(.*?)</(?:em|i)>", part, flags=re.IGNORECASE | re.DOTALL)
+        if match:
+            inner = re.sub(r"<br\s*/?>", " ", match.group(1), flags=re.IGNORECASE)
+            rendered.append(rf"\textit{{{_escape_tex(re.sub(r'<[^>]+>', '', inner))}}}")
         else:
             plain = re.sub(r"<br\s*/?>", " ", part, flags=re.IGNORECASE)
             rendered.append(_escape_tex(re.sub(r"<[^>]+>", "", plain)))
