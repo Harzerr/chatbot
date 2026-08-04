@@ -308,6 +308,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
     const techStackText = Array.isArray(entry.tech_stack) ? entry.tech_stack.join('、') : (entry.tech_stack || '');
     const summaryLabel = entry.summary_label || '项目简介：';
     const techStackLabel = entry.tech_stack_label || '技术栈：';
+    const showSummaryLabel = isProject || Boolean(entry.summary_label);
     return (
     <Box sx={{ mb: 0.65, p: 0, breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${style.fontSize}pt`, fontWeight: style.fontWeight, color: style.color }}>
       <Stack direction="row" spacing={1.2} alignItems="baseline">
@@ -338,7 +339,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
         </Tooltip>}
       </Stack>
       {(entry.summary || isProject) && (
-        <Box sx={{ mt: 0.25, fontSize: '0.92em' }}><RichTextEditor value={composeLabeledEditorValue(summaryLabel, entry.summary, '项目简介：')} placeholder="点击输入项目简介" onChange={(value) => updateLabeledEntry(sectionIndex, entryIndex, 'summary', 'summary_label', '项目简介：', value)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>
+        <Box sx={{ mt: 0.25, fontSize: '0.92em' }}><RichTextEditor value={showSummaryLabel ? composeLabeledEditorValue(summaryLabel, entry.summary, '项目简介：') : (entry.summary || '')} placeholder="点击输入项目简介" onChange={(value) => showSummaryLabel ? updateLabeledEntry(sectionIndex, entryIndex, 'summary', 'summary_label', '项目简介：', value) : updateEntry(sectionIndex, entryIndex, 'summary', value)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>
       )}
       {(techStackText || isProject) && <Box sx={{ mt: 0.2, color: '#4b5563', fontSize: '0.92em' }}><RichTextEditor value={composeLabeledEditorValue(techStackLabel, techStackText, '技术栈：')} placeholder="点击输入技术栈" onChange={(value) => updateLabeledEntry(sectionIndex, entryIndex, 'tech_stack', 'tech_stack_label', '技术栈：', value)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>}
       {(entry.items || []).map((item, itemIndex) => (

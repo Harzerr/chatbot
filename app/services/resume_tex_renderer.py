@@ -136,8 +136,9 @@ def _entries(entries: Any, heading: str) -> str:
         rendered.append(f"\\ResumeEntry{{\\textbf{{{title}}}}}{{\\textbf{{{subtitle}}}}}{{{period}}}")
         summary = entry.get("summary")
         if summary:
-            if heading == "项目经历":
-                summary_label = _rich_text(entry.get("summary_label") or "项目简介").rstrip("：:") or "项目简介"
+            summary_label_value = str(entry.get("summary_label") or "").strip()
+            if heading == "项目经历" or summary_label_value:
+                summary_label = _rich_text(summary_label_value or "项目简介").rstrip("：:") or "项目简介"
                 rendered.append(f"\\ResumeMeta{{{summary_label}}}{{{_rich_text(summary)}}}")
             else:
                 rendered.append(f"{_rich_text(summary)}\\par")
@@ -167,24 +168,6 @@ def _education(entries: Any) -> str:
         period = " - ".join(part for part in [_escape_tex(entry.get("start_date")), _escape_tex(entry.get("end_date"))] if part)
         school = " · ".join(part for part in [_escape_tex(entry.get("school")), program] if part)
         rendered.append(f"\\ResumeEducationEntry{{{school}}}{{{period}}}")
-        details = []
-        if entry.get("rank"):
-            details.append(f"综合排名：{_escape_tex(entry.get('rank'))}")
-        if entry.get("gpa"):
-            details.append(f"GPA：{_escape_tex(entry.get('gpa'))}")
-        extra_details = str(entry.get("details") or "")
-        english_level = str(entry.get("english_level") or "").strip()
-        if not english_level:
-            english_match = re.search(r"(?:英语水平|英语|English)\s*[:：]\s*([^；;\n]+)", extra_details, flags=re.IGNORECASE)
-            if english_match:
-                english_level = english_match.group(1).strip()
-                extra_details = re.sub(r"(?:英语水平|英语|English)\s*[:：]\s*[^；;\n]+[；;]?", "", extra_details, flags=re.IGNORECASE).strip()
-        if english_level:
-            details.append(f"英语水平：{_escape_tex(english_level)}")
-        if details:
-            rendered.append("\\quad ".join(details) + "\\par")
-        if extra_details:
-            rendered.append(_escape_tex(extra_details) + "\\par")
     if not rendered:
         return ""
     return "\\ResumeSection[0pt]{教育背景}\n" + "\n".join(rendered)
@@ -281,9 +264,9 @@ def render_resume_tex(content: dict[str, Any], user: Any, title: str = "", avata
     email = _escape_tex(getattr(user, "email", ""))
     contact_parts = []
     if phone:
-        contact_parts.append(rf"\ResumeIcon{{\faPhone}}{{\textbf{{手机：}}\href{{tel:{phone}}}{{{phone}}}}}")
+        contact_parts.append(rf"\textbf{{手机：}}{phone}")
     if email:
-        contact_parts.append(rf"\ResumeIcon{{\faEnvelope}}{{\textbf{{邮箱：}}\href{{mailto:{email}}}{{{email}}}}}")
+        contact_parts.append(rf"\textbf{{邮箱：}}{email}")
     contact = "\\hspace{2.2em}".join(contact_parts)
     role = _escape_tex(content.get("headline") or getattr(user, "target_role", "") or title or "求职简历")
     replacements = {
