@@ -218,15 +218,22 @@ const CareerStudio = () => {
       await action();
       setNotice(successMessage);
     } catch (err) {
-      setError(err.response?.data?.detail || '操作失败，请稍后重试。');
+      setError(err.response?.data?.detail || err.message || '操作失败，请稍后重试。');
     } finally {
       setWorking(false);
     }
   };
 
   const extractFacts = () => run(async () => {
+    if (!currentUser?.has_resume) {
+      throw new Error('请先到个人档案上传简历。');
+    }
     const response = await careerService.extractFacts();
-    setDraftFacts(response.facts || []);
+    const extractedFacts = response.facts || [];
+    if (!extractedFacts.length) {
+      throw new Error('AI 未从简历中提取到有效事实，请检查简历文本后重试。');
+    }
+    setDraftFacts(extractedFacts);
   }, '已从现有简历提取待确认事实。确认后才会进入事实库。');
 
   const saveDraftFact = (fact) => run(async () => {
@@ -417,7 +424,7 @@ const CareerStudio = () => {
                     <Typography variant="h5">职业事实库</Typography>
                     <Typography color="text.secondary" sx={{ mt: 0.5 }}>保存完整、可核查的职业事实。定制简历只会引用已确认且与职位有关的内容。</Typography>
                   </Box>
-                  <Button variant="contained" startIcon={<AutoAwesomeRoundedIcon />} onClick={extractFacts} disabled={working}>从已上传简历提取事实</Button>
+                  <Button variant="contained" startIcon={<AutoAwesomeRoundedIcon />} onClick={extractFacts} disabled={working || !currentUser?.has_resume}>{working ? 'AI 正在提取，请稍候…' : '从已上传简历提取事实'}</Button>
                 </Stack>
               </Paper>
 
