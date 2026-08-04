@@ -194,7 +194,7 @@ def _content(content: dict[str, Any]) -> str:
     hidden_sections = layout.get("hiddenSections") if isinstance(layout.get("hiddenSections"), dict) else {}
     hidden_projects = layout.get("hiddenProjects") if isinstance(layout.get("hiddenProjects"), dict) else {}
     education_content = content
-    if isinstance(layout.get("fontSize"), (int, float)):
+    if layout.get("fontSize") is not None:
         education_layout = dict(layout)
         education_styles = dict(education_layout.get("sectionStyles") or {})
         education_styles["education"] = {**(education_styles.get("education") or {}), "fontSize": layout["fontSize"]}

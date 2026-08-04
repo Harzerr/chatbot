@@ -206,6 +206,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
   const [pageGroups, setPageGroups] = useState([]);
   const getSectionStyle = (key) => {
     const style = { ...defaultSectionStyle, fontSize, ...(sectionStyles[key] || {}) };
+    if (key === 'education') style.fontSize = fontSize;
     return { ...style, fontSize: clampFontSize(style.fontSize, fontSize) };
   };
 
@@ -318,7 +319,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
     ),
   });
   if (!hiddenSections.education && content.education?.length > 0) {
-    const educationStyle = { ...getSectionStyle('education'), fontSize };
+    const educationStyle = getSectionStyle('education');
     content.education.forEach((item, index) => blocks.push({
       key: `education-${index}`,
       node: <Box sx={{ mb: 0, p: 0, breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${educationStyle.fontSize}pt`, fontWeight: educationStyle.fontWeight, color: educationStyle.color }}>{index === 0 && sectionHeading('education')}<Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}><Typography sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 'inherit' }}>{[item.school, item.major, item.degree].filter(Boolean).join(' · ') || item.title || '教育经历'}</Typography><Typography sx={{ flex: '0 0 auto', whiteSpace: 'nowrap', color: '#52606d', fontWeight: 'inherit' }}>{[item.start_date, item.end_date].filter(Boolean).join(' - ')}</Typography></Box></Box>,
@@ -485,9 +486,24 @@ const ResumeOptimizer = () => {
   };
 
   const exportPdf = async () => {
-    if (!selectedResume) return;
+    if (!selectedResume || !content) return;
     setWorking(true); setError('');
     try {
+      const contentToSave = {
+        ...content,
+        layout: {
+          ...(content.layout || {}),
+          fontSize,
+          sectionTitleFontSize: sectionTitleSize,
+          padding,
+          sectionStyles,
+          hiddenSections,
+          hiddenProjects,
+        },
+      };
+      const saved = await careerService.updateResume(selectedResume.id, { title: title.trim() || '定制简历', content: contentToSave });
+      setContent(contentToSave);
+      setResumes((items) => items.map((item) => item.id === saved.id ? saved : item));
       const response = await careerService.downloadResumePdf(selectedResume.id);
       const url = URL.createObjectURL(response.data);
       const anchor = document.createElement('a');
@@ -562,8 +578,15 @@ const ResumeOptimizer = () => {
     if (visibilityKeys.length && !visibilityKeys.includes(visibilityTarget)) setVisibilityTarget(visibilityKeys[0]);
   }, [visibilityKeys, visibilityTarget]);
   const activeStyle = { ...defaultSectionStyle, fontSize, ...(sectionStyles[styleTarget] || {}) };
+  if (styleTarget === 'education') activeStyle.fontSize = fontSize;
   activeStyle.fontSize = clampFontSize(activeStyle.fontSize, fontSize);
-  const updateActiveStyle = (field, value) => setSectionStyles((current) => ({ ...current, [styleTarget]: { ...activeStyle, [field]: value } }));
+  const updateActiveStyle = (field, value) => {
+    if (styleTarget === 'education' && field === 'fontSize') {
+      setFontSize(value);
+      return;
+    }
+    setSectionStyles((current) => ({ ...current, [styleTarget]: { ...activeStyle, [field]: value } }));
+  };
   const formatSection = (key, field, value) => setSectionStyles((current) => ({ ...current, [key]: { ...(current[key] || {}), [field]: value } }));
   const executeEditorCommand = (command) => {
     const editor = activeEditorRef.current;
