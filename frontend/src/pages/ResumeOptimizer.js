@@ -129,9 +129,11 @@ const normalizeRichTextHtml = (value) => {
     }
     if (tagName === 'span' || tagName === 'font') {
       const color = tagName === 'font' ? node.getAttribute('color') : node.style.color;
-      if (color && /^(#?[0-9a-f]{3,8}|rgb\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\))$/i.test(color.trim())) {
+      const isLabel = tagName === 'span' && node.getAttribute('data-resume-label') === 'true';
+      if (isLabel || (color && /^(#?[0-9a-f]{3,8}|rgb\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\))$/i.test(color.trim()))) {
         const colored = document.createElement('span');
-        colored.style.color = color.startsWith('#') || color.startsWith('rgb') ? color : `#${color}`;
+        if (isLabel) colored.setAttribute('data-resume-label', 'true');
+        if (color) colored.style.color = color.startsWith('#') || color.startsWith('rgb') ? color : `#${color}`;
         [...node.childNodes].forEach((child) => copyNode(child, colored));
         parent.appendChild(colored);
         return;
@@ -153,6 +155,23 @@ const normalizeRichTextHtml = (value) => {
     appendText(container, source);
   }
   return container.innerHTML;
+};
+
+const composeLabeledEditorValue = (label, body, fallbackLabel) => {
+  const labelValue = label || fallbackLabel;
+  return `<span data-resume-label="true" style="color:#b21f35;font-weight:700">${normalizeRichTextHtml(labelValue)}</span>${body || ''}`;
+};
+
+const splitLabeledEditorValue = (value, fallbackLabel) => {
+  const container = document.createElement('div');
+  container.innerHTML = String(value || '');
+  const labelNode = container.firstElementChild;
+  if (labelNode?.getAttribute('data-resume-label') === 'true') {
+    const label = labelNode.innerHTML || fallbackLabel;
+    labelNode.remove();
+    return { label, body: container.innerHTML };
+  }
+  return { label: fallbackLabel, body: container.innerHTML };
 };
 
 const editorValueForItem = (item) => {
@@ -244,6 +263,15 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
     }));
   };
 
+  const updateLabeledEntry = (sectionIndex, entryIndex, bodyField, labelField, fallbackLabel, value) => {
+    const parsed = splitLabeledEditorValue(value, fallbackLabel);
+    onChange(updateSection(content, sectionIndex, (section) => {
+      const next = { ...section, entries: [...(section.entries || [])] };
+      next.entries[entryIndex] = { ...next.entries[entryIndex], [bodyField]: parsed.body, [labelField]: parsed.label };
+      return next;
+    }));
+  };
+
   const deleteEntry = (sectionIndex, entryIndex) => {
     onChange(updateSection(content, sectionIndex, (section) => ({
       ...section,
@@ -309,9 +337,9 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
         </Tooltip>}
       </Stack>
       {(entry.summary || isProject) && (
-        <Box sx={{ display: 'flex', alignItems: 'flex-start', mt: 0.25, fontSize: '0.92em' }}><RichTextEditor value={summaryLabel} onChange={(value) => updateEntry(sectionIndex, entryIndex, 'summary_label', value)} containerSx={{ flex: '0 0 auto' }} editorSx={{ color: '#b21f35', fontWeight: 700, pr: 0.4 }} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /><RichTextEditor value={entry.summary || ''} placeholder="点击输入项目简介" onChange={(value) => updateEntry(sectionIndex, entryIndex, 'summary', value)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>
+        <Box sx={{ mt: 0.25, fontSize: '0.92em' }}><RichTextEditor value={composeLabeledEditorValue(summaryLabel, entry.summary, '项目简介：')} placeholder="点击输入项目简介" onChange={(value) => updateLabeledEntry(sectionIndex, entryIndex, 'summary', 'summary_label', '项目简介：', value)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>
       )}
-      {(techStackText || isProject) && <Box sx={{ display: 'flex', alignItems: 'flex-start', mt: 0.2, color: '#4b5563', fontSize: '0.92em' }}><RichTextEditor value={techStackLabel} onChange={(value) => updateEntry(sectionIndex, entryIndex, 'tech_stack_label', value)} containerSx={{ flex: '0 0 auto' }} editorSx={{ color: '#b21f35', fontWeight: 700, pr: 0.4 }} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /><RichTextEditor value={techStackText} placeholder="点击输入技术栈" onChange={(value) => updateEntry(sectionIndex, entryIndex, 'tech_stack', value)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>}
+      {(techStackText || isProject) && <Box sx={{ mt: 0.2, color: '#4b5563', fontSize: '0.92em' }}><RichTextEditor value={composeLabeledEditorValue(techStackLabel, techStackText, '技术栈：')} placeholder="点击输入技术栈" onChange={(value) => updateLabeledEntry(sectionIndex, entryIndex, 'tech_stack', 'tech_stack_label', '技术栈：', value)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>}
       {(entry.items || []).map((item, itemIndex) => (
         <Box key={`${sectionIndex}-${entryIndex}-${itemIndex}`} sx={{ position: 'relative', display: 'flex', alignItems: 'flex-start', width: '100%', mt: 0.2 }}>
           <ResumeBulletMarker editable={showEditTools} onDelete={() => deleteItem(sectionIndex, itemIndex)} />
