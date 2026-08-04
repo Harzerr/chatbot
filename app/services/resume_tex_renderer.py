@@ -80,7 +80,7 @@ def _section_style(content: dict[str, Any], key: str) -> tuple[float, int, str]:
     layout = _layout(content)
     styles = layout.get("sectionStyles") if isinstance(layout.get("sectionStyles"), dict) else {}
     style = styles.get(key) if isinstance(styles.get(key), dict) else {}
-    size = _layout_value(style.get("fontSize", layout.get("fontSize", 10.5)), 10.5, 9.5, 16)
+    size = _layout_value(style.get("fontSize", layout.get("fontSize", 10)), 10, 9.5, 16)
     weight = int(_layout_value(style.get("fontWeight", 400), 400, 400, 800))
     color = str(style.get("color") or "#17202a")
     if not re.fullmatch(r"#[0-9A-Fa-f]{6}", color):
@@ -241,7 +241,7 @@ def _project_font_config() -> str:
 def render_resume_tex(content: dict[str, Any], user: Any, title: str = "", avatar_name: str | None = None) -> str:
     template = TEMPLATE_PATH.read_text(encoding="utf-8")
     layout = _layout(content)
-    body_size = _layout_value(layout.get("fontSize"), 10.5, 9.5, 16)
+    body_size = _layout_value(layout.get("fontSize"), 10, 9.5, 16)
     body_leading = body_size
     section_title_size = _layout_value(layout.get("sectionTitleFontSize"), 12, 11, 18)
     section_title_leading = section_title_size * 1.25

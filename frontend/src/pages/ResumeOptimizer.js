@@ -55,7 +55,7 @@ const styleLabels = {
   '竞赛与荣誉': '竞赛与荣誉',
 };
 
-const defaultSectionStyle = { fontSize: 10.5, fontWeight: 400, color: '#17202a' };
+const defaultSectionStyle = { fontSize: 10, fontWeight: 400, color: '#17202a' };
 
 const clampFontSize = (value, fallback = 10.5, minimum = 9.5, maximum = 16) => {
   const parsed = Number(value);
@@ -283,7 +283,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
     const educationStyle = getSectionStyle('education');
     content.education.forEach((item, index) => blocks.push({
       key: `education-${index}`,
-      node: <Box sx={{ mb: 0, p: 0, breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${educationStyle.fontSize}pt`, fontWeight: educationStyle.fontWeight, color: educationStyle.color }}>{index === 0 && sectionHeading('education')}<Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}><Typography fontWeight={700}>{[item.school, item.major, item.degree].filter(Boolean).join(' · ') || item.title || '教育经历'}</Typography><Typography sx={{ whiteSpace: 'nowrap', color: '#52606d' }}>{[item.start_date, item.end_date].filter(Boolean).join(' - ')}</Typography></Box></Box>,
+      node: <Box sx={{ mb: 0, p: 0, breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${educationStyle.fontSize}pt`, fontWeight: educationStyle.fontWeight, color: educationStyle.color }}>{index === 0 && sectionHeading('education')}<Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}><Typography sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} fontWeight={700}>{[item.school, item.major, item.degree].filter(Boolean).join(' · ') || item.title || '教育经历'}</Typography><Typography sx={{ flex: '0 0 auto', whiteSpace: 'nowrap', color: '#52606d' }}>{[item.start_date, item.end_date].filter(Boolean).join(' - ')}</Typography></Box></Box>,
     }));
   }
 
@@ -370,7 +370,7 @@ const ResumeOptimizer = () => {
   const [sectionStyles, setSectionStyles] = useState({});
   const [styleTarget, setStyleTarget] = useState('education');
   const [visibilityTarget, setVisibilityTarget] = useState('education');
-  const [fontSize, setFontSize] = useState(10.5);
+  const [fontSize, setFontSize] = useState(10);
   const [sectionTitleSize, setSectionTitleSize] = useState(12);
   const [showEditTools, setShowEditTools] = useState(false);
   const activeEditorRef = useRef(null);
@@ -411,7 +411,7 @@ const ResumeOptimizer = () => {
     setSectionStyles(nextContent.layout?.sectionStyles || {});
     const storedFontSize = Number(nextContent.layout?.fontSize);
     const storedSectionTitleSize = Number(nextContent.layout?.sectionTitleFontSize);
-    setFontSize(clampFontSize(storedFontSize, 10.5, 9.5, 14));
+    setFontSize(clampFontSize(storedFontSize, 10, 9.5, 14));
     setSectionTitleSize(Number.isFinite(storedSectionTitleSize) ? Math.max(11, Math.min(16, storedSectionTitleSize)) : 12);
     setPadding(nextContent.layout?.padding || 15);
     setTitle(selectedResume.title || '定制简历');
