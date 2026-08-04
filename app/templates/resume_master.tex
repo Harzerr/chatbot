@@ -45,16 +45,16 @@
 % Header follows the supplied resume reference: accent rule, rectangular photo, and contact block.
 \newcommand{\ResumeHeader}{%
   \noindent
-  \begin{minipage}[t][105pt][t]{2.2pt}
-    \vspace{-105pt}%
-    {\color{ResumeAccent}\rule{\linewidth}{105pt}}
-  \end{minipage}\hspace{8pt}%
-  \begin{minipage}[t][105pt][t]{78pt}
+  \begin{minipage}[t][75pt][t]{2.2pt}
+    \vspace{-75pt}%
+    {\color{ResumeAccent}\rule{\linewidth}{75pt}}
+  \end{minipage}\hspace{12pt}%
+  \begin{minipage}[t][75pt][t]{57pt}
     \setlength{\fboxsep}{0pt}\setlength{\fboxrule}{0.6pt}%
     \fcolorbox{ResumeBorder}{white}{\ResumePhoto}
   \end{minipage}\hspace{12pt}%
-  \begin{minipage}[t][105pt][t]{332pt}
-    {\fontsize{24pt}{26pt}\selectfont\bfseries \ResumeName\par}
+  \begin{minipage}[t][75pt][t]{\dimexpr\linewidth-83.2pt\relax}
+    {%%NAME_FONT%%\bfseries \ResumeName\par}
     \vspace{2pt}
     {\ResumeBodyFont\color{ResumeAccent}\bfseries \ResumeTargetRole\par}
     \vspace{7pt}

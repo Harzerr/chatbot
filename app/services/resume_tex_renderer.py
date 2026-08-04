@@ -232,8 +232,8 @@ def _content(content: dict[str, Any]) -> str:
 
 def _photo_block(avatar_name: str | None) -> str:
     if not avatar_name:
-        return r"\rule{0pt}{100pt}\hspace{76pt}"
-    return rf"\includegraphics[width=76pt,height=100pt,keepaspectratio]{{{avatar_name}}}"
+        return r"\rule{0pt}{75pt}\hspace{57pt}"
+    return rf"\includegraphics[width=57pt,height=75pt,keepaspectratio]{{{avatar_name}}}"
 
 
 def _project_font_config() -> str:
@@ -270,6 +270,8 @@ def render_resume_tex(content: dict[str, Any], user: Any, title: str = "", avata
     layout = _layout(content)
     body_size = _layout_value(layout.get("fontSize"), 10, 9.5, 16)
     body_leading = body_size
+    name_size = max(body_size + 7, 17)
+    name_leading = name_size * 1.18
     section_title_size = _layout_value(layout.get("sectionTitleFontSize"), 12, 11, 18)
     section_title_leading = section_title_size * 1.25
     padding = _layout_value(layout.get("padding"), 15, 8, 24)
@@ -286,6 +288,7 @@ def render_resume_tex(content: dict[str, Any], user: Any, title: str = "", avata
         "%%GEOMETRY%%": f"\\usepackage[left={padding:.1f}mm,right={padding:.1f}mm,top={padding:.1f}mm,bottom={padding:.1f}mm,headheight=0pt,headsep=0pt,footskip=0pt]{{geometry}}",
         "%%FONT_CONFIG%%": _project_font_config(),
         "%%BODY_FONT%%": f"\\fontsize{{{body_size:.1f}pt}}{{{body_leading:.2f}pt}}\\selectfont",
+        "%%NAME_FONT%%": f"\\fontsize{{{name_size:.1f}pt}}{{{name_leading:.2f}pt}}\\selectfont",
         "%%SECTION_TITLE_FONT%%": f"\\fontsize{{{section_title_size:.1f}pt}}{{{section_title_leading:.2f}pt}}\\selectfont",
         "%%NAME%%": _escape_tex(getattr(user, "full_name", "") or "未填写姓名"),
         "%%CONTACT%%": contact,
