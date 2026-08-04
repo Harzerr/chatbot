@@ -109,7 +109,7 @@ def _items(items: list[Any]) -> str:
         text = _rich_text(value)
         if text:
             label = _escape_tex(item.get("label")) if isinstance(item, dict) else ""
-            rendered.append(f"  \\item \\textbf{{{label}：}} {text}" if label else f"  \\item {text}")
+            rendered.append(f"  \\item \\textbf{{{label}：}}\\nobreak\\hspace{{0.2em}}{text}" if label else f"  \\item {text}")
     return "\\begin{ResumeItems}\n" + "\n".join(rendered) + "\n\\end{ResumeItems}" if rendered else ""
 
 

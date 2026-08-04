@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Alert,
   AppBar,
@@ -254,7 +254,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
       {(entry.items || []).map((item, itemIndex) => (
         <Box key={`${item.label}-${itemIndex}`} sx={{ position: 'relative', display: 'flex', alignItems: 'flex-start', width: '100%', mt: 0.2 }}>
           <Box component="span" sx={{ flex: '0 0 12px', pt: 0.1, color: '#b21f35', fontSize: '0.85em' }}>•</Box>
-          <Box sx={{ minWidth: 0, flex: 1 }}>{item.label && <Box component="span" sx={{ fontWeight: 700, mr: 0.5 }}>{item.label}：</Box>}<RichTextEditor value={item.text} onChange={(value) => updateEntry(sectionIndex, entryIndex, 'items', (entry.items || []).map((current, index) => index === itemIndex ? { ...current, text: value } : current))} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>
+          <Box sx={{ minWidth: 0, flex: 1, display: 'flex', alignItems: 'baseline' }}>{item.label && <Box component="span" sx={{ flex: '0 0 auto', fontWeight: 700, mr: 0.5 }}>{item.label}：</Box>}<RichTextEditor value={item.text} onChange={(value) => updateEntry(sectionIndex, entryIndex, 'items', (entry.items || []).map((current, index) => index === itemIndex ? { ...current, text: value } : current))} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>
           {showEditTools && <Tooltip title="删除要点"><IconButton size="small" color="error" onClick={() => deleteItem(sectionIndex, itemIndex)} sx={{ position: 'absolute', right: -26, top: -4, p: 0.25 }}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></Tooltip>}
         </Box>
       ))}
@@ -359,6 +359,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
 
 const ResumeOptimizer = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { currentUser, uploadAvatar, deleteAvatar } = useAuth();
   const [resumes, setResumes] = useState([]);
   const [selectedId, setSelectedId] = useState('');
@@ -387,13 +388,14 @@ const ResumeOptimizer = () => {
     try {
       const data = await careerService.listResumes();
       setResumes(data);
-      setSelectedId((current) => current || (data[0] ? String(data[0].id) : ''));
+      const requestedId = searchParams.get('resumeId');
+      setSelectedId((current) => current || requestedId || (data[0] ? String(data[0].id) : ''));
     } catch (err) {
       setError(err.response?.data?.detail || '加载简历版本失败。');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [searchParams]);
 
   useEffect(() => { load(); }, [load]);
 
