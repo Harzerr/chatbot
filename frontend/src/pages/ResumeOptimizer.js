@@ -656,6 +656,11 @@ const ResumeOptimizer = () => {
     document.execCommand(command, false, value);
     activeEditorChangeRef.current?.(editor.innerHTML);
   };
+  const toggleEditorAccentColor = () => {
+    const currentColor = document.queryCommandValue('foreColor').replace(/\s/g, '').toLowerCase();
+    const isAccentColor = currentColor === '#b21f35' || currentColor === 'rgb(178,31,53)';
+    executeEditorCommand('foreColor', isAccentColor ? '#17202a' : '#b21f35');
+  };
 
   if (loading) return <Box sx={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}><CircularProgress /></Box>;
 
@@ -699,7 +704,7 @@ const ResumeOptimizer = () => {
                   <Tooltip title="选中文字加粗"><IconButton size="small" onMouseDown={(event) => event.preventDefault()} onClick={() => executeEditorCommand('bold')}><FormatBoldRoundedIcon fontSize="small" /></IconButton></Tooltip>
                   <Tooltip title="选中文字斜体"><IconButton size="small" onMouseDown={(event) => event.preventDefault()} onClick={() => executeEditorCommand('italic')}><FormatItalicRoundedIcon fontSize="small" /></IconButton></Tooltip>
                   <Tooltip title="创建项目符号列表"><IconButton size="small" onMouseDown={(event) => event.preventDefault()} onClick={() => executeEditorCommand('insertUnorderedList')}><FormatListBulletedRoundedIcon fontSize="small" /></IconButton></Tooltip>
-                  <Tooltip title="选中文字标红"><IconButton size="small" onMouseDown={(event) => event.preventDefault()} onClick={() => executeEditorCommand('foreColor', '#b21f35')}><FormatColorTextRoundedIcon fontSize="small" sx={{ color: '#b21f35' }} /></IconButton></Tooltip>
+                  <Tooltip title="选中文字标红/取消标红"><IconButton size="small" onMouseDown={(event) => event.preventDefault()} onClick={toggleEditorAccentColor}><FormatColorTextRoundedIcon fontSize="small" sx={{ color: '#b21f35' }} /></IconButton></Tooltip>
                 </Stack>
               </Paper>
               <Paper sx={{ p: 2 }}>
