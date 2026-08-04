@@ -177,6 +177,7 @@ const CareerStudio = () => {
   const [selectedFactIds, setSelectedFactIds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
+  const [workingAction, setWorkingAction] = useState('');
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [exportingPdf, setExportingPdf] = useState(false);
@@ -236,8 +237,9 @@ const CareerStudio = () => {
     };
   }, [previewResumeId, previewPdfVersion]);
 
-  const run = async (action, successMessage) => {
+  const run = async (action, successMessage, actionKey = '') => {
     setWorking(true);
+    setWorkingAction(actionKey);
     setError('');
     setNotice('');
     try {
@@ -247,6 +249,7 @@ const CareerStudio = () => {
       setError(err.response?.data?.detail || err.message || '操作失败，请稍后重试。');
     } finally {
       setWorking(false);
+      setWorkingAction('');
     }
   };
 
@@ -378,7 +381,7 @@ const saveDraftFact = (fact) => run(async () => {
     setResumes((items) => [saved, ...items]);
     setPreviewResumeId(String(saved.id));
     setTab(2);
-    }, '已生成一份仅引用已确认事实的定制简历。');
+    }, '已生成一份仅引用已确认事实的定制简历。', 'generate');
   };
 
   const exportPdf = async () => {
@@ -551,8 +554,9 @@ const saveDraftFact = (fact) => run(async () => {
                 <Typography color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>先选择目标职位和可使用的事实，再生成模块化简历。模型只能引用所选已确认事实，并会明确列出缺失项。</Typography>
                 <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ md: 'center' }}>
                   <FormControl fullWidth><InputLabel>目标职位</InputLabel><Select label="目标职位" value={selectedJobId} onChange={(event) => setSelectedJobId(event.target.value)}>{jobs.map((job) => <MenuItem key={job.id} value={String(job.id)}>{job.title} {job.company ? `- ${job.company}` : ''}</MenuItem>)}</Select></FormControl>
-                  <Button variant="contained" startIcon={<AutoAwesomeRoundedIcon />} onClick={generateResume} disabled={working || !selectedJobId || selectedFactIds.length === 0 || !currentUser?.full_name?.trim()}>生成</Button>
+                  <Button variant="contained" startIcon={<AutoAwesomeRoundedIcon />} onClick={generateResume} disabled={working || !selectedJobId || selectedFactIds.length === 0 || !currentUser?.full_name?.trim()}>{workingAction === 'generate' ? 'AI 生成中…' : '生成'}</Button>
                 </Stack>
+                {workingAction === 'generate' && <Alert severity="info" sx={{ mt: 1.5 }}>正在调用 AI 生成定制简历，通常需要 20–60 秒，请不要重复点击。</Alert>}
                 {!currentUser?.full_name?.trim() && <Alert severity="warning" sx={{ mt: 1.5 }} action={<Button color="inherit" size="small" onClick={() => navigate('/profile')}>填写姓名</Button>}>投递版简历的姓名只取个人档案中的“真实姓名”，不会使用账号用户名。请先补全后再生成。</Alert>}
                 {selectedJob && <Box sx={{ mt: 2.25, p: 2, borderRadius: 1.5, bgcolor: 'action.hover' }}><Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" spacing={1}><Box><Typography fontWeight={700}>对岗预检：{matchedPrecheckCount} / {precheck.length} 项已有依据</Typography><Typography variant="body2" color="text.secondary">未覆盖项会作为缺失项保留，不会写成候选人经历。</Typography></Box><Button size="small" onClick={() => setTab(0)}>去补充事实</Button></Stack><Stack spacing={0.75} sx={{ mt: 1.5 }}>{precheck.slice(0, 10).map((item, index) => <Stack key={`${item.text}-${index}`} direction="row" spacing={1} alignItems="center"><Chip size="small" label={item.evidence.length ? '已有依据' : '待补强'} color={item.evidence.length ? 'success' : 'default'} /><Typography variant="body2">{item.text}</Typography>{item.evidence.length > 0 && <Typography variant="caption" color="text.secondary">来自：{item.evidence.map((fact) => fact.title).join('、')}</Typography>}</Stack>)}</Stack></Box>}
                 <Typography variant="subtitle2" sx={{ mt: 2.25, mb: 1 }}>本次允许引用的事实（{selectedFactIds.length} / {verifiedFacts.length}）</Typography>
