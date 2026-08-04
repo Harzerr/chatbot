@@ -162,7 +162,7 @@ def _education(entries: Any) -> str:
             continue
         program = " ".join(part for part in [_escape_tex(entry.get("major")), _escape_tex(entry.get("degree"))] if part)
         period = " - ".join(part for part in [_escape_tex(entry.get("start_date")), _escape_tex(entry.get("end_date"))] if part)
-        rendered.append(f"\\ResumeEntry{{\\textbf{{{_escape_tex(entry.get('school'))}}}}}{{\\textbf{{{program}}}}}{{{period}}}")
+        rendered.append(f"\\ResumeEntry{{{_escape_tex(entry.get('school'))}}}{{{program}}}{{{period}}}")
         details = []
         if entry.get("rank"):
             details.append(f"综合排名：{_escape_tex(entry.get('rank'))}")
