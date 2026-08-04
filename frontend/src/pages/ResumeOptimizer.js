@@ -286,7 +286,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
         </Tooltip>}
       </Stack>
       {entry.summary && (
-        <Box sx={{ mt: 0.25 }}><Typography component="span" sx={{ color: '#b21f35', fontWeight: 700, fontSize: '0.92em' }}>{heading === '项目经历' ? '项目简介：' : '个人职责与成果：'}</Typography><RichTextEditor value={entry.summary} onChange={(value) => updateEntry(sectionIndex, entryIndex, 'summary', value)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>
+        <Box sx={{ mt: 0.25 }}>{heading === '项目经历' && <Typography component="span" sx={{ color: '#b21f35', fontWeight: 700, fontSize: '0.92em' }}>项目简介：</Typography>}<RichTextEditor value={entry.summary} onChange={(value) => updateEntry(sectionIndex, entryIndex, 'summary', value)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>
       )}
       {entry.tech_stack?.length > 0 && <Typography variant="body2" sx={{ mt: 0.2, color: '#4b5563', fontSize: '0.92em' }}><Box component="span" sx={{ color: '#b21f35', fontWeight: 700 }}>技术栈：</Box>{entry.tech_stack.join('、')}</Typography>}
       {(entry.items || []).map((item, itemIndex) => (
@@ -318,7 +318,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
     ),
   });
   if (!hiddenSections.education && content.education?.length > 0) {
-    const educationStyle = getSectionStyle('education');
+    const educationStyle = { ...getSectionStyle('education'), fontSize };
     content.education.forEach((item, index) => blocks.push({
       key: `education-${index}`,
       node: <Box sx={{ mb: 0, p: 0, breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${educationStyle.fontSize}pt`, fontWeight: educationStyle.fontWeight, color: educationStyle.color }}>{index === 0 && sectionHeading('education')}<Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}><Typography sx={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 'inherit' }}>{[item.school, item.major, item.degree].filter(Boolean).join(' · ') || item.title || '教育经历'}</Typography><Typography sx={{ flex: '0 0 auto', whiteSpace: 'nowrap', color: '#52606d', fontWeight: 'inherit' }}>{[item.start_date, item.end_date].filter(Boolean).join(' - ')}</Typography></Box></Box>,

@@ -137,8 +137,10 @@ def _entries(entries: Any, heading: str) -> str:
         rendered.append(f"\\ResumeEntry{{\\textbf{{{title}}}}}{{\\textbf{{{subtitle}}}}}{{{period}}}")
         summary = entry.get("summary")
         if summary:
-            label = "项目简介" if heading == "项目经历" else "个人职责与成果"
-            rendered.append(f"\\ResumeMeta{{{label}}}{{{_rich_text(summary)}}}")
+            if heading == "项目经历":
+                rendered.append(f"\\ResumeMeta{{项目简介}}{{{_rich_text(summary)}}}")
+            else:
+                rendered.append(f"{_rich_text(summary)}\\par")
         tech_stack = entry.get("tech_stack")
         if isinstance(tech_stack, list):
             tech_stack = "、".join(str(item) for item in tech_stack if str(item).strip())
@@ -191,9 +193,16 @@ def _content(content: dict[str, Any]) -> str:
     layout = _layout(content)
     hidden_sections = layout.get("hiddenSections") if isinstance(layout.get("hiddenSections"), dict) else {}
     hidden_projects = layout.get("hiddenProjects") if isinstance(layout.get("hiddenProjects"), dict) else {}
-    education = "" if hidden_sections.get("education") else _education(content.get("education"))
+    education_content = content
+    if isinstance(layout.get("fontSize"), (int, float)):
+        education_layout = dict(layout)
+        education_styles = dict(education_layout.get("sectionStyles") or {})
+        education_styles["education"] = {**(education_styles.get("education") or {}), "fontSize": layout["fontSize"]}
+        education_layout["sectionStyles"] = education_styles
+        education_content = {**content, "layout": education_layout}
+    education = "" if hidden_sections.get("education") else _education(education_content.get("education"))
     if education:
-        blocks.append(_styled_block(content, "education", education))
+        blocks.append(_styled_block(education_content, "education", education))
     headings: set[str] = set()
     for section_index, section in enumerate(content.get("sections", [])):
         if not isinstance(section, dict):
