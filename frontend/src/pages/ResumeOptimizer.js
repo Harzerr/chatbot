@@ -9,6 +9,7 @@ import {
   Chip,
   CircularProgress,
   Container,
+  Divider,
   FormControl,
   IconButton,
   InputLabel,
@@ -24,7 +25,6 @@ import {
 } from '@mui/material';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
-import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import FormatItalicRoundedIcon from '@mui/icons-material/FormatItalicRounded';
 import FormatListBulletedRoundedIcon from '@mui/icons-material/FormatListBulletedRounded';
 import FormatBoldRoundedIcon from '@mui/icons-material/FormatBoldRounded';
@@ -464,7 +464,7 @@ const ResumeOptimizer = () => {
   const [visibilityTarget, setVisibilityTarget] = useState('education');
   const [fontSize, setFontSize] = useState(10);
   const [sectionTitleSize, setSectionTitleSize] = useState(12);
-  const [showEditTools, setShowEditTools] = useState(false);
+  const showEditTools = false;
   const activeEditorRef = useRef(null);
   const activeSelectionRef = useRef(null);
   const activeEditorChangeRef = useRef(null);
@@ -697,7 +697,6 @@ const ResumeOptimizer = () => {
                 <Stack spacing={1} sx={{ mt: 1.5 }}>
                   <Button variant="contained" startIcon={<SaveRoundedIcon />} onClick={save} disabled={working}>保存当前版本</Button>
                   <Button variant="outlined" startIcon={<DownloadRoundedIcon />} onClick={exportPdf} disabled={working}>导出 PDF</Button>
-                  <Button variant="text" startIcon={<EditRoundedIcon />} onClick={() => setShowEditTools((current) => !current)}>{showEditTools ? '隐藏编辑工具' : '显示编辑工具'}</Button>
                 </Stack>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>常用编辑</Typography>
                 <Stack direction="row" spacing={0.5} sx={{ mt: 0.5 }}>
@@ -724,74 +723,72 @@ const ResumeOptimizer = () => {
 
             <Stack spacing={2}>
               <Paper sx={{ p: 2 }}>
-                <Stack direction="row" spacing={1} alignItems="center"><TuneRoundedIcon color="primary" /><Typography variant="subtitle1" fontWeight={700}>排版设置</Typography></Stack>
-                <Typography variant="caption" color="text.secondary">内容字号：{fontSize}pt</Typography>
-                <Slider value={fontSize} min={9.5} max={14} step={0.5} onChange={(_, value) => setFontSize(value)} size="small" />
-                <Typography variant="caption" color="text.secondary">章节标题字号：{sectionTitleSize}pt</Typography>
-                <Slider value={sectionTitleSize} min={11} max={16} step={0.5} onChange={(_, value) => setSectionTitleSize(value)} size="small" />
-                <Typography variant="caption" color="text.secondary">页边距：{padding}mm</Typography>
-                <Slider value={padding} min={8} max={24} step={1} onChange={(_, value) => setPadding(value)} size="small" />
-              </Paper>
-              <Paper sx={{ p: 2 }}>
-                <Typography variant="subtitle1" fontWeight={700}>分区字体</Typography>
-                <Typography variant="caption" color="text.secondary">先选择一个分区，再调整字号、粗细和颜色，避免重复堆叠控件。</Typography>
-                <FormControl fullWidth size="small" sx={{ mt: 1 }}>
-                  <InputLabel>选择分区</InputLabel>
-                  <Select label="选择分区" value={styleTarget} onChange={(event) => setStyleTarget(event.target.value)}>
-                    {styleKeys.map((key) => <MenuItem key={key} value={key}>{styleLabels[key] || key}</MenuItem>)}
-                  </Select>
-                </FormControl>
-                <Stack direction="row" spacing={0.6} sx={{ mt: 1 }}>
-                  <FormControl size="small" sx={{ minWidth: 86, flex: 1 }}>
-                    <InputLabel>字号</InputLabel>
-                    <Select label="字号" aria-label={`${styleTarget}-font-size`} value={String(activeStyle.fontSize)} onChange={(event) => updateActiveStyle('fontSize', Number(event.target.value))}>
-                      {[9.5, 10, 10.5, 11, 12, 13, 14].map((size) => <MenuItem key={size} value={String(size)}>{size}pt</MenuItem>)}
-                    </Select>
-                  </FormControl>
-                  <FormControl size="small" sx={{ minWidth: 86, flex: 1 }}>
-                    <InputLabel>字重</InputLabel>
-                    <Select label="字重" aria-label={`${styleTarget}-font-weight`} value={String(activeStyle.fontWeight)} onChange={(event) => updateActiveStyle('fontWeight', Number(event.target.value))}>
-                      <MenuItem value="400">常规</MenuItem>
-                      <MenuItem value="600">中等</MenuItem>
-                      <MenuItem value="700">粗体</MenuItem>
-                      <MenuItem value="800">特粗</MenuItem>
-                    </Select>
-                  </FormControl>
-                  <TextField size="small" type="color" label="颜色" value={activeStyle.color} onChange={(event) => updateActiveStyle('color', event.target.value)} inputProps={{ 'aria-label': `${styleTarget}-font-color` }} sx={{ width: 64 }} />
-                </Stack>
-              </Paper>
-              <Paper sx={{ p: 2 }}>
-                <Typography variant="subtitle1" fontWeight={700}>显示与排序</Typography>
-                <Typography variant="caption" color="text.secondary">控制章节显示，并调整项目经历的顺序。</Typography>
-                <Stack spacing={1} sx={{ mt: 1 }}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>选择章节</InputLabel>
-                    <Select label="选择章节" value={visibilityTarget} onChange={(event) => setVisibilityTarget(event.target.value)}>
-                      {visibilityKeys.map((key) => <MenuItem key={key} value={key}>{sectionLabels[key] || key}</MenuItem>)}
-                    </Select>
-                  </FormControl>
-                  <Button
-                    fullWidth
-                    size="small"
-                    variant={hiddenSections[visibilityTarget] ? 'outlined' : 'contained'}
-                    color={hiddenSections[visibilityTarget] ? 'inherit' : 'primary'}
-                    onClick={() => setHiddenSections((current) => ({ ...current, [visibilityTarget]: !current[visibilityTarget] }))}
-                  >
-                    {hiddenSections[visibilityTarget] ? '显示章节' : '隐藏章节'}
-                  </Button>
-                </Stack>
-                {content?.sections.map((section, sectionIndex) => sectionKey(section.heading) === '项目经历' && (
-                  <Box key={`projects-${sectionIndex}`} sx={{ mt: 2, pt: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
-                    <Typography variant="body2" fontWeight={700}>项目顺序</Typography>
-                    <Stack spacing={0.35} sx={{ mt: 0.8 }}>
-                      {(section.entries || []).map((entry, entryIndex) => {
-                        const key = projectVisibilityKey(sectionIndex, entry, entryIndex);
-                        const hidden = Boolean(entry.hidden || hiddenProjects[key]);
-                        return <Stack key={key} direction="row" spacing={0.25} alignItems="center"><Typography variant="body2" sx={{ flex: 1, minWidth: 0, color: hidden ? 'text.disabled' : 'text.primary', overflowWrap: 'anywhere', fontSize: '0.82rem' }}>{entry.title || '未命名项目'}</Typography><Button size="small" variant={hidden ? 'outlined' : 'text'} color={hidden ? 'inherit' : 'primary'} onClick={() => toggleProjectVisibility(sectionIndex, entryIndex)} sx={{ minWidth: 44, px: 0.5 }}>{hidden ? '显示' : '隐藏'}</Button><Tooltip title="上移"><span><IconButton size="small" onClick={() => moveProject(sectionIndex, entryIndex, -1)} disabled={entryIndex === 0}><KeyboardArrowUpRoundedIcon fontSize="small" /></IconButton></span></Tooltip><Tooltip title="下移"><span><IconButton size="small" onClick={() => moveProject(sectionIndex, entryIndex, 1)} disabled={entryIndex === section.entries.length - 1}><KeyboardArrowDownRoundedIcon fontSize="small" /></IconButton></span></Tooltip></Stack>;
-                      })}
+                <Stack spacing={2} divider={<Divider flexItem />}>
+                  <Box>
+                    <Stack direction="row" spacing={1} alignItems="center"><TuneRoundedIcon color="primary" /><Typography variant="subtitle1" fontWeight={700}>排版设置</Typography></Stack>
+                    <Typography variant="caption" color="text.secondary">内容字号：{fontSize}pt</Typography>
+                    <Slider value={fontSize} min={9.5} max={14} step={0.5} onChange={(_, value) => setFontSize(value)} size="small" />
+                    <Typography variant="caption" color="text.secondary">章节标题字号：{sectionTitleSize}pt</Typography>
+                    <Slider value={sectionTitleSize} min={11} max={16} step={0.5} onChange={(_, value) => setSectionTitleSize(value)} size="small" />
+                    <Typography variant="caption" color="text.secondary">页边距：{padding}mm</Typography>
+                    <Slider value={padding} min={8} max={24} step={1} onChange={(_, value) => setPadding(value)} size="small" />
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle1" fontWeight={700}>分区字体</Typography>
+                    <Typography variant="caption" color="text.secondary">选择分区后调整字号、字重和颜色。</Typography>
+                    <FormControl fullWidth size="small" sx={{ mt: 1 }}>
+                      <InputLabel>选择分区</InputLabel>
+                      <Select label="选择分区" value={styleTarget} onChange={(event) => setStyleTarget(event.target.value)}>
+                        {styleKeys.map((key) => <MenuItem key={key} value={key}>{styleLabels[key] || key}</MenuItem>)}
+                      </Select>
+                    </FormControl>
+                    <Stack direction="row" spacing={0.6} sx={{ mt: 1 }}>
+                      <FormControl size="small" sx={{ minWidth: 86, flex: 1 }}>
+                        <InputLabel>字号</InputLabel>
+                        <Select label="字号" aria-label={`${styleTarget}-font-size`} value={String(activeStyle.fontSize)} onChange={(event) => updateActiveStyle('fontSize', Number(event.target.value))}>
+                          {[9.5, 10, 10.5, 11, 12, 13, 14].map((size) => <MenuItem key={size} value={String(size)}>{size}pt</MenuItem>)}
+                        </Select>
+                      </FormControl>
+                      <FormControl size="small" sx={{ minWidth: 86, flex: 1 }}>
+                        <InputLabel>字重</InputLabel>
+                        <Select label="字重" aria-label={`${styleTarget}-font-weight`} value={String(activeStyle.fontWeight)} onChange={(event) => updateActiveStyle('fontWeight', Number(event.target.value))}>
+                          <MenuItem value="400">常规</MenuItem>
+                          <MenuItem value="600">中等</MenuItem>
+                          <MenuItem value="700">粗体</MenuItem>
+                          <MenuItem value="800">特粗</MenuItem>
+                        </Select>
+                      </FormControl>
+                      <TextField size="small" type="color" label="颜色" value={activeStyle.color} onChange={(event) => updateActiveStyle('color', event.target.value)} inputProps={{ 'aria-label': `${styleTarget}-font-color` }} sx={{ width: 64 }} />
                     </Stack>
                   </Box>
-                ))}
+                  <Box>
+                    <Typography variant="subtitle1" fontWeight={700}>显示与排序</Typography>
+                    <Typography variant="caption" color="text.secondary">控制章节显示，并调整项目经历的顺序。</Typography>
+                    <Stack spacing={1} sx={{ mt: 1 }}>
+                      <FormControl fullWidth size="small">
+                        <InputLabel>选择章节</InputLabel>
+                        <Select label="选择章节" value={visibilityTarget} onChange={(event) => setVisibilityTarget(event.target.value)}>
+                          {visibilityKeys.map((key) => <MenuItem key={key} value={key}>{sectionLabels[key] || key}</MenuItem>)}
+                        </Select>
+                      </FormControl>
+                      <Button fullWidth size="small" variant={hiddenSections[visibilityTarget] ? 'outlined' : 'contained'} color={hiddenSections[visibilityTarget] ? 'inherit' : 'primary'} onClick={() => setHiddenSections((current) => ({ ...current, [visibilityTarget]: !current[visibilityTarget] }))}>
+                        {hiddenSections[visibilityTarget] ? '显示章节' : '隐藏章节'}
+                      </Button>
+                    </Stack>
+                    {content?.sections.map((section, sectionIndex) => sectionKey(section.heading) === '项目经历' && (
+                      <Box key={`projects-${sectionIndex}`} sx={{ mt: 2, pt: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
+                        <Typography variant="body2" fontWeight={700}>项目顺序</Typography>
+                        <Stack spacing={0.35} sx={{ mt: 0.8 }}>
+                          {(section.entries || []).map((entry, entryIndex) => {
+                            const key = projectVisibilityKey(sectionIndex, entry, entryIndex);
+                            const hidden = Boolean(entry.hidden || hiddenProjects[key]);
+                            return <Stack key={key} direction="row" spacing={0.25} alignItems="center"><Typography variant="body2" sx={{ flex: 1, minWidth: 0, color: hidden ? 'text.disabled' : 'text.primary', overflowWrap: 'anywhere', fontSize: '0.82rem' }}>{entry.title || '未命名项目'}</Typography><Button size="small" variant={hidden ? 'outlined' : 'text'} color={hidden ? 'inherit' : 'primary'} onClick={() => toggleProjectVisibility(sectionIndex, entryIndex)} sx={{ minWidth: 44, px: 0.5 }}>{hidden ? '显示' : '隐藏'}</Button><Tooltip title="上移"><span><IconButton size="small" onClick={() => moveProject(sectionIndex, entryIndex, -1)} disabled={entryIndex === 0}><KeyboardArrowUpRoundedIcon fontSize="small" /></IconButton></span></Tooltip><Tooltip title="下移"><span><IconButton size="small" onClick={() => moveProject(sectionIndex, entryIndex, 1)} disabled={entryIndex === section.entries.length - 1}><KeyboardArrowDownRoundedIcon fontSize="small" /></IconButton></span></Tooltip></Stack>;
+                          })}
+                        </Stack>
+                      </Box>
+                    ))}
+                  </Box>
+                </Stack>
               </Paper>
               <Typography variant="caption" color="text.secondary">编辑内容会保存到当前用户的简历版本，不会修改原始事实库。导出 PDF 时会自动同步当前内容和排版设置。</Typography>
             </Stack>
