@@ -76,6 +76,14 @@ def _layout(content: dict[str, Any]) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _project_visibility_key(section_index: int, entry: dict[str, Any], entry_index: int) -> str:
+    fact_ids = entry.get("fact_ids") if isinstance(entry.get("fact_ids"), list) else []
+    identity = "-".join(str(fact_id) for fact_id in fact_ids if fact_id)
+    if not identity:
+        identity = "|".join(str(entry.get(field) or "") for field in ("title", "subtitle", "period")).strip("|")
+    return f"{section_index}:{identity or f'index-{entry_index}'}"
+
+
 def _section_style(content: dict[str, Any], key: str) -> tuple[float, int, str]:
     layout = _layout(content)
     styles = layout.get("sectionStyles") if isinstance(layout.get("sectionStyles"), dict) else {}
@@ -180,15 +188,24 @@ def _education(entries: Any) -> str:
 
 def _content(content: dict[str, Any]) -> str:
     blocks: list[str] = []
-    education = _education(content.get("education"))
+    layout = _layout(content)
+    hidden_sections = layout.get("hiddenSections") if isinstance(layout.get("hiddenSections"), dict) else {}
+    hidden_projects = layout.get("hiddenProjects") if isinstance(layout.get("hiddenProjects"), dict) else {}
+    education = "" if hidden_sections.get("education") else _education(content.get("education"))
     if education:
         blocks.append(_styled_block(content, "education", education))
     headings: set[str] = set()
-    for section in content.get("sections", []):
+    for section_index, section in enumerate(content.get("sections", [])):
         if not isinstance(section, dict):
             continue
-        heading = _escape_tex(section.get("heading"))
-        entries = _entries(section.get("entries"), heading)
+        raw_heading = str(section.get("heading") or "")
+        if hidden_sections.get(raw_heading):
+            continue
+        heading = _escape_tex(raw_heading)
+        section_entries = section.get("entries")
+        if raw_heading == "项目经历" and isinstance(section_entries, list):
+            section_entries = [entry for entry_index, entry in enumerate(section_entries) if isinstance(entry, dict) and not hidden_projects.get(_project_visibility_key(section_index, entry, entry_index))]
+        entries = _entries(section_entries, heading)
         items = _items(section.get("items") if isinstance(section.get("items"), list) else [])
         section_body = entries or items
         if not heading or not section_body or (education and heading == "教育背景"):
@@ -197,7 +214,7 @@ def _content(content: dict[str, Any]) -> str:
         blocks.append(_styled_block(content, section.get("heading") or "other", f"\\ResumeSection{{{heading}}}\n{section_body}"))
 
     skills = content.get("skills")
-    if isinstance(skills, list) and skills and "专业技能" not in headings:
+    if isinstance(skills, list) and skills and "专业技能" not in headings and not hidden_sections.get("专业技能"):
         items = _items(skills)
         if items:
             blocks.append(_styled_block(content, "专业技能", f"\\ResumeSection{{专业技能}}\n{items}"))

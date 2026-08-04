@@ -82,6 +82,12 @@ const normalizeContent = (resume, user) => {
 
 const sectionKey = (heading) => heading || 'other';
 
+const projectVisibilityKey = (sectionIndex, entry, entryIndex) => {
+  const factIds = Array.isArray(entry?.fact_ids) ? entry.fact_ids.filter(Boolean).join('-') : '';
+  const identity = factIds || [entry?.title, entry?.subtitle, entry?.period].filter(Boolean).join('|') || `index-${entryIndex}`;
+  return `${sectionIndex}:${identity}`;
+};
+
 const updateSection = (content, index, updater) => {
   const next = clone(content);
   next.sections[index] = updater(next.sections[index]);
@@ -142,7 +148,7 @@ const editorValueForItem = (item) => {
   return label ? `<strong>${label}：</strong>${item?.text || ''}` : item?.text || '';
 };
 
-const RichTextEditor = ({ value, onChange, placeholder = '', activeEditorRef, activeSelectionRef, activeEditorChangeRef }) => {
+const RichTextEditor = ({ value, onChange, placeholder = '', activeEditorRef, activeSelectionRef, activeEditorChangeRef, onBackspaceAtStart }) => {
   const editorRef = useRef(null);
   const captureSelection = () => {
     const editor = editorRef.current;
@@ -151,6 +157,19 @@ const RichTextEditor = ({ value, onChange, placeholder = '', activeEditorRef, ac
     activeEditorRef.current = editor;
     activeSelectionRef.current = selection.getRangeAt(0).cloneRange();
     activeEditorChangeRef.current = onChange;
+  };
+  const handleKeyDown = (event) => {
+    if (event.key !== 'Backspace' || !onBackspaceAtStart) return;
+    const editor = editorRef.current;
+    const selection = window.getSelection();
+    if (!editor || !selection?.isCollapsed || !selection.rangeCount || !editor.contains(selection.anchorNode)) return;
+    const prefixRange = document.createRange();
+    prefixRange.selectNodeContents(editor);
+    prefixRange.setEnd(selection.anchorNode, selection.anchorOffset);
+    if (!prefixRange.toString()) {
+      event.preventDefault();
+      onBackspaceAtStart();
+    }
   };
   useLayoutEffect(() => {
     if (editorRef.current && document.activeElement !== editorRef.current) {
@@ -167,6 +186,7 @@ const RichTextEditor = ({ value, onChange, placeholder = '', activeEditorRef, ac
         onMouseUp={captureSelection}
         onKeyUp={captureSelection}
         onSelect={captureSelection}
+        onKeyDown={handleKeyDown}
         onInput={(event) => onChange(event.currentTarget.innerHTML)}
         data-placeholder={placeholder}
         sx={{ minHeight: '1em', pr: 1, outline: 'none', lineHeight: 1, '&:empty:before': { content: 'attr(data-placeholder)', color: '#94a3b8' }, '& ul, & ol': { m: 0, pl: 2 }, '& li': { m: 0, p: 0 } }}
@@ -174,6 +194,12 @@ const RichTextEditor = ({ value, onChange, placeholder = '', activeEditorRef, ac
   </Box>
   );
 };
+
+const ResumeBulletMarker = ({ editable, onDelete }) => editable ? (
+  <Tooltip title="删除此要点">
+    <IconButton aria-label="删除此要点" size="small" onMouseDown={(event) => event.preventDefault()} onClick={onDelete} sx={{ flex: '0 0 12px', width: 12, height: '1em', p: 0, mt: 0.1, color: '#b21f35', fontSize: '0.85em' }}>•</IconButton>
+  </Tooltip>
+) : <Box component="span" sx={{ flex: '0 0 12px', pt: 0.1, color: '#b21f35', fontSize: '0.85em' }}>•</Box>;
 
 const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionStyles, fontSize, sectionTitleSize, padding, onChange, onFormatSection, showEditTools, activeEditorRef, activeSelectionRef, activeEditorChangeRef }) => {
   const measureRef = useRef(null);
@@ -263,8 +289,8 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
       {entry.tech_stack?.length > 0 && <Typography variant="body2" sx={{ mt: 0.2, color: '#4b5563', fontSize: '0.92em' }}><Box component="span" sx={{ color: '#b21f35', fontWeight: 700 }}>技术栈：</Box>{entry.tech_stack.join('、')}</Typography>}
       {(entry.items || []).map((item, itemIndex) => (
         <Box key={`${sectionIndex}-${entryIndex}-${itemIndex}`} sx={{ position: 'relative', display: 'flex', alignItems: 'flex-start', width: '100%', mt: 0.2 }}>
-          <Box component="span" sx={{ flex: '0 0 12px', pt: 0.1, color: '#b21f35', fontSize: '0.85em' }}>•</Box>
-          <RichTextEditor value={editorValueForItem(item)} onChange={(value) => updateEntry(sectionIndex, entryIndex, 'items', (entry.items || []).map((current, index) => index === itemIndex ? { ...current, label: '', text: value } : current))} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} />
+          <ResumeBulletMarker editable={showEditTools} onDelete={() => deleteItem(sectionIndex, itemIndex)} />
+          <RichTextEditor value={editorValueForItem(item)} onChange={(value) => updateEntry(sectionIndex, entryIndex, 'items', (entry.items || []).map((current, index) => index === itemIndex ? { ...current, label: '', text: value } : current))} onBackspaceAtStart={() => deleteItem(sectionIndex, itemIndex)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} />
           {showEditTools && <Tooltip title="删除要点"><IconButton size="small" color="error" onClick={() => deleteItem(sectionIndex, itemIndex)} sx={{ position: 'absolute', right: -26, top: -4, p: 0.25 }}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></Tooltip>}
         </Box>
       ))}
@@ -300,7 +326,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
   content.sections.forEach((section, sectionIndex) => {
     const key = sectionKey(section.heading);
     if (hiddenSections[key]) return;
-    const visibleEntries = (section.entries || []).filter((entry, entryIndex) => key !== '项目经历' || !hiddenProjects[`${sectionIndex}-${entryIndex}`]);
+    const visibleEntries = (section.entries || []).filter((entry, entryIndex) => key !== '项目经历' || !hiddenProjects[projectVisibilityKey(sectionIndex, entry, entryIndex)]);
     visibleEntries.forEach((entry) => {
       const entryIndex = (section.entries || []).indexOf(entry);
       const style = getSectionStyle(key);
@@ -310,7 +336,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
       key: `${key}-item-${itemIndex}`,
       node: (() => {
         const style = getSectionStyle(key);
-        return <Box sx={{ breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${style.fontSize}pt`, fontWeight: style.fontWeight, color: style.color }}>{itemIndex === 0 && visibleEntries.length === 0 && sectionHeading(section.heading)}<Box sx={{ position: 'relative', display: 'flex', alignItems: 'flex-start', width: '100%' }}><Box component="span" sx={{ flex: '0 0 12px', pt: 0.1, color: '#b21f35', fontWeight: 800 }}>•</Box><RichTextEditor value={item.text || item.label || ''} onChange={(value) => updateItem(sectionIndex, itemIndex, value)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} />{showEditTools && <Tooltip title="删除要点"><IconButton size="small" color="error" onClick={() => deleteItem(sectionIndex, itemIndex)} sx={{ position: 'absolute', right: -26, top: -4, p: 0.25 }}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></Tooltip>}</Box></Box>;
+        return <Box sx={{ breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${style.fontSize}pt`, fontWeight: style.fontWeight, color: style.color }}>{itemIndex === 0 && visibleEntries.length === 0 && sectionHeading(section.heading)}<Box sx={{ position: 'relative', display: 'flex', alignItems: 'flex-start', width: '100%' }}><ResumeBulletMarker editable={showEditTools} onDelete={() => deleteItem(sectionIndex, itemIndex)} /><RichTextEditor value={item.text || item.label || ''} onChange={(value) => updateItem(sectionIndex, itemIndex, value)} onBackspaceAtStart={() => deleteItem(sectionIndex, itemIndex)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} />{showEditTools && <Tooltip title="删除要点"><IconButton size="small" color="error" onClick={() => deleteItem(sectionIndex, itemIndex)} sx={{ position: 'absolute', right: -26, top: -4, p: 0.25 }}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></Tooltip>}</Box></Box>;
       })(),
     }));
   });
@@ -419,6 +445,8 @@ const ResumeOptimizer = () => {
     const nextContent = normalizeContent(selectedResume, currentUser);
     setContent(nextContent);
     setSectionStyles(nextContent.layout?.sectionStyles || {});
+    setHiddenSections(nextContent.layout?.hiddenSections || {});
+    setHiddenProjects(nextContent.layout?.hiddenProjects || {});
     const storedFontSize = Number(nextContent.layout?.fontSize);
     const storedSectionTitleSize = Number(nextContent.layout?.sectionTitleFontSize);
     setFontSize(clampFontSize(storedFontSize, 10, 9.5, 14));
@@ -439,6 +467,8 @@ const ResumeOptimizer = () => {
           sectionTitleFontSize: sectionTitleSize,
           padding,
           sectionStyles,
+          hiddenSections,
+          hiddenProjects,
         },
       };
       const saved = await careerService.updateResume(selectedResume.id, { title: title.trim() || '定制简历', content: contentToSave });
@@ -655,8 +685,8 @@ const ResumeOptimizer = () => {
                   <Typography variant="subtitle1" fontWeight={700}>项目顺序与显示</Typography>
                   <Stack spacing={0.7} sx={{ mt: 1 }}>
                     {(section.entries || []).map((entry, entryIndex) => {
-                      const key = `${sectionIndex}-${entryIndex}`;
-                      return <Stack key={`${entry.title}-${entryIndex}`} direction="row" spacing={0.4} alignItems="center"><Button size="small" sx={{ flex: 1, justifyContent: 'flex-start', textAlign: 'left', color: hiddenProjects[key] ? 'text.disabled' : 'text.primary' }} onClick={() => setHiddenProjects((current) => ({ ...current, [key]: !current[key] }))}>{hiddenProjects[key] ? '显示' : '隐藏'} {entry.title || '未命名项目'}</Button><Tooltip title="上移"><span><IconButton size="small" onClick={() => moveProject(sectionIndex, entryIndex, -1)} disabled={entryIndex === 0}><KeyboardArrowUpRoundedIcon fontSize="small" /></IconButton></span></Tooltip><Tooltip title="下移"><span><IconButton size="small" onClick={() => moveProject(sectionIndex, entryIndex, 1)} disabled={entryIndex === section.entries.length - 1}><KeyboardArrowDownRoundedIcon fontSize="small" /></IconButton></span></Tooltip></Stack>;
+                      const key = projectVisibilityKey(sectionIndex, entry, entryIndex);
+                      return <Stack key={key} direction="row" spacing={0.4} alignItems="center"><Button size="small" sx={{ flex: 1, justifyContent: 'flex-start', textAlign: 'left', color: hiddenProjects[key] ? 'text.disabled' : 'text.primary' }} onClick={() => setHiddenProjects((current) => ({ ...current, [key]: !current[key] }))}>{hiddenProjects[key] ? '显示' : '隐藏'} {entry.title || '未命名项目'}</Button><Tooltip title="上移"><span><IconButton size="small" onClick={() => moveProject(sectionIndex, entryIndex, -1)} disabled={entryIndex === 0}><KeyboardArrowUpRoundedIcon fontSize="small" /></IconButton></span></Tooltip><Tooltip title="下移"><span><IconButton size="small" onClick={() => moveProject(sectionIndex, entryIndex, 1)} disabled={entryIndex === section.entries.length - 1}><KeyboardArrowDownRoundedIcon fontSize="small" /></IconButton></span></Tooltip></Stack>;
                     })}
                   </Stack>
                 </Paper>
