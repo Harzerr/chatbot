@@ -38,6 +38,7 @@ import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import careerService from '../services/careerService';
 import { useAuth } from '../contexts/AuthContext';
+import { downloadResumePagesPdf } from '../utils/resumePdfExport';
 
 const sectionLabels = {
   education: '教育背景',
@@ -443,7 +444,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
         {blocks.map((block) => <Box key={`measure-${block.key}`} data-resume-measure-block>{block.node}</Box>)}
       </Box>
       {groups.map((group, pageIndex) => (
-        <Box key={`page-${pageIndex}`} sx={{ ...pageSx, mb: pageIndex < groups.length - 1 ? 1 : 0, boxShadow: '0 16px 40px rgba(15, 23, 42, 0.14)' }}>
+        <Box key={`page-${pageIndex}`} data-resume-preview-page sx={{ ...pageSx, mb: pageIndex < groups.length - 1 ? 1 : 0, boxShadow: '0 16px 40px rgba(15, 23, 42, 0.14)' }}>
           {group.map((blockIndex) => <React.Fragment key={blocks[blockIndex].key}>{blocks[blockIndex].node}</React.Fragment>)}
         </Box>
       ))}
@@ -560,10 +561,8 @@ const ResumeOptimizer = () => {
       const saved = await careerService.updateResume(selectedResume.id, { title: title.trim() || '定制简历', content: contentToSave });
       setContent(contentToSave);
       setResumes((items) => items.map((item) => item.id === saved.id ? saved : item));
-      const response = await careerService.downloadResumePdf(selectedResume.id);
-      const url = URL.createObjectURL(response.data);
-      const anchor = document.createElement('a');
-      anchor.href = url; anchor.download = `${title || 'tailored-resume'}.pdf`; anchor.click(); URL.revokeObjectURL(url);
+      const pages = document.querySelectorAll('[data-resume-preview-page]');
+      await downloadResumePagesPdf(pages, title || 'tailored-resume');
       setNotice('PDF 已导出。');
     } catch (err) {
       setError(err.response?.data?.detail || '导出 PDF 失败。');

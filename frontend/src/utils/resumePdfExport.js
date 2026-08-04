@@ -61,3 +61,23 @@ export const downloadResumePdf = async (element, title) => {
 
   pdf.save(`${sanitizeFileName(title)}.pdf`);
 };
+
+export const downloadResumePagesPdf = async (elements, title) => {
+  const pages = Array.from(elements || []).filter(Boolean);
+  if (!pages.length) {
+    throw new Error('简历预览尚未准备完成。');
+  }
+  if (document.fonts?.ready) await document.fonts.ready;
+  const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4', compress: true });
+  for (const [pageIndex, page] of pages.entries()) {
+    const canvas = await html2canvas(page, {
+      backgroundColor: '#ffffff',
+      scale: 2,
+      useCORS: true,
+      logging: false,
+    });
+    if (pageIndex > 0) pdf.addPage();
+    pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, 210, 297, undefined, 'FAST');
+  }
+  pdf.save(`${sanitizeFileName(title)}.pdf`);
+};
