@@ -137,7 +137,8 @@ def _entries(entries: Any, heading: str) -> str:
         summary = entry.get("summary")
         if summary:
             if heading == "项目经历":
-                rendered.append(f"\\ResumeMeta{{项目简介}}{{{_rich_text(summary)}}}")
+                summary_label = _rich_text(entry.get("summary_label") or "项目简介").rstrip("：:") or "项目简介"
+                rendered.append(f"\\ResumeMeta{{{summary_label}}}{{{_rich_text(summary)}}}")
             else:
                 rendered.append(f"{_rich_text(summary)}\\par")
         tech_stack = entry.get("tech_stack")
@@ -145,7 +146,8 @@ def _entries(entries: Any, heading: str) -> str:
             tech_stack = "、".join(str(item) for item in tech_stack if str(item).strip())
         tech_stack = _rich_text(tech_stack)
         if tech_stack:
-            rendered.append(f"\\ResumeMeta{{技术栈}}{{{tech_stack}}}")
+            tech_label = _rich_text(entry.get("tech_stack_label") or "技术栈").rstrip("：:") or "技术栈"
+            rendered.append(f"\\ResumeMeta{{{tech_label}}}{{{tech_stack}}}")
         items = _items(entry.get("items") if isinstance(entry.get("items"), list) else [])
         if items:
             label = "技术亮点" if heading == "项目经历" else "核心成果"

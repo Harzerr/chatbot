@@ -28,6 +28,7 @@ import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import FormatItalicRoundedIcon from '@mui/icons-material/FormatItalicRounded';
 import FormatListBulletedRoundedIcon from '@mui/icons-material/FormatListBulletedRounded';
 import FormatBoldRoundedIcon from '@mui/icons-material/FormatBoldRounded';
+import FormatColorTextRoundedIcon from '@mui/icons-material/FormatColorTextRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
 import KeyboardArrowUpRoundedIcon from '@mui/icons-material/KeyboardArrowUpRounded';
@@ -120,6 +121,22 @@ const normalizeRichTextHtml = (value) => {
       parent.appendChild(strong);
       return;
     }
+    if (tagName === 'em' || tagName === 'i') {
+      const italic = document.createElement('em');
+      [...node.childNodes].forEach((child) => copyNode(child, italic));
+      parent.appendChild(italic);
+      return;
+    }
+    if (tagName === 'span' || tagName === 'font') {
+      const color = tagName === 'font' ? node.getAttribute('color') : node.style.color;
+      if (color && /^(#?[0-9a-f]{3,8}|rgb\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\))$/i.test(color.trim())) {
+        const colored = document.createElement('span');
+        colored.style.color = color.startsWith('#') || color.startsWith('rgb') ? color : `#${color}`;
+        [...node.childNodes].forEach((child) => copyNode(child, colored));
+        parent.appendChild(colored);
+        return;
+      }
+    }
     if (tagName === 'ul' || tagName === 'ol' || tagName === 'li') {
       const listNode = document.createElement(tagName);
       [...node.childNodes].forEach((child) => copyNode(child, listNode));
@@ -148,7 +165,7 @@ const editorValueForItem = (item) => {
   return label ? `<strong>${label}：</strong>${item?.text || ''}` : item?.text || '';
 };
 
-const RichTextEditor = ({ value, onChange, placeholder = '', activeEditorRef, activeSelectionRef, activeEditorChangeRef, onBackspaceAtStart }) => {
+const RichTextEditor = ({ value, onChange, placeholder = '', activeEditorRef, activeSelectionRef, activeEditorChangeRef, onBackspaceAtStart, containerSx = {}, editorSx = {} }) => {
   const editorRef = useRef(null);
   const captureSelection = () => {
     const editor = editorRef.current;
@@ -177,7 +194,7 @@ const RichTextEditor = ({ value, onChange, placeholder = '', activeEditorRef, ac
     }
   }, [value]);
   return (
-    <Box sx={{ position: 'relative', flex: 1, minWidth: 0 }}>
+    <Box sx={{ position: 'relative', flex: 1, minWidth: 0, ...containerSx }}>
       <Box
         ref={editorRef}
         contentEditable
@@ -189,7 +206,7 @@ const RichTextEditor = ({ value, onChange, placeholder = '', activeEditorRef, ac
         onKeyDown={handleKeyDown}
         onInput={(event) => onChange(event.currentTarget.innerHTML)}
         data-placeholder={placeholder}
-        sx={{ minHeight: '1em', pr: 1, outline: 'none', lineHeight: 1, '&:empty:before': { content: 'attr(data-placeholder)', color: '#94a3b8' }, '& ul, & ol': { m: 0, pl: 2 }, '& li': { m: 0, p: 0 } }}
+        sx={{ minHeight: '1em', pr: 1, outline: 'none', fontSize: 'inherit', lineHeight: 'inherit', ...editorSx, '&:empty:before': { content: 'attr(data-placeholder)', color: '#94a3b8' }, '& ul, & ol': { m: 0, pl: 2 }, '& li': { m: 0, p: 0 } }}
       />
   </Box>
   );
@@ -260,6 +277,8 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
     const style = getSectionStyle(sectionKey(heading));
     const isProject = heading === '项目经历';
     const techStackText = Array.isArray(entry.tech_stack) ? entry.tech_stack.join('、') : (entry.tech_stack || '');
+    const summaryLabel = entry.summary_label || '项目简介：';
+    const techStackLabel = entry.tech_stack_label || '技术栈：';
     return (
     <Box sx={{ mb: 0.65, p: 0, breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${style.fontSize}pt`, fontWeight: style.fontWeight, color: style.color }}>
       <Stack direction="row" spacing={1.2} alignItems="baseline">
@@ -290,9 +309,9 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
         </Tooltip>}
       </Stack>
       {(entry.summary || isProject) && (
-        <Box sx={{ display: 'flex', alignItems: 'flex-start', mt: 0.25, fontSize: '0.92em' }}><Typography component="span" sx={{ flex: '0 0 auto', color: '#b21f35', fontWeight: 700 }}>项目简介：</Typography><RichTextEditor value={entry.summary || ''} placeholder="点击输入项目简介" onChange={(value) => updateEntry(sectionIndex, entryIndex, 'summary', value)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', mt: 0.25, fontSize: '0.92em' }}><RichTextEditor value={summaryLabel} onChange={(value) => updateEntry(sectionIndex, entryIndex, 'summary_label', value)} containerSx={{ flex: '0 0 auto' }} editorSx={{ color: '#b21f35', fontWeight: 700, pr: 0.4 }} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /><RichTextEditor value={entry.summary || ''} placeholder="点击输入项目简介" onChange={(value) => updateEntry(sectionIndex, entryIndex, 'summary', value)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>
       )}
-      {(techStackText || isProject) && <Box sx={{ display: 'flex', alignItems: 'flex-start', mt: 0.2, color: '#4b5563', fontSize: '0.92em' }}><Typography component="span" sx={{ flex: '0 0 auto', color: '#b21f35', fontWeight: 700 }}>技术栈：</Typography><RichTextEditor value={techStackText} placeholder="点击输入技术栈" onChange={(value) => updateEntry(sectionIndex, entryIndex, 'tech_stack', value)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>}
+      {(techStackText || isProject) && <Box sx={{ display: 'flex', alignItems: 'flex-start', mt: 0.2, color: '#4b5563', fontSize: '0.92em' }}><RichTextEditor value={techStackLabel} onChange={(value) => updateEntry(sectionIndex, entryIndex, 'tech_stack_label', value)} containerSx={{ flex: '0 0 auto' }} editorSx={{ color: '#b21f35', fontWeight: 700, pr: 0.4 }} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /><RichTextEditor value={techStackText} placeholder="点击输入技术栈" onChange={(value) => updateEntry(sectionIndex, entryIndex, 'tech_stack', value)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>}
       {(entry.items || []).map((item, itemIndex) => (
         <Box key={`${sectionIndex}-${entryIndex}-${itemIndex}`} sx={{ position: 'relative', display: 'flex', alignItems: 'flex-start', width: '100%', mt: 0.2 }}>
           <ResumeBulletMarker editable={showEditTools} onDelete={() => deleteItem(sectionIndex, itemIndex)} />
@@ -594,7 +613,7 @@ const ResumeOptimizer = () => {
     setSectionStyles((current) => ({ ...current, [styleTarget]: { ...activeStyle, [field]: value } }));
   };
   const formatSection = (key, field, value) => setSectionStyles((current) => ({ ...current, [key]: { ...(current[key] || {}), [field]: value } }));
-  const executeEditorCommand = (command) => {
+  const executeEditorCommand = (command, value = null) => {
     const editor = activeEditorRef.current;
     if (!editor) {
       setNotice('请先点击需要编辑的正文段落。');
@@ -606,7 +625,7 @@ const ResumeOptimizer = () => {
       selection.removeAllRanges();
       selection.addRange(activeSelectionRef.current);
     }
-    document.execCommand(command);
+    document.execCommand(command, false, value);
     activeEditorChangeRef.current?.(editor.innerHTML);
   };
 
@@ -652,6 +671,7 @@ const ResumeOptimizer = () => {
                   <Tooltip title="选中文字加粗"><IconButton size="small" onMouseDown={(event) => event.preventDefault()} onClick={() => executeEditorCommand('bold')}><FormatBoldRoundedIcon fontSize="small" /></IconButton></Tooltip>
                   <Tooltip title="选中文字斜体"><IconButton size="small" onMouseDown={(event) => event.preventDefault()} onClick={() => executeEditorCommand('italic')}><FormatItalicRoundedIcon fontSize="small" /></IconButton></Tooltip>
                   <Tooltip title="创建项目符号列表"><IconButton size="small" onMouseDown={(event) => event.preventDefault()} onClick={() => executeEditorCommand('insertUnorderedList')}><FormatListBulletedRoundedIcon fontSize="small" /></IconButton></Tooltip>
+                  <Tooltip title="选中文字标红"><IconButton size="small" onMouseDown={(event) => event.preventDefault()} onClick={() => executeEditorCommand('foreColor', '#b21f35')}><FormatColorTextRoundedIcon fontSize="small" sx={{ color: '#b21f35' }} /></IconButton></Tooltip>
                 </Stack>
               </Paper>
               <Paper sx={{ p: 2 }}>
