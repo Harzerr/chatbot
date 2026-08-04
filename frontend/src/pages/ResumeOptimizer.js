@@ -219,19 +219,26 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
   const renderEntry = (sectionIndex, heading, entry, entryIndex) => {
     const style = getSectionStyle(sectionKey(heading));
     return (
-    <Box sx={{ mb: 0, p: 0, breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${style.fontSize}pt`, fontWeight: style.fontWeight, color: style.color }}>
-      <Stack direction="row" spacing={1} alignItems="baseline" justifyContent="space-between">
+    <Box sx={{ mb: 1.35, p: 0, breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${style.fontSize}pt`, fontWeight: style.fontWeight, color: style.color }}>
+      <Stack direction="row" spacing={1.2} alignItems="baseline">
         <TextField
           variant="standard"
           value={entry.title || ''}
           onChange={(event) => updateEntry(sectionIndex, entryIndex, 'title', event.target.value)}
-          sx={{ flex: 1, '& .MuiInputBase-root': { fontWeight: 700, fontSize: 'inherit', p: 0 } }}
+          sx={{ flex: 1, minWidth: 0, '& .MuiInputBase-root': { fontWeight: 700, fontSize: 'inherit', p: 0 } }}
+        />
+        <TextField
+          variant="standard"
+          value={entry.subtitle || ''}
+          onChange={(event) => updateEntry(sectionIndex, entryIndex, 'subtitle', event.target.value)}
+          placeholder="角色 / 职位"
+          sx={{ width: 150, '& .MuiInputBase-root': { fontWeight: 600, fontSize: '0.94em', color: '#374151', p: 0 }, '& .MuiInputBase-input': { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textAlign: 'center' } }}
         />
         <TextField
           variant="standard"
           value={entry.period || ''}
           onChange={(event) => updateEntry(sectionIndex, entryIndex, 'period', event.target.value)}
-          sx={{ width: 125, '& .MuiInputBase-root': { fontSize: '0.92em', color: '#52606d', p: 0 } }}
+          sx={{ width: 125, '& .MuiInputBase-root': { fontSize: '0.92em', color: '#52606d', p: 0 }, '& .MuiInputBase-input': { whiteSpace: 'nowrap', textAlign: 'right' } }}
         />
         {showEditTools && <Tooltip title={style.fontWeight >= 700 ? '取消加粗' : '整段加粗'}>
           <IconButton size="small" onClick={() => onFormatSection(sectionKey(heading), 'fontWeight', style.fontWeight >= 700 ? 400 : 700)}><FormatBoldRoundedIcon fontSize="small" /></IconButton>
@@ -240,22 +247,14 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
           <IconButton size="small" color="error" onClick={() => deleteEntry(sectionIndex, entryIndex)}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton>
         </Tooltip>}
       </Stack>
-      <TextField
-        variant="standard"
-        fullWidth
-        value={entry.subtitle || ''}
-        onChange={(event) => updateEntry(sectionIndex, entryIndex, 'subtitle', event.target.value)}
-        placeholder="角色 / 职位"
-        sx={{ '& .MuiInputBase-root': { fontSize: '0.94em', color: '#52606d', p: 0 }, '& .MuiInputBase-input': { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' } }}
-      />
       {entry.summary && (
-        <RichTextEditor value={entry.summary} onChange={(value) => updateEntry(sectionIndex, entryIndex, 'summary', value)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} />
+        <Box sx={{ mt: 0.5 }}><Typography component="span" sx={{ color: '#b21f35', fontWeight: 700, fontSize: '0.92em' }}>{heading === '项目经历' ? '项目简介：' : '个人职责与成果：'}</Typography><RichTextEditor value={entry.summary} onChange={(value) => updateEntry(sectionIndex, entryIndex, 'summary', value)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>
       )}
-      {entry.tech_stack?.length > 0 && <Typography variant="body2" sx={{ mt: 0, color: '#475569' }}>技术栈：{entry.tech_stack.join('、')}</Typography>}
+      {entry.tech_stack?.length > 0 && <Typography variant="body2" sx={{ mt: 0.45, color: '#4b5563', fontSize: '0.92em' }}><Box component="span" sx={{ color: '#b21f35', fontWeight: 700 }}>技术栈：</Box>{entry.tech_stack.join('、')}</Typography>}
       {(entry.items || []).map((item, itemIndex) => (
-        <Box key={`${item.label}-${itemIndex}`} sx={{ position: 'relative', display: 'flex', alignItems: 'flex-start', width: '100%' }}>
-          <Box component="span" sx={{ flex: '0 0 12px', pt: 0.1, color: '#b21f35' }}>•</Box>
-          <RichTextEditor value={item.text} onChange={(value) => updateEntry(sectionIndex, entryIndex, 'items', (entry.items || []).map((current, index) => index === itemIndex ? { ...current, text: value } : current))} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} />
+        <Box key={`${item.label}-${itemIndex}`} sx={{ position: 'relative', display: 'flex', alignItems: 'flex-start', width: '100%', mt: 0.45 }}>
+          <Box component="span" sx={{ flex: '0 0 12px', pt: 0.1, color: '#b21f35', fontSize: '0.85em' }}>•</Box>
+          <Box sx={{ minWidth: 0, flex: 1 }}>{item.label && <Box component="span" sx={{ fontWeight: 700, mr: 0.5 }}>{item.label}：</Box>}<RichTextEditor value={item.text} onChange={(value) => updateEntry(sectionIndex, entryIndex, 'items', (entry.items || []).map((current, index) => index === itemIndex ? { ...current, text: value } : current))} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>
           {showEditTools && <Tooltip title="删除要点"><IconButton size="small" color="error" onClick={() => deleteItem(sectionIndex, itemIndex)} sx={{ position: 'absolute', right: -26, top: -4, p: 0.25 }}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></Tooltip>}
         </Box>
       ))}

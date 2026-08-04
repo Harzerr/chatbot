@@ -8,6 +8,7 @@
 \usepackage{fontspec}
 \usepackage{graphicx}
 \usepackage[hidelinks]{hyperref}
+\usepackage{needspace}
 \usepackage{tabularx}
 \usepackage{xcolor}
 
@@ -16,7 +17,7 @@
 %%FONT_CONFIG%%
 
 \definecolor{ResumeText}{HTML}{1A1A1A}
-\definecolor{ResumeSecondary}{HTML}{333333}
+\definecolor{ResumeSecondary}{HTML}{4B5563}
 \definecolor{ResumeRule}{HTML}{CBD5E1}
 \definecolor{ResumeAccent}{HTML}{B21F35}
 \definecolor{ResumeBorder}{HTML}{E5E7EB}
@@ -71,11 +72,16 @@
   \vspace{2.6mm}%
 }
 \newcommand{\ResumeEntry}[3]{%
-  \noindent\parbox[t]{0.4\linewidth}{\raggedright\strut #1}%
-  \parbox[t]{0.3\linewidth}{\centering\strut\mbox{#2}}%
-  \parbox[t]{0.3\linewidth}{\raggedleft\strut\color{ResumeSecondary}#3}\par
+  \Needspace{5\baselineskip}%
+  \noindent\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}X>{\centering\arraybackslash}p{0.23\linewidth}>{\raggedleft\arraybackslash}p{0.24\linewidth}@{}}%
+    #1 & \mbox{\strut #2} & {\color{ResumeSecondary}\strut #3}\\
+  \end{tabularx}%
+  \par\vspace{1.4mm}%
 }
-\newenvironment{ResumeItems}{\begin{itemize}[leftmargin=5.29mm,labelwidth=1.4mm,labelsep=1.75mm,itemindent=0pt,topsep=0pt,partopsep=0pt,parsep=0pt,itemsep=0pt]}{\end{itemize}}
+\newcommand{\ResumeMeta}[2]{%
+  \par\vspace{0.4mm}{\color{ResumeAccent}\bfseries #1：}{\color{ResumeSecondary} #2}\par
+}
+\newenvironment{ResumeItems}{\begin{itemize}[leftmargin=4.8mm,label=\textcolor{ResumeAccent}{\scriptsize\textbullet},labelsep=1.6mm,itemindent=0pt,topsep=0.6mm,partopsep=0pt,parsep=0pt,itemsep=1.1pt]}{\end{itemize}}
 
 \begin{document}
 \rmfamily
