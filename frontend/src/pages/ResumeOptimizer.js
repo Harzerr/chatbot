@@ -679,8 +679,8 @@ const ResumeOptimizer = () => {
       <style>{resumeFontFaceCss}</style>
       <AppBar position="sticky">
         <Toolbar sx={{ gap: 1.5 }}>
-          <Button color="inherit" startIcon={<ArrowBackRoundedIcon />} onClick={() => navigate('/career')}>求职工作台</Button>
-          <Typography variant="h6" sx={{ flexGrow: 1 }}>A4 简历编辑器</Typography>
+          <Button color="inherit" startIcon={<ArrowBackRoundedIcon />} onClick={() => navigate('/career?tab=2')}>定制简历</Button>
+          <Typography variant="h6" sx={{ flexGrow: 1 }}>定制简历 / A4 编辑器</Typography>
           <Chip label="用户数据隔离" color="primary" variant="outlined" />
         </Toolbar>
       </AppBar>
@@ -690,7 +690,7 @@ const ResumeOptimizer = () => {
           <Paper sx={{ p: 4, textAlign: 'center' }}>
             <Typography variant="h5">还没有可编辑的定制简历</Typography>
             <Typography color="text.secondary" sx={{ mt: 1 }}>先在求职工作台导入职位并生成一份定制简历，之后可以在这里编辑、排序和导出。</Typography>
-            <Button variant="contained" sx={{ mt: 2 }} onClick={() => navigate('/career')}>去生成定制简历</Button>
+            <Button variant="contained" sx={{ mt: 2 }} onClick={() => navigate('/career?tab=2')}>去生成定制简历</Button>
           </Paper>
         ) : (
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '260px minmax(0, 1fr) 300px' }, gap: 2, alignItems: 'stretch' }}>

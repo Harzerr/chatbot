@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Alert,
   AppBar,
@@ -44,7 +44,6 @@ import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import RestoreRoundedIcon from '@mui/icons-material/RestoreRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import RecordVoiceOverRoundedIcon from '@mui/icons-material/RecordVoiceOverRounded';
-import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
 import careerService from '../services/careerService';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -161,8 +160,9 @@ const JsonPanel = ({ value }) => (
 
 const CareerStudio = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { currentUser } = useAuth();
-  const [tab, setTab] = useState(0);
+  const [tab, setTab] = useState(() => Math.max(0, Math.min(2, Number(searchParams.get('tab')) || 0)));
   const [facts, setFacts] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [resumes, setResumes] = useState([]);
@@ -206,6 +206,11 @@ const CareerStudio = () => {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    const requestedTab = Number(searchParams.get('tab'));
+    if (Number.isInteger(requestedTab) && requestedTab >= 0 && requestedTab <= 2) setTab(requestedTab);
+  }, [searchParams]);
 
   useEffect(() => {
     let disposed = false;
@@ -435,7 +440,6 @@ const saveDraftFact = (fact) => run(async () => {
         <Toolbar sx={{ gap: 1.5 }}>
           <Button color="inherit" startIcon={<ArrowBackRoundedIcon />} onClick={() => navigate('/profile')}>个人档案</Button>
           <Typography variant="h6" sx={{ flexGrow: 1 }}>求职工作台</Typography>
-          <Button color="inherit" startIcon={<TuneRoundedIcon />} onClick={() => navigate('/resume-optimizer')}>A4 编辑器</Button>
           <Chip label={`${facts.filter((fact) => fact.is_verified).length} 条已确认事实`} color="primary" variant="outlined" />
         </Toolbar>
       </AppBar>
