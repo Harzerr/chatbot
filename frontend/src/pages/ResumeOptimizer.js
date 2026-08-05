@@ -499,6 +499,10 @@ const ResumeOptimizer = () => {
 
   const selectedResume = useMemo(() => resumes.find((item) => String(item.id) === String(selectedId)), [resumes, selectedId]);
   const selectedJob = useMemo(() => jobs.find((item) => String(item.id) === String(selectedResume?.job_id)), [jobs, selectedResume]);
+  const resumeDisplayTitle = (resume) => {
+    const job = jobs.find((item) => String(item.id) === String(resume.job_id));
+    return job?.company && job?.title ? `${job.company} - ${job.title}` : job?.title || resume.title;
+  };
 
   useEffect(() => {
     if (!selectedResume) {
@@ -700,7 +704,7 @@ const ResumeOptimizer = () => {
                 <FormControl fullWidth size="small" sx={{ mt: 1.5 }}>
                   <InputLabel>选择简历版本</InputLabel>
                   <Select label="选择简历版本" value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>
-                    {resumes.map((resume) => <MenuItem key={resume.id} value={String(resume.id)}>{resume.title}</MenuItem>)}
+                    {resumes.map((resume) => <MenuItem key={resume.id} value={String(resume.id)}>{resumeDisplayTitle(resume)}</MenuItem>)}
                   </Select>
                 </FormControl>
                 <TextField fullWidth size="small" label="版本名称" value={title} onChange={(event) => setTitle(event.target.value)} sx={{ mt: 1.5 }} />
