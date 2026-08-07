@@ -14,6 +14,8 @@ pypdf==4.2.0
 sqlalchemy==2.0.41
 alembic==1.16.2
 aiosqlite==0.21.0
+redis>=5.0,<7
+rq>=2.0,<3
 
 # Voice agent
 langchain[openai]==0.3.24

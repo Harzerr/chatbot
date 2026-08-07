@@ -154,6 +154,18 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const getResumeParseJob = useCallback((jobId) => userService.getResumeParseJob(jobId), []);
+
+  const retryResumeParseJob = useCallback(async (jobId) => {
+    setError(null);
+    try {
+      return await userService.retryResumeParseJob(jobId);
+    } catch (err) {
+      setError(err.response?.data?.detail || '重新解析简历失败，请稍后重试。');
+      throw err;
+    }
+  }, []);
+
   const uploadAvatar = async (file) => {
     setError(null);
     try {
@@ -192,6 +204,8 @@ export const AuthProvider = ({ children }) => {
     refreshCurrentUser,
     updateProfile,
     uploadResume,
+    getResumeParseJob,
+    retryResumeParseJob,
     uploadAvatar,
     deleteAvatar,
   };

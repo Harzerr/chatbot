@@ -15,6 +15,7 @@ FRONTEND_PORT="${FRONTEND_PORT:-3000}"
 MCP_SEARCH_CMD="${MCP_SEARCH_CMD:-python -m app.mcp_server.search_server}"
 MCP_SCRAPE_CMD="${MCP_SCRAPE_CMD:-python -m app.mcp_server.web_scrapping_server}"
 BACKEND_CMD="${BACKEND_CMD:-python app.py}"
+RESUME_WORKER_CMD="${RESUME_WORKER_CMD:-python -m app.workers.resume_worker}"
 FRONTEND_CMD="${FRONTEND_CMD:-npm start}"
 
 LOCAL_NO_PROXY="${LOCAL_NO_PROXY:-localhost,127.0.0.1,::1}"
@@ -98,6 +99,7 @@ main() {
 
   send_window "mcp_search" "${PROJECT_DIR}" "${MCP_SEARCH_CMD}" "${LOG_DIR}/mcp_search.log"
   send_window "mcp_scrape" "${PROJECT_DIR}" "${MCP_SCRAPE_CMD}" "${LOG_DIR}/mcp_scrape.log"
+  send_window "resume_worker" "${PROJECT_DIR}" "${RESUME_WORKER_CMD}" "${LOG_DIR}/resume_worker.log"
 
   send_window "backend" "${PROJECT_DIR}" \
     "export UVICORN_HOST='${BACKEND_HOST}' UVICORN_PORT='${BACKEND_PORT}' && ${BACKEND_CMD}" \
@@ -113,6 +115,7 @@ echo '[frontend] logging to ${LOG_DIR}/frontend.log' && \
 
   tmux kill-window -t "${SESSION_NAME}:shell" 2>/dev/null || true
 
+  wait_for_tcp "127.0.0.1" "6379" redis 30 || true
   wait_for_tcp "${BACKEND_HOST}" "${BACKEND_PORT}" backend 45 || true
   wait_for_tcp "127.0.0.1" "${FRONTEND_PORT}" frontend 45 || true
 

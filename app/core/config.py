@@ -49,6 +49,15 @@ class Settings(BaseSettings):
     # Interview traffic uses a model available in the server's OpenRouter region.
     INTERVIEW_LLM_MODEL: str = "deepseek/deepseek-v4-flash"
     PDFTOTEXT_PATH: str = ""
+    RESUME_MAX_BYTES: int = 10 * 1024 * 1024
+    RESUME_OCR_MAX_PAGES: int = 8
+    RESUME_OCR_DPI: int = 144
+    # 表示从简历中直接提取出的文字少于 80 个字符时，可能认为：这份 PDF 主要是扫描图片，普通文字提取效果不好，需要使用 OCR。
+    RESUME_MIN_TEXT_CHARS: int = 80
+    REDIS_URL: str = "redis://127.0.0.1:6379/1"
+    RESUME_QUEUE_NAME: str = "resume_parse"
+    # 单位s
+    RESUME_QUEUE_TIMEOUT: int = 900
 
     STT_API_URL: str = "http://127.0.0.1:8000/v1/"
     LLM_API_URL: str = "http://127.0.0.1:11434/v1/"

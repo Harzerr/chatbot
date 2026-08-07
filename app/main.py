@@ -1,4 +1,5 @@
 import os
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from app.db.bootstrap import ensure_training_columns, ensure_user_profile_column
 from app.db.base import Base
 from app.db.session import async_engine
 from app.services.role_knowledge_store import QdrantRoleKnowledgeStore
+from app.services.resume_jobs import recover_pending_resume_parse_jobs
 from app.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -42,6 +44,7 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
     await ensure_user_profile_columns(async_engine)
     await ensure_training_columns(async_engine)
+    resume_recovery_task = asyncio.create_task(recover_pending_resume_parse_jobs())
 
     logger.info(f"LANGCHAIN_TRACING_V2: {os.getenv('LANGCHAIN_TRACING_V2')}")
     logger.info(f"LANGSMITH_PROJECT: {os.getenv('LANGSMITH_PROJECT')}")
@@ -49,6 +52,11 @@ async def lifespan(app: FastAPI):
     yield
 
     await async_engine.dispose()
+    resume_recovery_task.cancel()
+    try:
+        await resume_recovery_task
+    except asyncio.CancelledError:
+        pass
     try:
         await close_graph()
     except Exception:

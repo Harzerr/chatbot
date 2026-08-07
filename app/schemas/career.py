@@ -43,8 +43,19 @@ class CareerFactRead(CareerFactBase):
     updated_at: datetime
 
 
+class FactExtractionWarning(BaseModel):
+    index: int
+    title: str = ""
+    reason: str
+
+
 class FactExtractionResponse(BaseModel):
     facts: list[CareerFactCreate]
+    status: str = "completed"
+    accepted_count: int = 0
+    rejected_count: int = 0
+    warnings: list[FactExtractionWarning] = Field(default_factory=list)
+    message: str = ""
 
 
 class ResumeProfileImportRequest(BaseModel):

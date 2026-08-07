@@ -17,6 +17,7 @@ from app.schemas.career import (
     CareerFactRead,
     CareerFactUpdate,
     FactExtractionResponse,
+    FactExtractionWarning,
     JobImportRequest,
     JobPostingRead,
     JobPostingUpdate,
@@ -423,12 +424,38 @@ async def extract_resume_facts(
     try:
         raw_facts = await career_studio.extract_facts(resume_text)
         facts: list[CareerFactCreate] = []
-        for item in raw_facts:
+        warnings: list[FactExtractionWarning] = []
+        for index, item in enumerate(raw_facts):
             try:
                 facts.append(CareerFactCreate.model_validate(item))
-            except Exception:
-                continue
-        return FactExtractionResponse(facts=facts)
+            except Exception as exc:
+                title = item.get("title", "") if isinstance(item, dict) else ""
+                warnings.append(FactExtractionWarning(
+                    index=index,
+                    title=str(title)[:255],
+                    reason=str(exc).split("\n", 1)[0][:500],
+                ))
+        rejected_count = len(warnings)
+        if not facts and raw_facts:
+            status_value = "failed_validation"
+            message = "模型返回了事实，但没有任何一条通过字段校验。"
+        elif not facts:
+            status_value = "empty"
+            message = "模型没有从当前简历中提取到有效事实。"
+        elif warnings:
+            status_value = "partial"
+            message = f"已识别 {len(facts)} 条事实，另有 {rejected_count} 条需要检查。"
+        else:
+            status_value = "completed"
+            message = f"已识别 {len(facts)} 条待确认事实。"
+        return FactExtractionResponse(
+            facts=facts,
+            status=status_value,
+            accepted_count=len(facts),
+            rejected_count=rejected_count,
+            warnings=warnings,
+            message=message,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 

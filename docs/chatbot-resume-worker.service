@@ -1,0 +1,17 @@
+[Unit]
+Description=Chatbot resume parsing RQ worker
+After=network.target redis-server.service chatbot-backend.service
+Wants=redis-server.service chatbot-backend.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/srv/chatbot
+EnvironmentFile=-/srv/chatbot/.env
+ExecStart=/srv/chatbot/.venv/bin/python -m app.workers.resume_worker
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

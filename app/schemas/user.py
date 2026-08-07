@@ -45,7 +45,13 @@ class ResumeUploadResponse(BaseModel):
     message: str
     file_name: str
     resume_uploaded_at: str
-    extracted_preview: str
+    extracted_preview: str = ""
+    source_id: int | None = None
+    job_id: int | None = None
+    status: str = "queued"
+    stage: str = "queued"
+    progress: int = 0
+    error_message: str | None = None
 
 
 class UserInDBBase(UserBase):

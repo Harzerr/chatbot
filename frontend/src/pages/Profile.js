@@ -40,6 +40,8 @@ const Profile = () => {
     refreshCurrentUser,
     updateProfile,
     uploadResume,
+    getResumeParseJob,
+    retryResumeParseJob,
     uploadAvatar,
     deleteAvatar,
     logout,
@@ -56,12 +58,15 @@ const Profile = () => {
   });
   const [saveLoading, setSaveLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [resumeJob, setResumeJob] = useState(null);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [education, setEducation] = useState([]);
   const [message, setMessage] = useState('');
   const [growthLoading, setGrowthLoading] = useState(false);
   const [growthError, setGrowthError] = useState('');
   const [interviewMessages, setInterviewMessages] = useState([]);
+  const resumeJobId = resumeJob?.id;
+  const resumeJobStatus = resumeJob?.status;
 
   const loadGrowthReport = useCallback(async () => {
     setGrowthLoading(true);
@@ -116,6 +121,42 @@ const Profile = () => {
     setEducation(Array.isArray(currentUser.education) ? currentUser.education : []);
   }, [currentUser]);
 
+  useEffect(() => {
+    if (!resumeJobId || ['completed', 'failed'].includes(resumeJobStatus)) return undefined;
+    let disposed = false;
+    let timer;
+
+    const poll = async () => {
+      try {
+        const nextJob = await getResumeParseJob(resumeJobId);
+        if (disposed) return;
+        setResumeJob(nextJob);
+        if (nextJob.status === 'completed') {
+          await refreshCurrentUser();
+          setMessage(`简历解析完成，共识别 ${nextJob.page_count || 1} 页文本。现在可以到职业事实库提取事实。`);
+          await loadGrowthReport();
+          return;
+        }
+        if (nextJob.status === 'failed') {
+          setMessage(`简历解析失败：${nextJob.error_message || '请点击重新解析。'}`);
+          return;
+        }
+        timer = window.setTimeout(poll, 1500);
+      } catch (err) {
+        if (!disposed) {
+          setMessage(err.response?.data?.detail || '读取简历解析状态失败，请稍后重试。');
+          timer = window.setTimeout(poll, 3000);
+        }
+      }
+    };
+
+    poll();
+    return () => {
+      disposed = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [resumeJobId, resumeJobStatus, getResumeParseJob, refreshCurrentUser, loadGrowthReport]);
+
   const handleChange = (field) => (event) => {
     const value = field === 'years_of_experience' ? Number(event.target.value) : event.target.value;
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -155,13 +196,30 @@ const Profile = () => {
     setUploading(true);
     try {
       const response = await uploadResume(file);
-      setMessage(`简历上传成功，系统已完成解析。文件：${response.file_name}`);
-      await loadGrowthReport();
+      setResumeJob({
+        id: response.job_id,
+        status: response.status,
+        stage: response.stage,
+        progress: response.progress,
+      });
+      setMessage(`简历已上传，正在后台解析：${response.file_name}`);
     } catch (err) {
       console.error('Resume upload failed:', err);
+      setMessage(err.response?.data?.detail || '简历上传失败，请稍后重试。');
     } finally {
       setUploading(false);
       event.target.value = '';
+    }
+  };
+
+  const handleResumeRetry = async () => {
+    if (!resumeJob?.id) return;
+    setMessage('已重新提交简历解析任务。');
+    try {
+      const nextJob = await retryResumeParseJob(resumeJob.id);
+      setResumeJob(nextJob);
+    } catch (err) {
+      setMessage(err.response?.data?.detail || '重新解析简历失败，请稍后重试。');
     }
   };
 
@@ -335,10 +393,10 @@ const Profile = () => {
                 component="label"
                 variant="outlined"
                 startIcon={<UploadFileRoundedIcon />}
-                disabled={uploading}
+                disabled={uploading || (resumeJob && !['completed', 'failed'].includes(resumeJob.status))}
                 sx={{ mt: 2, borderRadius: 2 }}
               >
-                {uploading ? '上传并解析中...' : '上传简历'}
+                {uploading ? '上传中...' : resumeJob && !['completed', 'failed'].includes(resumeJob.status) ? '解析任务处理中...' : '上传简历'}
                 <input
                   hidden
                   type="file"
@@ -346,6 +404,20 @@ const Profile = () => {
                   onChange={handleResumeUpload}
                 />
               </Button>
+
+              {resumeJob && (
+                <Alert
+                  severity={resumeJob.status === 'failed' ? 'error' : resumeJob.status === 'completed' ? 'success' : 'info'}
+                  sx={{ mt: 2 }}
+                  action={resumeJob.status === 'failed' ? <Button color="inherit" size="small" onClick={handleResumeRetry}>重新解析</Button> : undefined}
+                >
+                  {resumeJob.status === 'failed'
+                    ? `解析失败：${resumeJob.error_message || '未知错误'}`
+                    : resumeJob.status === 'completed'
+                      ? `解析完成，解析器：${resumeJob.parser_name || '文本解析'}${resumeJob.warnings?.length ? `，有 ${resumeJob.warnings.length} 条提示` : ''}`
+                      : `解析阶段：${resumeJob.stage || '排队中'}，进度 ${resumeJob.progress || 0}%`}
+                </Alert>
+              )}
 
               <Paper
                 elevation={0}

@@ -180,6 +180,7 @@ const CareerStudio = () => {
   const [workingAction, setWorkingAction] = useState('');
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
+  const [factExtractionWarnings, setFactExtractionWarnings] = useState([]);
   const [exportingPdf, setExportingPdf] = useState(false);
   const [previewPdfUrl, setPreviewPdfUrl] = useState('');
   const [previewPdfLoading, setPreviewPdfLoading] = useState(false);
@@ -262,10 +263,12 @@ const CareerStudio = () => {
     if (!currentUser?.has_resume) {
       throw new Error('请先到个人档案上传简历。');
     }
+    setFactExtractionWarnings([]);
     const response = await careerService.extractFacts();
     const extractedFacts = response.facts || [];
+    setFactExtractionWarnings(response.warnings || []);
     if (!extractedFacts.length) {
-      throw new Error('AI 未从简历中提取到有效事实，请检查简历文本后重试。');
+      throw new Error(response.message || 'AI 未从简历中提取到有效事实，请检查简历文本后重试。');
     }
     setDraftFacts(extractedFacts);
   }, '已从现有简历提取待确认事实。确认后才会进入事实库。');
@@ -470,6 +473,12 @@ const saveDraftFact = (fact) => run(async () => {
                   <Button variant="contained" startIcon={<AutoAwesomeRoundedIcon />} onClick={extractFacts} disabled={working || !currentUser?.has_resume}>{working ? 'AI 正在提取，请稍候…' : '从已上传简历提取事实'}</Button>
                 </Stack>
               </Paper>
+
+              {factExtractionWarnings.length > 0 && (
+                <Alert severity="warning">
+                  部分事实未通过结构校验：{factExtractionWarnings.map((item) => item.title || `第 ${item.index + 1} 条`).join('、')}。可先确认已识别内容，再编辑或手动补充。
+                </Alert>
+              )}
 
               {draftFacts.length > 0 && (
                 <Paper elevation={0} sx={{ p: 3, borderRadius: 2 }}>
