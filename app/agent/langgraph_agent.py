@@ -1,4 +1,6 @@
+import json
 import operator
+import re
 from typing import Annotated, TypedDict, Literal, Sequence, List, Optional, Dict
 
 try:
@@ -109,8 +111,11 @@ class AgentState(TypedDict):
     jd_content: Optional[str]
     resume_content: Optional[str]
     code_execution: Optional[dict]
+    knowledge_context: Optional[str]
     evaluation: Optional[dict]
+    evaluation_request: Optional[dict]
     is_finished: bool
+    answer_counted: bool
 
 
 class RouteResponse(BaseModel):
@@ -118,6 +123,32 @@ class RouteResponse(BaseModel):
     next: Literal["Researcher", "Scrapper", "FINISH"]
     reasoning: str
     response: Optional[str] = None
+
+
+def _parse_route_response(raw_response) -> RouteResponse:
+    """Parse DeepSeek's JSON response while tolerating provider stop markers."""
+    content = getattr(raw_response, "content", raw_response)
+    if isinstance(content, list):
+        content = "".join(
+            part.get("text", "") if isinstance(part, dict) else str(part)
+            for part in content
+        )
+    text = str(content or "").strip()
+    start = text.find("{")
+    end = text.rfind("}")
+    if start >= 0 and end > start:
+        candidate = text[start:end + 1]
+        try:
+            return RouteResponse.model_validate(json.loads(candidate))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            pass
+
+    cleaned = re.sub(r"<\|[^|]+\|>", "", text).strip()
+    return RouteResponse(
+        next="FINISH",
+        reasoning="Supervisor 未返回可解析的路由 JSON，已安全降级为直接回复。",
+        response=cleaned or "暂时无法生成回复，请稍后重试。",
+    )
 
 
 async def agent_node(state, agent, name):
@@ -262,15 +293,18 @@ async def supervisor_agent(state: AgentState) -> Dict:
         ),
     ]).partial(options=str(options), members=", ".join(members))
 
-    # llm = ChatOpenAI(model="gpt-4.1-mini", temperature=0, api_key=settings.OPENAI_API_KEY)
+    # llm = ChatOpenAI(model="deepseek/deepseek-v4-flash", temperature=0, api_key=settings.OPENAI_API_KEY)
     llm = ChatOpenAI(
         model=settings.LLM_MODEL,
         temperature=0,
+        max_tokens=256,
+        timeout=settings.LLM_TIMEOUT,
         api_key=settings.OPENROUTER_API_KEY,
         base_url=settings.OPENROUTER_API_BASE,
     )
-    supervisor_chain = prompt | llm.with_structured_output(RouteResponse)
-    result = await supervisor_chain.ainvoke(state)
+    supervisor_chain = prompt | llm
+    raw_result = await supervisor_chain.ainvoke(state)
+    result = _parse_route_response(raw_result)
 
     valid_routes = {"Researcher", "Scrapper", "FINISH"}
     next_route = result.next if result.next in valid_routes else None
@@ -308,10 +342,12 @@ async def create_graph():
     """Create the multi-agent workflow graph."""
     global _skill_registry
 
-    # llm = ChatOpenAI(model="gpt-4.1-mini", temperature=0, api_key=settings.OPENAI_API_KEY)
+    # llm = ChatOpenAI(model="deepseek/deepseek-v4-flash", temperature=0, api_key=settings.OPENAI_API_KEY)
     llm = ChatOpenAI(
         model=settings.LLM_MODEL,
         temperature=0,
+        max_tokens=settings.LLM_MAX_TOKENS,
+        timeout=settings.LLM_TIMEOUT,
         api_key=settings.OPENROUTER_API_KEY,
         base_url=settings.OPENROUTER_API_BASE,
     )
@@ -395,6 +431,8 @@ async def create_graph():
     skill_llm = ChatOpenAI(
         model=settings.INTERVIEW_LLM_MODEL,
         temperature=0.35,
+        max_tokens=settings.INTERVIEW_LLM_MAX_TOKENS,
+        timeout=settings.INTERVIEW_LLM_TIMEOUT,
         api_key=settings.OPENROUTER_API_KEY,
         base_url=settings.OPENROUTER_API_BASE,
     )
@@ -414,7 +452,9 @@ async def create_graph():
                 "messages": [AIMessage(content=result.response, name=result.agent_name)],
                 "iterations": state.get("iterations", 0) + 1,
                 "evaluation": result.evaluation,
+                "evaluation_request": result.evaluation_request,
                 "is_finished": result.is_finished,
+                "answer_counted": result.answer_counted,
                 "task_completed": True,
                 "active_skill": skill_definition.name,
             }
@@ -426,7 +466,9 @@ async def create_graph():
                 "messages": [AIMessage(content=f"Skill 执行时出现问题：{str(e)}", name="SkillRunner")],
                 "iterations": state.get("iterations", 0) + 1,
                 "evaluation": None,
+                "evaluation_request": None,
                 "is_finished": False,
+                "answer_counted": False,
                 "task_completed": True,
             }
 
@@ -474,8 +516,11 @@ def create_initial_state(messages: List[BaseMessage], max_iterations: int, **kwa
         "jd_content": kwargs.get("jd_content"),
         "resume_content": kwargs.get("resume_content"),
         "code_execution": kwargs.get("code_execution"),
+        "knowledge_context": kwargs.get("knowledge_context"),
         "evaluation": kwargs.get("evaluation"),
+        "evaluation_request": kwargs.get("evaluation_request"),
         "is_finished": kwargs.get("is_finished", False),
+        "answer_counted": kwargs.get("answer_counted", False),
     }
 
 

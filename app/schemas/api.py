@@ -25,6 +25,7 @@ class LLMRequest(BaseModel):
     jd_content: Optional[str] = Field(default=None, description="Job description content")
     resume_content: Optional[str] = Field(default=None, description="Resume content or summary")
     code_execution: Optional[CodeExecutionEvidence] = Field(default=None, description="Latest Judge0 result for a coding interview answer")
+    knowledge_context: Optional[str] = Field(default=None, description="User-uploaded technical evidence context")
 
 
 class CodeRunRequest(BaseModel):
@@ -44,3 +45,10 @@ class CodeRunResponse(BaseModel):
     memory: Optional[int] = Field(default=None, description="Memory usage returned by Judge0")
     token: Optional[str] = Field(default=None, description="Judge0 submission token")
     passed: Optional[bool] = Field(default=None, description="Whether stdout matches expected_output")
+
+
+class CodeRunJobResponse(BaseModel):
+    job_id: str
+    status: str
+    result: Optional[CodeRunResponse] = None
+    error: Optional[str] = None

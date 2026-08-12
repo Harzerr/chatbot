@@ -16,6 +16,8 @@ from app.services.embedding_provider import get_mem0_embedder_config
 from app.services.vector_store import MultiTenantVectorStore
 from app.utils.logger import setup_logger
 from app.services.metrics import record_ai_metric
+from app.services.task_queue import QueueUnavailable, enqueue_evaluation_job
+from app.services.stream_context import StreamCallback, current_stream_callback
 
 logger = setup_logger(__name__)
 
@@ -86,7 +88,7 @@ class AISupport:
             # "llm": {
             #     "provider": "openai",
             #     "config": {
-            #         "model": "gpt-4.1-mini",
+            #         "model": "deepseek/deepseek-v4-flash",
             #         "temperature": 0.1,
             #         "max_tokens": 2000,
             #         "api_key": settings.OPENAI_API_KEY
@@ -95,7 +97,7 @@ class AISupport:
             "llm": {
                 "provider": "openai",
                 "config": {
-                    "model": settings.LLM_MODEL,
+                    "model": settings.MEMORY_LLM_MODEL,
                     "temperature": 0.1,
                     "max_tokens": 2000,
                     "api_key": settings.OPENROUTER_API_KEY,
@@ -164,6 +166,7 @@ class AISupport:
         jd_content: str | None = None,
         resume_content: str | None = None,
         code_execution: dict | None = None,
+        knowledge_context: str | None = None,
     ) -> dict:
         """Process a user question and return an AI response.
         
@@ -180,13 +183,20 @@ class AISupport:
         started_at = perf_counter()
 
         memory_scope = _tenant_user_scope(tenant_id, user_id)
-        memories = await self.__search_memory(question, memory_scope=memory_scope)
-
-        relevant_docs = self.__vector_store.get_chat_by_id(
-            chat_id=chat_id, 
-            user_id=user_id, 
-            tenant_id=tenant_id
+        memory_started_at = perf_counter()
+        memories, relevant_docs = await asyncio.gather(
+            self.__search_memory(question, memory_scope=memory_scope),
+            asyncio.to_thread(
+                self.__vector_store.get_chat_by_id,
+                chat_id=chat_id,
+                user_id=user_id,
+                tenant_id=tenant_id,
+            ),
         )
+        logger.info("Interview memory search completed in %.0fms", (perf_counter() - memory_started_at) * 1000)
+
+        history_started_at = perf_counter()
+        logger.info("Interview chat-history retrieval completed in %.0fms", (perf_counter() - history_started_at) * 1000)
         retrieval_count = len(relevant_docs)
         logger.info("Retrieved %s scoped chat-history records for chat_id=%s", len(relevant_docs), chat_id)
         previous_interviewer_question = relevant_docs[-1].get("assistant_message") if relevant_docs else None
@@ -197,9 +207,9 @@ class AISupport:
         
         if relevant_docs:
             context += "\nRelevant chat history:\n"
-            for i, doc in enumerate(relevant_docs):
-                question_text = doc.get("user_message", "")
-                answer_text = doc.get("assistant_message", "")
+            for doc in relevant_docs[-4:]:
+                question_text = (doc.get("user_message", "") or "")[:800]
+                answer_text = (doc.get("assistant_message", "") or "")[:1000]
 
                 context += f" - User: {question_text}\n"
                 context += f" - Assistant: {answer_text}\n"
@@ -226,6 +236,8 @@ class AISupport:
         response_content = ""
         response_message = None
         evaluation: AnswerEvaluation | None = None
+        evaluation_request: dict | None = None
+        answer_counted = False
         if use_skill_mode:
             logger.info("Using graph-dispatched skill mode skill=%s chat_id=%s", active_skill, chat_id)
             skill_messages = [
@@ -246,8 +258,11 @@ class AISupport:
                 jd_content=jd_content,
                 resume_content=resume_content,
                 code_execution=code_execution,
+                knowledge_context=knowledge_context,
             )
+            graph_started_at = perf_counter()
             response_state = await self.__graph.ainvoke(initial_state, config=config)
+            logger.info("Interview graph completed in %.0fms", (perf_counter() - graph_started_at) * 1000)
 
             if "messages" in response_state and response_state["messages"]:
                 for msg in reversed(response_state["messages"]):
@@ -259,6 +274,8 @@ class AISupport:
 
             if response_state.get("evaluation"):
                 evaluation = AnswerEvaluation.model_validate(response_state["evaluation"])
+            evaluation_request = response_state.get("evaluation_request")
+            answer_counted = bool(response_state.get("answer_counted", False))
         else:
             history_messages = self.__build_conversation_history_messages(relevant_docs)
             messages = [
@@ -295,38 +312,129 @@ class AISupport:
         estimated_cost = (prompt_tokens * settings.LLM_INPUT_USD_PER_1M + completion_tokens * settings.LLM_OUTPUT_USD_PER_1M) / 1_000_000
         await record_ai_metric(user_id=int(user_id), tenant_id=tenant_id, operation="interview" if use_interview_mode else "chat", model=settings.INTERVIEW_LLM_MODEL if use_interview_mode else settings.LLM_MODEL, success=1, latency_ms=(perf_counter() - started_at) * 1000, retrieval_count=retrieval_count, prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, estimated_cost_usd=estimated_cost)
 
-        try:
-            await self.__add_memory(question, final_response, memory_scope=memory_scope, tenant_id=tenant_id)
-        except Exception as memory_error:
-            logger.warning("mem0 add failed, continuing without blocking response: %s", memory_error)
-
-        try:
-            self.__vector_store.store_conversation(
+        asyncio.create_task(
+            self.__persist_turn(
                 question=question,
                 answer=final_response,
+                memory_scope=memory_scope,
                 tenant_id=tenant_id,
-                metadata={
-                    "user_id": user_id,
-                    "chat_id": chat_id,
-                    "timestamp": str(datetime.now()),
-                    "skill_name": active_skill,
-                    "interview_role": interview_role,
-                    "interview_level": interview_level,
-                    "interview_type": interview_type,
-                    "target_company": target_company,
-                    "jd_content": jd_content,
-                    "resume_content": resume_content,
-                    "code_execution": code_execution,
-                    "evaluation": evaluation.model_dump() if evaluation else None,
-                }
+                user_id=user_id,
+                chat_id=chat_id,
+                active_skill=active_skill,
+                interview_role=interview_role,
+                interview_level=interview_level,
+                interview_type=interview_type,
+                target_company=target_company,
+                jd_content=jd_content,
+                resume_content=resume_content,
+                code_execution=code_execution,
+                knowledge_context=knowledge_context,
+                evaluation=evaluation,
+                evaluation_request=evaluation_request,
+                answer_counted=answer_counted,
             )
-        except Exception as vector_store_error:
-            logger.warning(
-                "vector store write failed, continuing without blocking response: %s",
-                vector_store_error,
-            )
+        )
 
         return {"messages": [final_response]}
+
+    async def ask_stream(self, *, on_chunk: StreamCallback, **kwargs) -> dict:
+        callback_token = current_stream_callback.set(on_chunk)
+        try:
+            return await self.ask(**kwargs)
+        finally:
+            current_stream_callback.reset(callback_token)
+
+    async def __persist_turn(
+        self,
+        question: str,
+        answer: str,
+        memory_scope: str,
+        tenant_id: str,
+        user_id: str,
+        chat_id: str,
+        active_skill: str | None,
+        interview_role: str | None,
+        interview_level: str | None,
+        interview_type: str | None,
+        target_company: str | None,
+        jd_content: str | None,
+        resume_content: str | None,
+        code_execution: dict | None,
+        knowledge_context: str | None,
+        evaluation: AnswerEvaluation | None,
+        evaluation_request: dict | None,
+        answer_counted: bool,
+    ) -> None:
+        memory_task = self.__add_memory(
+            question,
+            answer,
+            memory_scope=memory_scope,
+            tenant_id=tenant_id,
+        )
+        vector_task = asyncio.to_thread(
+            self.__vector_store.store_conversation,
+            question=question,
+            answer=answer,
+            tenant_id=tenant_id,
+            metadata={
+                "user_id": user_id,
+                "chat_id": chat_id,
+                "timestamp": str(datetime.now()),
+                "skill_name": active_skill,
+                "interview_role": interview_role,
+                "interview_level": interview_level,
+                "interview_type": interview_type,
+                "target_company": target_company,
+                "jd_content": jd_content,
+                "resume_content": resume_content,
+                "code_execution": code_execution,
+                "knowledge_context": knowledge_context,
+                "evaluation": evaluation.model_dump() if evaluation else None,
+                "evaluation_status": "completed" if evaluation else ("queued" if evaluation_request else None),
+                "answer_counted": answer_counted,
+            },
+        )
+        results = await asyncio.gather(memory_task, vector_task, return_exceptions=True)
+        if isinstance(results[0], Exception):
+            logger.warning("mem0 add failed in background: %s", results[0])
+        if isinstance(results[1], Exception):
+            logger.warning("vector store write failed in background: %s", results[1])
+            return
+
+        if evaluation_request:
+            point_ids = results[1]
+            if not point_ids:
+                logger.warning("Evaluation was not queued because conversation point ID was missing")
+                return
+            job_payload = {
+                "point_id": str(point_ids[0]),
+                "tenant_id": str(tenant_id),
+                "user_id": str(user_id),
+                "chat_id": str(chat_id),
+                "request": evaluation_request,
+            }
+            try:
+                job = await asyncio.to_thread(enqueue_evaluation_job, job_payload)
+                await asyncio.to_thread(
+                    self.__vector_store.set_conversation_evaluation_job_id,
+                    point_id=str(point_ids[0]),
+                    tenant_id=str(tenant_id),
+                    user_id=str(user_id),
+                    chat_id=str(chat_id),
+                    job_id=job.id,
+                )
+                logger.info("Interview evaluation queued: chat_id=%s job_id=%s", chat_id, job.id)
+            except QueueUnavailable as exc:
+                logger.warning("Interview evaluation queue unavailable: chat_id=%s error=%s", chat_id, exc)
+                await asyncio.to_thread(
+                    self.__vector_store.update_conversation_evaluation,
+                    point_id=str(point_ids[0]),
+                    tenant_id=str(tenant_id),
+                    user_id=str(user_id),
+                    chat_id=str(chat_id),
+                    status="failed",
+                    error_message=str(exc),
+                )
 
     async def __add_memory(self, question, response, memory_scope: str, tenant_id: str):
         payload = f"User: {question}\nAssistant: {response}"

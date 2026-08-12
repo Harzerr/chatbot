@@ -1,4 +1,4 @@
-# 🤖 FastAPI Langgraph Chatbot with Vector Store, Memory, MCP tools and Voice mode
+# 🤖 面面通：AI 求职与面试工作台
 
 [![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)]() 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
@@ -167,7 +167,7 @@ The AI assistant can leverage powerful external tools to enhance your experience
 
 ```bash
 git clone <repository-url>
-cd ruban_fastapi-langgraph-chatbot
+cd mianmiantong
 ```
 
 2. Create and activate a virtual environment

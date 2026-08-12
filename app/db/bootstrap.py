@@ -53,3 +53,11 @@ async def ensure_training_columns(async_engine: AsyncEngine) -> None:
         existing = {row[1] for row in result.fetchall()}
         if "evaluation_json" not in existing:
             await conn.execute(text("ALTER TABLE training_attempts ADD COLUMN evaluation_json TEXT NOT NULL DEFAULT '{}'"))
+
+
+async def ensure_career_knowledge_columns(async_engine: AsyncEngine) -> None:
+    async with async_engine.begin() as conn:
+        result = await conn.execute(text("PRAGMA table_info(career_knowledge_documents)"))
+        existing = {row[1] for row in result.fetchall()}
+        if existing and "fact_id" not in existing:
+            await conn.execute(text("ALTER TABLE career_knowledge_documents ADD COLUMN fact_id INTEGER"))

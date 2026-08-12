@@ -94,6 +94,7 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
   const [expectedOutput, setExpectedOutput] = useState('');
   const [runResult, setRunResult] = useState(null);
   const [isRunningCode, setIsRunningCode] = useState(false);
+  const [runStatus, setRunStatus] = useState('');
 
   const suggestedTestCase = useMemo(
     () => parseCodingExample(latestCodingPrompt),
@@ -159,6 +160,7 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
 
     setIsRunningCode(true);
     setRunResult(null);
+    setRunStatus('queued');
 
     try {
       const result = await onRunCode({
@@ -166,6 +168,7 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
         sourceCode: codeValue,
         stdin: codeStdin,
         expectedOutput,
+        onProgress: setRunStatus,
       });
       setRunResult(result);
     } catch (error) {
@@ -179,6 +182,7 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
       });
     } finally {
       setIsRunningCode(false);
+      setRunStatus('');
     }
   };
 
@@ -690,7 +694,7 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
                   },
                 }}
               >
-                {isRunningCode ? '运行中...' : '运行代码'}
+                {isRunningCode ? (runStatus === 'queued' ? '排队中...' : '运行中...') : '运行代码'}
               </Button>
             </Stack>
 
@@ -817,7 +821,7 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
                   },
               }}
             >
-              {isRunningCode ? '运行中...' : '运行代码'}
+              {isRunningCode ? (runStatus === 'queued' ? '排队中...' : '运行中...') : '运行代码'}
             </Button>
           </Stack>
         </Box>

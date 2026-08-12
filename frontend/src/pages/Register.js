@@ -98,7 +98,7 @@ const Register = () => {
           }}
         >
           <Typography variant="h4" component="h1" align="center" gutterBottom>
-            LangGraph Chatbot
+            面面通
           </Typography>
           
           <Typography variant="h6" component="h2" align="center" gutterBottom>

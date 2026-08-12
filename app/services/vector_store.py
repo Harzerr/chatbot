@@ -239,3 +239,81 @@ class MultiTenantVectorStore:
                 wait=True,
             ),
         )
+
+    def update_conversation_evaluation(
+        self,
+        point_id: str,
+        tenant_id: str,
+        user_id: str,
+        chat_id: str,
+        status: str,
+        evaluation: Optional[Dict[str, Any]] = None,
+        job_id: str | None = None,
+        error_message: str | None = None,
+    ) -> None:
+        """Update evaluation metadata for an owned conversation point."""
+        def update_payload() -> None:
+            records = self.client.retrieve(
+                collection_name=self.collection_name,
+                ids=[point_id],
+                with_payload=True,
+                with_vectors=False,
+            )
+            if not records:
+                raise ValueError(f"Conversation point {point_id} was not found")
+
+            metadata = dict((records[0].payload or {}).get("metadata") or {})
+            if str(metadata.get("tenant_id")) != str(tenant_id):
+                raise PermissionError("Conversation point tenant does not match evaluation scope")
+            if str(metadata.get("user_id")) != str(user_id) or str(metadata.get("chat_id")) != str(chat_id):
+                raise PermissionError("Conversation point owner does not match evaluation scope")
+
+            updates: Dict[str, Any] = {"evaluation_status": status}
+            if evaluation is not None:
+                updates["evaluation"] = evaluation
+            if job_id:
+                updates["evaluation_job_id"] = job_id
+            if error_message:
+                updates["evaluation_error"] = error_message[:1000]
+            self.client.set_payload(
+                collection_name=self.collection_name,
+                payload=updates,
+                points=[point_id],
+                key="metadata",
+                wait=True,
+            )
+
+        self._run_with_reconnect("update_conversation_evaluation", update_payload)
+
+    def set_conversation_evaluation_job_id(
+        self,
+        point_id: str,
+        tenant_id: str,
+        user_id: str,
+        chat_id: str,
+        job_id: str,
+    ) -> None:
+        """Attach a queue job ID without overwriting a worker status update."""
+        def update_job_reference() -> None:
+            records = self.client.retrieve(
+                collection_name=self.collection_name,
+                ids=[point_id],
+                with_payload=True,
+                with_vectors=False,
+            )
+            if not records:
+                raise ValueError(f"Conversation point {point_id} was not found")
+            metadata = dict((records[0].payload or {}).get("metadata") or {})
+            if str(metadata.get("tenant_id")) != str(tenant_id):
+                raise PermissionError("Conversation point tenant does not match evaluation scope")
+            if str(metadata.get("user_id")) != str(user_id) or str(metadata.get("chat_id")) != str(chat_id):
+                raise PermissionError("Conversation point owner does not match evaluation scope")
+            self.client.set_payload(
+                collection_name=self.collection_name,
+                payload={"evaluation_job_id": job_id},
+                points=[point_id],
+                key="metadata",
+                wait=True,
+            )
+
+        self._run_with_reconnect("set_conversation_evaluation_job_id", update_job_reference)

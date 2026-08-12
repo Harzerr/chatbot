@@ -32,7 +32,14 @@ InterviewSkill
   ├─ 检索岗位知识和代码题
   ├─ 判断当前面试阶段
   ├─ 生成受约束的问题
-  └─ 调用评估器处理上一轮回答
+  ├─ 提交 EvaluationRequest
+  └─ 并行调用 InterviewEvaluator
+       ↓
+EvaluationAgent
+  ├─ 结构化 LLM-as-a-Judge 评分
+  ├─ Rubric 权重重算
+  ├─ Judge0 客观结果硬约束
+  └─ 回答、JD、简历证据核验
        ↓
 结果处理
   ├─ SSE 流式返回
@@ -52,7 +59,8 @@ InterviewSkill
 | 面试运行时 | `app/services/interview_skill.py` | 组织上下文、检索、阶段控制和问题生成 |
 | 岗位知识库 | `app/services/role_knowledge_store.py` | Qdrant 岗位题库检索 |
 | 代码题知识库 | `app/services/coding_knowledge_store.py` | Qdrant 代码题检索 |
-| 回答评估 | `app/services/interview_evaluator.py` | 结构化 Rubric 评分和证据校验 |
+| 评估 Agent | `app/agent/evaluation_agent.py` | 独立接收评估请求并生成可审计结果 |
+| 评估核心 | `app/services/interview_evaluator.py` | 结构化 Rubric 评分和客观规则后处理 |
 | 代码执行 | `app/services/code_runner.py` | Judge0 代码运行适配 |
 | 运行指标 | `app/services/metrics.py` | 保存请求成功率、耗时、Token 和成本 |
 
@@ -212,6 +220,22 @@ InterviewSkill
 
 系统会根据 Rubric 权重重新计算总分，而不是完全信任模型返回的 `overall_score`。这保证了不同题型可以使用不同评分标准。
 
+### 7.1 独立评估 Agent
+
+当前已将评估从面试官生成逻辑中拆出为 `EvaluationAgent`，位置为 `app/agent/evaluation_agent.py`。它不是一个可以自由规划业务流程的聊天 Agent，而是生产系统常见的专用 LLM-as-a-Judge 组件，职责边界固定为：
+
+1. 接收 `EvaluationRequest`，其中包含上一轮问题、候选人回答、岗位上下文和 Judge0 结果。
+2. 调用独立的 `EVALUATION_LLM_MODEL`，与面试问题生成模型解耦。
+3. 使用题型对应的 Rubric 和 Pydantic Schema 生成结构化结果。
+4. 由后端重新计算 Rubric 加权总分，不直接信任模型返回的总分。
+5. 对 Judge0 编译、运行、超时和错误答案执行硬约束降分。
+6. 对回答证据、简历证据和 JD 匹配证据进行来源核验；无法在输入材料中核验的证据会被移除并记录到 `evidence_warnings`。
+7. 返回评估模型、运行 ID、耗时、Rubric 版本和证据核验状态，便于审计和回归。
+
+`InterviewSkill` 只负责生成问题和提交 `EvaluationRequest`，不再直接拼装评估 Prompt。当前问题生成请求不再等待评估模型：问答先通过 SSE 返回，问答记录写入 Qdrant 后再投递到现有 RQ Worker；Worker 异步更新 `queued/processing/completed/failed` 状态和评估结果。这样评估模型的延迟不会阻塞下一轮追问，报告读取到完成状态后即可使用评估结果。
+
+这种设计对应生产环境常见的组合评估方式：主观能力使用 LLM-as-a-Judge，确定性条件使用代码规则，客观运行结果使用 Judge0，再用离线数据集和线上 Trace 进行回归。参考：[LangSmith LLM-as-a-Judge](https://docs.langchain.com/langsmith/llm-as-judge)、[LangSmith Evaluation](https://docs.langchain.com/langsmith/evaluation)。
+
 ## 8. 企业落地相关能力
 
 ### 8.1 数据隔离
@@ -256,11 +280,12 @@ InterviewSkill
 
 为了避免项目介绍失真，当前应明确以下边界：
 
-1. 面试阶段尚未拆成 JD 解析、简历解析、出题、追问、评估等多个独立 LangGraph 节点，部分阶段逻辑仍集中在 `InterviewSkill` 中。
+1. 评估已经拆成独立 `EvaluationAgent` 边界，但 JD 解析、简历解析、出题和追问仍集中在 `InterviewSkill`，尚未全部拆成独立 LangGraph 节点。
 2. `MemorySaver` 是进程内 Checkpointer，不适合作为多实例生产环境的持久化状态存储。
 3. 检索链路还没有 Reranker、相似度阈值和离线 Recall@K 评测。
 4. 题目生成目前仍由 LLM 结合策略上下文完成，尚未增加独立的重复题检测和事实引用校验器。
 5. 当前质量评估脚本可以离线运行，但还没有接入 CI 门禁、实验追踪和 Trace 可视化平台。
+6. 当前评估 Agent 已通过 RQ 异步执行；后续还应增加独立评估 Worker 扩容、任务优先级、失败重试次数、死信队列和评估完成通知。
 
 ## 11. 功能设计时间线
 

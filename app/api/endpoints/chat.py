@@ -1,17 +1,48 @@
+import asyncio
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_streaming_service, get_current_user
+from app.api.deps import get_vector_store
+from app.db.session import get_db
+from app.models.career import CareerKnowledgeDocument
 from app.models.user import User as DBUser
 from app.schemas.api import LLMRequest
 from app.services.streaming import StreamingService
+from app.services.vector_store import MultiTenantVectorStore
+from app.services.career_knowledge import build_knowledge_context
 from app.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
 router = APIRouter()
+
+MANUAL_FINISH_COMMAND = "__SYSTEM_END_INTERVIEW_AND_EXPORT_REPORT__"
+INTERVIEW_END_MARKERS = (
+    "本场面试已结束",
+    "本次面试已结束",
+    "本场面试结束",
+    "本次面试结束",
+    "面试已结束",
+    "面试到此结束",
+    "本场面试到此结束",
+    "本次面试到此结束",
+    "面试环节结束",
+)
+
+
+def _interview_has_ended(messages: list[dict]) -> bool:
+    for message in messages:
+        if message.get("user_message") == MANUAL_FINISH_COMMAND:
+            return True
+        assistant_message = "".join(str(message.get("assistant_message") or "").split())
+        if any(marker in assistant_message for marker in INTERVIEW_END_MARKERS):
+            return True
+    return False
 
 
 def build_profile_resume_context(current_user: DBUser) -> str:
@@ -32,7 +63,9 @@ def build_profile_resume_context(current_user: DBUser) -> str:
 async def chat_completions(
     request: LLMRequest,
     current_user: Annotated[DBUser, Depends(get_current_user)],
-    streaming_service: StreamingService = Depends(get_streaming_service)
+    streaming_service: StreamingService = Depends(get_streaming_service),
+    vector_store: MultiTenantVectorStore = Depends(get_vector_store),
+    db: AsyncSession = Depends(get_db),
 ) -> StreamingResponse:
     use_interview_mode = request.skill_name == "interview-skills" or any([request.interview_role, request.interview_level, request.interview_type])
     if use_interview_mode and not (current_user.resume_text or "").strip():
@@ -41,8 +74,35 @@ async def chat_completions(
             detail="Please upload your resume in the profile page before starting an interview",
         )
 
+    if use_interview_mode:
+        existing_messages = await asyncio.to_thread(
+            vector_store.get_chat_by_id,
+            chat_id=request.chat_id,
+            user_id=str(current_user.id),
+            tenant_id=current_user.tenant_id,
+            limit=200,
+            offset=0,
+        )
+        if existing_messages and _interview_has_ended(existing_messages):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="该面试已经结束，不能继续作答，请查看面试报告。",
+            )
+
     effective_resume_content = build_profile_resume_context(current_user) if (current_user.resume_text or "").strip() else request.resume_content
-    request = request.model_copy(update={"resume_content": effective_resume_content})
+    knowledge_context = request.knowledge_context
+    if use_interview_mode:
+        documents = (await db.scalars(
+            select(CareerKnowledgeDocument).where(
+                CareerKnowledgeDocument.user_id == current_user.id,
+                CareerKnowledgeDocument.is_archived.is_(False),
+            ).order_by(CareerKnowledgeDocument.updated_at.desc())
+        )).all()
+        knowledge_context = build_knowledge_context(
+            documents,
+            query=f"{request.user_message}\n{request.jd_content or ''}",
+        )
+    request = request.model_copy(update={"resume_content": effective_resume_content, "knowledge_context": knowledge_context})
     logger.info(
         "Received chat completions request: chat_id=%s skill=%s interview_role=%s interview_level=%s interview_type=%s user_message_len=%s resume_len=%s",
         request.chat_id,

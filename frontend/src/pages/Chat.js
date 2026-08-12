@@ -111,6 +111,23 @@ const includesInterviewEndMarker = (content = '') => {
   return interviewEndMarkers.some((marker) => normalized.includes(marker));
 };
 
+const nonAnswerMarkers = [
+  '不知道', '不清楚', '不了解', '没接触过', '没有接触过', '没做过', '没有做过',
+  '不熟悉', '不太会', '不会', '答不上来', '无法回答', '不记得', '想不起来',
+  '没有相关经验', '无相关经验',
+];
+
+const isCountedInterviewAnswer = (message = {}) => {
+  if (typeof message.answer_counted === 'boolean') return message.answer_counted;
+  const content = normalizeText(message.user_message || '');
+  if (!content || isManualFinishCommand(content) || ['开始面试', '开始', '继续', '开始吧', '可以开始了', '继续面试'].includes(content)) {
+    return false;
+  }
+  return !nonAnswerMarkers.some((marker) => content.includes(marker));
+};
+
+const getCompletedAnswerCount = (chatMessages = []) => chatMessages.filter(isCountedInterviewAnswer).length;
+
 const isFinishedInterviewStatus = (status = '') => {
   const normalized = normalizeText(status).toLowerCase();
   if (!normalized) return false;
@@ -1025,11 +1042,12 @@ const deriveInterviewMeta = (chat) => {
   const latestEvaluation = getLatestEvaluation(chat.messages);
 
   if (chat.interviewRole || chat.interviewLevel || chat.interviewType) {
-    const questionCount = Math.max(1, Math.ceil((chat.messages?.length || 1) / 2));
+    const completedAnswerCount = getCompletedAnswerCount(chat.messages);
     const interviewType = chat.interviewType || '一面';
     const startedAt = getInterviewStartedAt(chat);
     const endedAt = getInterviewEndedAt(chat);
     const isFinished = !!endedAt;
+    const questionCount = Math.max(1, isFinished ? completedAnswerCount : completedAnswerCount + 1);
     const status = isFinished ? '已完成' : chat.status || '进行中';
     const estimatedMinutes = getEstimatedInterviewMinutes(interviewType);
     return {
@@ -1061,9 +1079,10 @@ const deriveInterviewMeta = (chat) => {
   const role = tracks[seed % tracks.length];
   const level = levels[seed % levels.length];
   const interviewType = interviewTypes[seed % interviewTypes.length];
-  const questionCount = Math.max(1, Math.ceil((chat.messages?.length || 1) / 2));
+  const completedAnswerCount = getCompletedAnswerCount(chat.messages);
   const targetQuestions = getInterviewQuestionLimit(interviewType);
   const isFinished = hasInterviewEnded(chat.messages || []);
+  const questionCount = Math.max(1, isFinished ? completedAnswerCount : completedAnswerCount + 1);
   const status = isFinished ? '已完成' : statuses[questionCount % statuses.length];
   const startedAt = getInterviewStartedAt(chat);
   const endedAt = getInterviewEndedAt(chat);
@@ -1129,6 +1148,7 @@ const Chat = () => {
 
   const messagesEndRef = useRef(null);
   const currentChatIdRef = useRef(null);
+  const messageRequestIdRef = useRef(0);
   const reportRequestIdRef = useRef(0);
   const { logout, currentUser } = useAuth();
   const navigate = useNavigate();
@@ -1139,6 +1159,19 @@ const Chat = () => {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamingMessage]);
+
+  useEffect(() => {
+    const chatId = currentChat?.id;
+    const pendingEvaluation = currentChat?.messages?.some((message) => (
+      message.evaluation_status === 'queued' || message.evaluation_status === 'processing'
+    ));
+    if (!chatId || isStreaming || !pendingEvaluation) return undefined;
+
+    const timer = window.setTimeout(async () => {
+      await fetchMessages(chatId, { silent: true });
+    }, 2000);
+    return () => window.clearTimeout(timer);
+  }, [currentChat?.id, currentChat?.messages, isStreaming]);
 
   useEffect(() => {
     currentChatIdRef.current = currentChat?.id || null;
@@ -1242,9 +1275,12 @@ const Chat = () => {
     }
   };
 
-  const fetchChats = async () => {
-    setLoading(true);
-    setError(null);
+  const fetchChats = async (options = {}) => {
+    const { silent = false } = options;
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
 
     try {
       const response = await chatService.getUserChats();
@@ -1290,56 +1326,71 @@ const Chat = () => {
       }
     } catch (err) {
       console.error('Error fetching chats:', err);
-      setError('加载面试会话失败，请稍后重试。');
+      if (!silent) setError('加载面试会话失败，请稍后重试。');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
-  const fetchMessages = async (chatId) => {
-    setChatLoading(true);
-    setError(null);
-    clearReportState();
+  const formatChatMessages = (chatMessages = []) => [...chatMessages]
+    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+    .flatMap((msg) => {
+      const formattedThread = [];
+
+      if (!isManualFinishCommand(msg.user_message)) {
+        formattedThread.push({
+          id: msg.id,
+          content: msg.user_message,
+          role: 'user',
+          timestamp: msg.timestamp,
+              evaluation: msg.evaluation,
+              evaluationStatus: msg.evaluation_status,
+              answerCounted: msg.answer_counted,
+        });
+      }
+
+      if (msg.assistant_message) {
+        formattedThread.push({
+          id: `${msg.id}-response`,
+          content: msg.assistant_message,
+          role: 'assistant',
+          timestamp: msg.timestamp,
+        });
+      }
+
+      return formattedThread;
+    });
+
+  const fetchMessages = async (chatId, options = {}) => {
+    const { silent = false, loadReport = !silent } = options;
+    const requestId = messageRequestIdRef.current + 1;
+    messageRequestIdRef.current = requestId;
+    if (!silent) setChatLoading(true);
+    if (!silent) {
+      setError(null);
+      clearReportState();
+    }
 
     try {
       const response = await chatService.getChatById(chatId);
-      const sortedMessages = [...response.messages].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+      if (requestId !== messageRequestIdRef.current || currentChatIdRef.current !== chatId) return;
 
-      const formattedMessages = sortedMessages
-        .flatMap((msg) => {
-          const formattedThread = [];
-
-          if (!isManualFinishCommand(msg.user_message)) {
-            formattedThread.push({
-              id: msg.id,
-              content: msg.user_message,
-              role: 'user',
-              timestamp: msg.timestamp,
-              evaluation: msg.evaluation,
-            });
-          }
-
-          if (msg.assistant_message) {
-            formattedThread.push({
-              id: `${msg.id}-response`,
-              content: msg.assistant_message,
-              role: 'assistant',
-              timestamp: msg.timestamp,
-            });
-          }
-
-          return formattedThread;
-        });
+      const formattedMessages = formatChatMessages(response.messages);
 
       setMessages(formattedMessages);
-      if (formattedMessages.some((message) => message.role === 'assistant' && includesInterviewEndMarker(message.content))) {
+      setCurrentChat((prev) => {
+        if (!prev || prev.id !== chatId) return prev;
+        const updatedChat = { ...prev, messages: response.messages };
+        return { ...updatedChat, ...deriveInterviewMeta(updatedChat) };
+      });
+      if (loadReport && formattedMessages.some((message) => message.role === 'assistant' && includesInterviewEndMarker(message.content))) {
         fetchInterviewReport(chatId);
       }
     } catch (err) {
       console.error(`Error fetching messages for chat ${chatId}:`, err);
-      setError('加载面试记录失败，请稍后重试。');
+      if (!silent) setError('加载面试记录失败，请稍后重试。');
     } finally {
-      setChatLoading(false);
+      if (!silent) setChatLoading(false);
     }
   };
 
@@ -1347,9 +1398,15 @@ const Chat = () => {
     const selected = sourceChats.find((chat) => chat.id === chatId);
 
     if (selected) {
+      currentChatIdRef.current = chatId;
+      messageRequestIdRef.current += 1;
       setFinishRequestedAt(null);
+      setChatLoading(false);
+      setError(null);
+      clearReportState();
       setCurrentChat(selected);
-      fetchMessages(chatId);
+      setMessages(formatChatMessages(selected.messages));
+      fetchMessages(chatId, { silent: true, loadReport: true });
 
       if (isMobile) {
         setDrawerOpen(false);
@@ -1397,6 +1454,10 @@ const Chat = () => {
   };
 
   const handleCreateInterview = () => {
+    if (!interviewSetup.jobPostingId && !interviewSetup.jdContent.trim()) {
+      setError('请选择职位库中的 JD，或先填写手工 JD 内容。');
+      return;
+    }
     const createdChat = createInterviewSession(interviewSetup);
     setSetupDialogOpen(false);
     startInterviewOpening(createdChat);
@@ -1406,7 +1467,7 @@ const Chat = () => {
     const jobPostingId = event.target.value;
     const job = interviewJobs.find((item) => String(item.id) === String(jobPostingId));
     setInterviewSetup((prev) => {
-      if (!job) return { ...prev, jobPostingId: '' };
+      if (!job) return { ...prev, jobPostingId: '', jdContent: '' };
       return {
         ...prev,
         jobPostingId: String(job.id),
@@ -1450,7 +1511,7 @@ const Chat = () => {
           });
 
           setIsStreaming(false);
-          fetchChats();
+          fetchChats({ silent: true });
         },
         onError: (streamError) => {
           console.error('Opening interview stream error:', streamError);
@@ -1511,7 +1572,7 @@ const Chat = () => {
           ]);
 
           setIsStreaming(false);
-          fetchChats();
+          fetchChats({ silent: true });
           resolve(finalContent);
         },
         onError: (streamError) => {
@@ -1713,7 +1774,7 @@ const Chat = () => {
           });
 
           setIsStreaming(false);
-          fetchChats();
+          fetchChats({ silent: true });
         },
         onError: (streamError) => {
           console.error('Streaming error:', streamError);
@@ -1734,12 +1795,13 @@ const Chat = () => {
     }
   };
 
-  const handleRunCode = async ({ language, sourceCode, stdin, expectedOutput }) => {
+  const handleRunCode = async ({ language, sourceCode, stdin, expectedOutput, onProgress }) => {
     const response = await chatService.runCode({
       language,
       sourceCode,
       stdin,
       expectedOutput,
+      onProgress,
     });
     setLatestCodeExecution({
       language,
@@ -1760,8 +1822,9 @@ const Chat = () => {
     navigate('/login');
   };
 
-  const assistantQuestionCount = messages.filter((m) => m.role === 'assistant').length;
   const currentInterviewFinished = isInterviewFinished();
+  const completedAnswerCount = getCompletedAnswerCount(currentChat?.messages || []);
+  const assistantQuestionCount = Math.max(1, currentInterviewFinished ? completedAnswerCount : completedAnswerCount + 1);
   const currentEndedAt = currentInterviewFinished
     ? messages
       .map(getMessageTimestamp)
@@ -1861,7 +1924,7 @@ const Chat = () => {
       </Toolbar>
       <Divider />
 
-      {loading ? (
+      {loading && chats.length === 0 ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
           <CircularProgress />
         </Box>
@@ -2098,6 +2161,22 @@ const Chat = () => {
             </TextField>
 
             <TextField
+              key={interviewSetup.jobPostingId ? 'job-jd-editor' : 'manual-jd-editor'}
+              fullWidth
+              multiline
+              minRows={5}
+              maxRows={10}
+              autoFocus={!interviewSetup.jobPostingId}
+              label={interviewSetup.jobPostingId ? 'JD 内容（可编辑）' : '手工填写 JD'}
+              placeholder="请输入岗位职责、任职要求、技术栈和加分项。"
+              value={interviewSetup.jdContent}
+              onChange={(e) => setInterviewSetup((prev) => ({ ...prev, jdContent: e.target.value }))}
+              helperText={interviewSetup.jobPostingId
+                ? '职位库 JD 已自动带入，你可以继续修改。'
+                : '当前为手工模式，填写后会直接用于本场面试。'}
+            />
+
+            <TextField
               select
               fullWidth
               label="目标岗位"
@@ -2167,16 +2246,6 @@ const Chat = () => {
               </Typography>
             </Paper>
 
-            <TextField
-              fullWidth
-              multiline
-              minRows={4}
-              maxRows={8}
-              label="JD 内容（可编辑）"
-              placeholder="可从职位库选择，或手工粘贴岗位职责、要求和加分项。"
-              value={interviewSetup.jdContent}
-              onChange={(e) => setInterviewSetup((prev) => ({ ...prev, jdContent: e.target.value }))}
-            />
           </Stack>
         </DialogContent>
         <DialogActions sx={{ px: 4, pb: 4, pt: 2 }}>
@@ -2409,7 +2478,7 @@ const Chat = () => {
             )}
           </Box>
 
-          {(currentChat || messages.length > 0) && (
+          {(currentChat || messages.length > 0) && !currentInterviewFinished && (
             <ChatInput
               onSendMessage={handleSendMessage}
               onRunCode={handleRunCode}

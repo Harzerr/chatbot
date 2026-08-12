@@ -60,7 +60,14 @@ class AnswerEvaluation(BaseModel):
     jd_requirement_matches: List[JDRequirementMatch] = Field(default_factory=list)
     resume_consistency: Literal["一致", "证据不足", "存在冲突", "不适用"] = "不适用"
     resume_evidence: List[str] = Field(default_factory=list)
+    knowledge_evidence: List[str] = Field(default_factory=list)
     capability_assessments: List[CapabilityAssessment] = Field(default_factory=list)
+    evaluator_name: str = "InterviewEvaluator"
+    evaluator_model: str = ""
+    evaluation_run_id: str = ""
+    evaluation_latency_ms: int = 0
+    evidence_grounded: bool = False
+    evidence_warnings: List[str] = Field(default_factory=list)
 
 class ChatMessage(BaseModel):
     """Chat message model for API responses"""
@@ -77,6 +84,10 @@ class ChatMessage(BaseModel):
     jd_content: str | None = None
     resume_content: str | None = None
     evaluation: Optional[AnswerEvaluation] = None
+    evaluation_status: Optional[str] = None
+    evaluation_job_id: Optional[str] = None
+    evaluation_error: Optional[str] = None
+    answer_counted: Optional[bool] = None
     interview_status: Optional[str] = None
     interview_paused_at: Optional[str] = None
     interview_paused_seconds: float = 0.0

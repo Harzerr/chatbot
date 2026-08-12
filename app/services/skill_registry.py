@@ -5,7 +5,7 @@ from typing import Any, Callable, Mapping
 
 from langchain_core.messages import BaseMessage
 
-from app.services.interview_evaluator import InterviewEvaluator
+from app.agent.evaluation_agent import EvaluationAgent
 from app.services.interview_skill import InterviewSkill
 from app.services.coding_knowledge_store import QdrantCodingKnowledgeStore
 from app.services.role_knowledge_store import QdrantRoleKnowledgeStore
@@ -21,7 +21,9 @@ class SkillResult:
     response: str
     agent_name: str
     evaluation: dict | None = None
+    evaluation_request: dict | None = None
     is_finished: bool = False
+    answer_counted: bool = False
 
 
 class SkillRunner:
@@ -91,7 +93,7 @@ class InterviewSkillRunner:
     def __init__(
         self,
         llm,
-        evaluator: InterviewEvaluator | None = None,
+        evaluator: EvaluationAgent | None = None,
         role_knowledge_store: QdrantRoleKnowledgeStore | None = None,
     ) -> None:
         resolved_role_knowledge_store = role_knowledge_store
@@ -106,9 +108,10 @@ class InterviewSkillRunner:
             QdrantCodingKnowledgeStore,
         )
 
+        self._evaluator = evaluator or EvaluationAgent()
         self._skill = InterviewSkill(
             llm,
-            evaluator or InterviewEvaluator(),
+            self._evaluator,
             resolved_role_knowledge_store,
             resolved_coding_knowledge_store,
         )
@@ -126,12 +129,15 @@ class InterviewSkillRunner:
             jd_content=state.get("jd_content"),
             resume_content=state.get("resume_content"),
             code_execution=state.get("code_execution"),
+            knowledge_context=state.get("knowledge_context"),
         )
         return SkillResult(
             response=result["response"],
             agent_name="Interviewer",
             evaluation=result.get("evaluation"),
+            evaluation_request=result.get("evaluation_request"),
             is_finished=result.get("is_finished", False),
+            answer_counted=result.get("answer_counted", False),
         )
 
 

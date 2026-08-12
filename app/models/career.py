@@ -51,3 +51,21 @@ class ResumeDocument(Base):
     status = Column(String(32), nullable=False, default="draft")
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class CareerKnowledgeDocument(Base):
+    __tablename__ = "career_knowledge_documents"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    fact_id = Column(Integer, nullable=True, index=True)
+    title = Column(String(255), nullable=False)
+    file_name = Column(String(255), nullable=False)
+    document_type = Column(String(32), nullable=False, default="technical_doc", index=True)
+    content_type = Column(String(128), nullable=False, default="text/plain")
+    content_text = Column(Text, nullable=False)
+    metadata_json = Column(Text, nullable=False, default="{}")
+    source_hash = Column(String(64), nullable=False, index=True)
+    is_archived = Column(Boolean, nullable=False, default=False, index=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)

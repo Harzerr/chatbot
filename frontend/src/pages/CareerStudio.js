@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Alert,
@@ -43,6 +43,7 @@ import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import RestoreRoundedIcon from '@mui/icons-material/RestoreRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
+import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
 import RecordVoiceOverRoundedIcon from '@mui/icons-material/RecordVoiceOverRounded';
 import careerService from '../services/careerService';
 import { useAuth } from '../contexts/AuthContext';
@@ -114,6 +115,13 @@ const jobToEditor = (job) => ({
   keywords: joinLines(job?.normalized?.keywords),
 });
 
+const documentToEditor = (document) => ({
+  id: document?.id,
+  title: document?.title || '',
+  document_type: document?.document_type || 'technical_doc',
+  content_text: document?.content_text || '',
+});
+
 const jobRequirements = (job) => {
   const normalized = job?.normalized || {};
   return [
@@ -164,6 +172,7 @@ const CareerStudio = () => {
   const { currentUser } = useAuth();
   const [tab, setTab] = useState(() => Math.max(0, Math.min(2, Number(searchParams.get('tab')) || 0)));
   const [facts, setFacts] = useState([]);
+  const [knowledgeDocuments, setKnowledgeDocuments] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [resumes, setResumes] = useState([]);
   const [draftFacts, setDraftFacts] = useState([]);
@@ -173,6 +182,7 @@ const CareerStudio = () => {
   const [jobText, setJobText] = useState('');
   const [factEditor, setFactEditor] = useState(null);
   const [jobEditor, setJobEditor] = useState(null);
+  const [documentEditor, setDocumentEditor] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
   const [selectedFactIds, setSelectedFactIds] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -185,18 +195,22 @@ const CareerStudio = () => {
   const [previewPdfUrl, setPreviewPdfUrl] = useState('');
   const [previewPdfLoading, setPreviewPdfLoading] = useState(false);
   const [previewPdfVersion, setPreviewPdfVersion] = useState(0);
+  const [uploadFactId, setUploadFactId] = useState(null);
+  const documentInputRef = useRef(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [factData, jobData, resumeData] = await Promise.all([
+      const [factData, jobData, resumeData, documentData] = await Promise.all([
         careerService.listFacts(),
         careerService.listJobs(),
         careerService.listResumes(),
+        careerService.listKnowledgeDocuments(),
       ]);
       setFacts(factData);
       setJobs(jobData);
       setResumes(resumeData);
+      setKnowledgeDocuments(documentData);
       setSelectedJobId((current) => current || (jobData[0] ? String(jobData[0].id) : ''));
       setSelectedFactIds((current) => current.length ? current : factData.filter((fact) => fact.is_verified).map((fact) => fact.id));
     } catch (err) {
@@ -272,6 +286,42 @@ const CareerStudio = () => {
     }
     setDraftFacts(extractedFacts);
   }, '已从现有简历提取待确认事实。确认后才会进入事实库。');
+
+  const openKnowledgeDocumentUpload = (factId) => {
+    setUploadFactId(factId);
+    documentInputRef.current?.click();
+  };
+
+  const uploadKnowledgeDocument = (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    const factId = uploadFactId;
+    setUploadFactId(null);
+    if (!file.name.toLowerCase().endsWith('.md')) {
+      setError('技术资料目前只支持 Markdown（.md）文件。');
+      return;
+    }
+    return run(async () => {
+      const saved = await careerService.uploadKnowledgeDocument({ file, factId });
+      setKnowledgeDocuments((items) => [saved, ...items]);
+      setDocumentEditor(documentToEditor(saved));
+    }, '项目技术文档已保存，可直接在线编辑。');
+  };
+
+  const saveKnowledgeDocument = () => run(async () => {
+    const saved = await careerService.updateKnowledgeDocument(documentEditor.id, {
+      title: documentEditor.title.trim(),
+      content_text: documentEditor.content_text.trim(),
+    });
+    setKnowledgeDocuments((items) => items.map((item) => item.id === saved.id ? saved : item));
+    setDocumentEditor(null);
+  }, '技术资料已更新，后续面试评估会使用最新版本。');
+
+  const archiveKnowledgeDocument = (document) => run(async () => {
+    const saved = await careerService.archiveKnowledgeDocument(document.id);
+    setKnowledgeDocuments((items) => items.filter((item) => item.id !== saved.id));
+  }, '技术资料已归档，不会继续进入面试评估。');
 
 const saveDraftFact = (fact) => run(async () => {
     const saved = await careerService.createFact({ ...fact, is_verified: true });
@@ -474,6 +524,8 @@ const saveDraftFact = (fact) => run(async () => {
                 </Stack>
               </Paper>
 
+              <Alert severity="info">请在下方对应的项目事实中上传 Markdown 技术文档。每份文档只归属于一个事实，后续面试评估会按事实使用对应资料。</Alert>
+
               {factExtractionWarnings.length > 0 && (
                 <Alert severity="warning">
                   部分事实未通过结构校验：{factExtractionWarnings.map((item) => item.title || `第 ${item.index + 1} 条`).join('、')}。可先确认已识别内容，再编辑或手动补充。
@@ -512,7 +564,7 @@ const saveDraftFact = (fact) => run(async () => {
 
               <Stack spacing={1.25}>
                 {activeFacts.length === 0 && <Alert severity="info">还没有已保存事实。可从简历提取，或点击“新建事实”手动录入。</Alert>}
-                {activeFacts.map((fact) => <Paper key={fact.id} elevation={0} sx={{ p: 2, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
+                {activeFacts.map((fact) => { const factDocuments = knowledgeDocuments.filter((document) => document.fact_id === fact.id); return <Paper key={fact.id} elevation={0} sx={{ p: 2, borderRadius: 1.5, border: '1px solid', borderColor: 'divider' }}>
                   <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} justifyContent="space-between">
                     <Box sx={{ minWidth: 0 }}>
                       <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap"><Chip size="small" label={factTypeLabels[fact.fact_type] || '其他'} /><Typography fontWeight={700}>{fact.title}</Typography><Chip size="small" color={fact.is_verified ? 'success' : 'warning'} label={fact.is_verified ? '已确认' : '待确认'} /></Stack>
@@ -526,7 +578,14 @@ const saveDraftFact = (fact) => run(async () => {
                       <Button size="small" color="error" startIcon={<DeleteOutlineRoundedIcon />} onClick={() => deleteFact(fact)} disabled={working}>删除</Button>
                     </Stack>
                   </Stack>
-                </Paper>)}
+                  {fact.fact_type === 'project' && <Box sx={{ mt: 1.5, pt: 1.25, borderTop: '1px solid', borderColor: 'divider' }}>
+                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ sm: 'center' }}>
+                      <Typography variant="caption" color="text.secondary">项目技术文档（Markdown） · {factDocuments.length} 份</Typography>
+                      <><input ref={documentInputRef} hidden type="file" accept=".md,text/markdown" onChange={uploadKnowledgeDocument} /><Button size="small" startIcon={<UploadFileRoundedIcon />} onClick={() => openKnowledgeDocumentUpload(fact.id)} disabled={working}>上传 .md</Button></>
+                    </Stack>
+                    {factDocuments.map((document) => <Stack key={document.id} direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ sm: 'center' }} sx={{ mt: 0.75, pl: 1 }}><Typography variant="body2" noWrap>{document.title} <Typography component="span" variant="caption" color="text.secondary">({document.metadata?.character_count || document.content_text.length} 字符)</Typography></Typography><Stack direction="row" spacing={0.5}><Button size="small" onClick={() => setDocumentEditor(documentToEditor(document))}>编辑文档</Button><Button size="small" color="warning" onClick={() => archiveKnowledgeDocument(document)} disabled={working}>归档</Button></Stack></Stack>)}
+                  </Box>}
+                </Paper>; })}
                 {showArchived && archivedFacts.map((fact) => <Paper key={fact.id} variant="outlined" sx={{ p: 2, opacity: 0.72, borderRadius: 1.5 }}>
                   <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" spacing={1}><Box><Typography fontWeight={700}>{fact.title}</Typography><Typography variant="body2" color="text.secondary">已归档，不参与生成。</Typography></Box><Tooltip title="恢复事实"><IconButton color="primary" aria-label="恢复事实" onClick={() => restoreFact(fact)} disabled={working}><RestoreRoundedIcon /></IconButton></Tooltip></Stack>
                 </Paper>)}
@@ -622,6 +681,17 @@ const saveDraftFact = (fact) => run(async () => {
           </Stack>
         </DialogContent>
         <DialogActions><Button onClick={() => setJobEditor(null)} disabled={working}>取消</Button><Button variant="contained" startIcon={<SaveRoundedIcon />} onClick={saveJob} disabled={working || !jobEditor?.title?.trim() || !jobEditor?.raw_content?.trim()}>保存职位要求</Button></DialogActions>
+      </Dialog>
+
+      <Dialog open={Boolean(documentEditor)} onClose={() => !working && setDocumentEditor(null)} fullWidth maxWidth="lg">
+        <DialogTitle>编辑技术资料</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2} sx={{ pt: 0.5 }}>
+            <TextField fullWidth required label="资料名称" value={documentEditor?.title || ''} onChange={(event) => setDocumentEditor((item) => ({ ...item, title: event.target.value }))} />
+            <TextField fullWidth required multiline minRows={18} label="Markdown 正文" helperText="可直接修改项目说明、技术细节或代码；保存后会作为最新证据参与面试评估。" value={documentEditor?.content_text || ''} onChange={(event) => setDocumentEditor((item) => ({ ...item, content_text: event.target.value }))} />
+          </Stack>
+        </DialogContent>
+        <DialogActions><Button onClick={() => setDocumentEditor(null)} disabled={working}>取消</Button><Button variant="contained" startIcon={<SaveRoundedIcon />} onClick={saveKnowledgeDocument} disabled={working || !documentEditor?.title?.trim() || !documentEditor?.content_text?.trim()}>保存资料</Button></DialogActions>
       </Dialog>
     </Box>
   );

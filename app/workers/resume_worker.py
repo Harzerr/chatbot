@@ -8,7 +8,11 @@ def main() -> None:
     connection = Redis.from_url(settings.REDIS_URL)
     connection.ping()
     worker = Worker(
-        [Queue(name=settings.RESUME_QUEUE_NAME, connection=connection)],
+        [
+            Queue(name=settings.RESUME_QUEUE_NAME, connection=connection),
+            Queue(name=settings.CODE_QUEUE_NAME, connection=connection),
+            Queue(name=settings.EVALUATION_QUEUE_NAME, connection=connection),
+        ],
         connection=connection,
     )
     worker.work()

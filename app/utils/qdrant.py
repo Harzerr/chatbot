@@ -38,6 +38,10 @@ def format_chat_results(points) -> List[Dict[str, Any]]:
             "jd_content": metadata.get("jd_content"),
             "resume_content": metadata.get("resume_content"),
             "evaluation": metadata.get("evaluation"),
+            "evaluation_status": metadata.get("evaluation_status"),
+            "evaluation_job_id": metadata.get("evaluation_job_id"),
+            "evaluation_error": metadata.get("evaluation_error"),
+            "answer_counted": metadata.get("answer_counted"),
         }
         results.append(chat_msg)
 

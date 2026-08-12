@@ -1,9 +1,11 @@
 import asyncio
+import hashlib
 import ipaddress
 import json
 import re
 import socket
 from html import unescape
+from time import perf_counter
 from typing import Any
 from urllib.parse import urlparse
 from urllib.request import Request, build_opener, HTTPRedirectHandler
@@ -13,6 +15,10 @@ from langchain_core.messages import HumanMessage
 from langchain_openai import ChatOpenAI
 
 from app.core.config import settings
+from app.services.task_queue import get_redis_connection
+from app.utils.logger import setup_logger
+
+logger = setup_logger(__name__)
 
 
 _FACT_TYPE_ALIASES = {
@@ -54,9 +60,36 @@ class CareerStudioService:
         self._llm = ChatOpenAI(
             model=self._model,
             temperature=0,
+            max_tokens=settings.CAREER_LLM_MAX_TOKENS,
+            timeout=settings.CAREER_LLM_TIMEOUT,
             api_key=settings.OPENROUTER_API_KEY,
             base_url=settings.OPENROUTER_API_BASE,
         )
+
+    @staticmethod
+    def _job_cache_key(raw_content: str, source_url: str | None) -> str:
+        payload = f"{source_url or ''}\n{raw_content.strip()}".encode("utf-8")
+        return f"career-job-normalized:v1:{hashlib.sha256(payload).hexdigest()}"
+
+    def _read_normalized_cache(self, raw_content: str, source_url: str | None) -> dict[str, Any] | None:
+        try:
+            cached = get_redis_connection().get(self._job_cache_key(raw_content, source_url))
+            if cached:
+                result = json.loads(cached)
+                return result if isinstance(result, dict) else None
+        except Exception as exc:
+            logger.debug("Career job cache read skipped: %s", exc)
+        return None
+
+    def _write_normalized_cache(self, raw_content: str, source_url: str | None, result: dict[str, Any]) -> None:
+        try:
+            get_redis_connection().setex(
+                self._job_cache_key(raw_content, source_url),
+                settings.CAREER_JOB_CACHE_TTL_SECONDS,
+                json.dumps(result, ensure_ascii=False),
+            )
+        except Exception as exc:
+            logger.debug("Career job cache write skipped: %s", exc)
 
     async def extract_facts(self, resume_text: str) -> list[dict[str, Any]]:
         prompt = f"""Extract only explicit, verifiable career facts from this resume.
@@ -82,14 +115,21 @@ RESUME:
         return normalized_facts
 
     async def normalize_job(self, raw_content: str, source_url: str | None) -> dict[str, Any]:
+        cached = self._read_normalized_cache(raw_content, source_url)
+        if cached:
+            logger.info("Career job normalization cache hit")
+            return cached
+
+        started_at = perf_counter()
+        normalized_content = raw_content.strip()[:12000]
         prompt = f"""Convert this job description into JSON only. Use this shape:
 {{"title":"","company":"","location":"","employment_type":"","seniority":"","responsibilities":[""],"required_skills":[""],"preferred_skills":[""],"education_requirements":[""],"language_requirements":[""],"keywords":[""],"summary":""}}.
 Separate strict requirements from preferred qualifications. Use empty strings or arrays where information is absent. Do not infer unsupported facts.
 SOURCE URL: {source_url or "not provided"}
 JOB DESCRIPTION:
-{raw_content[:30000]}"""
+{normalized_content}"""
         result = await self._invoke_json(prompt)
-        return {
+        normalized = {
             "title": str(result.get("title") or ""),
             "company": str(result.get("company") or ""),
             "location": str(result.get("location") or ""),
@@ -103,6 +143,13 @@ JOB DESCRIPTION:
             "keywords": self._string_list(result.get("keywords")),
             "summary": str(result.get("summary") or ""),
         }
+        self._write_normalized_cache(raw_content, source_url, normalized)
+        logger.info(
+            "Career job normalization completed in %.0fms input_chars=%s",
+            (perf_counter() - started_at) * 1000,
+            len(normalized_content),
+        )
+        return normalized
 
     async def generate_tailored_resume(
         self,

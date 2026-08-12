@@ -6,6 +6,65 @@ from dataclasses import dataclass
 
 ASSESSMENT_VERSION = "rubric-v2"
 
+NON_ANSWER_MARKERS = (
+    "不知道",
+    "不清楚",
+    "不了解",
+    "不太了解",
+    "没了解过",
+    "没接触过",
+    "没有接触过",
+    "没做过",
+    "没有做过",
+    "不熟悉",
+    "不太会",
+    "不会",
+    "答不上来",
+    "无法回答",
+    "不记得",
+    "想不起来",
+    "没有相关经验",
+    "无相关经验",
+)
+
+
+def is_non_answer(answer: str | None) -> bool:
+    """Return whether the candidate explicitly declines or cannot answer."""
+    normalized = "".join(str(answer or "").lower().split())
+    if not normalized:
+        return True
+    markers = [marker for marker in NON_ANSWER_MARKERS if marker in normalized]
+    if not markers:
+        return False
+    for marker in markers:
+        suffix = normalized[normalized.find(marker) + len(marker):]
+        if len(suffix) >= 8 and any(conjunction in suffix for conjunction in ("但是", "不过", "但我", "同时", "我会", "可以")):
+            continue
+        return True
+    return False
+
+
+def is_countable_answer(answer: str | None, *, has_previous_question: bool = True) -> bool:
+    """Use one deterministic rule for interview counters, evaluation and reports."""
+    normalized = "".join(str(answer or "").lower().split())
+    if not has_previous_question or not normalized:
+        return False
+    if normalized in {"开始面试", "开始", "继续", "开始吧", "可以开始了", "继续面试"}:
+        return False
+    return not is_non_answer(normalized)
+
+
+def count_countable_answers(chat_messages: list[dict]) -> int:
+    return sum(
+        1
+        for message in chat_messages
+        if (
+            bool(message["answer_counted"])
+            if message.get("answer_counted") is not None
+            else is_countable_answer(message.get("user_message"))
+        )
+    )
+
 
 @dataclass(frozen=True)
 class RubricDimensionSpec:

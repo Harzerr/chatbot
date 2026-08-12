@@ -14,6 +14,7 @@ from app.schemas.chat import (
     VoiceInterviewReportRequest,
 )
 from app.services.interview_kit import get_recommended_resources
+from app.services.interview_assessment import is_countable_answer
 
 
 class ReportNarrative(BaseModel):
@@ -286,7 +287,13 @@ class InterviewReportBuilder:
             evaluation = msg.get("evaluation")
 
             # 当前用户回答对应上一轮面试官问题，确保抓取全程问答，不依赖 evaluation 是否存在。
-            if pending_question and candidate_answer:
+            answer_counted = msg.get("answer_counted")
+            is_valid_answer = (
+                bool(answer_counted)
+                if answer_counted is not None
+                else is_countable_answer(candidate_answer)
+            )
+            if pending_question and is_valid_answer:
                 reference_answer = self._format_reference_answer_from_evaluation(evaluation) if evaluation else ""
                 if not reference_answer:
                     missing.append((len(items), pending_question))

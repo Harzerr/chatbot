@@ -44,10 +44,22 @@ class Settings(BaseSettings):
     EMBEDDING_DIMENSIONS: int = 768
     EMBEDDING_MAX_RETRIES: int = 2
     EMBEDDING_RETRY_INTERVAL: float = 0.8
-    LLM_MODEL: str = "openai/gpt-4o-mini"
+    EMBEDDING_TIMEOUT: float = 15.0
+    LLM_MODEL: str = "deepseek/deepseek-v4-flash"
+    LLM_MAX_TOKENS: int = 512
+    LLM_TIMEOUT: float = 30.0
     CAREER_LLM_MODEL: str = "deepseek/deepseek-v4-flash"
+    CAREER_LLM_MAX_TOKENS: int = 768
+    CAREER_LLM_TIMEOUT: float = 30.0
     # Interview traffic uses a model available in the server's OpenRouter region.
     INTERVIEW_LLM_MODEL: str = "deepseek/deepseek-v4-flash"
+    INTERVIEW_LLM_MAX_TOKENS: int = 1024
+    INTERVIEW_LLM_TIMEOUT: float = 30.0
+    EVALUATION_LLM_MODEL: str = "deepseek/deepseek-v4-flash"
+    EVALUATION_LLM_MAX_TOKENS: int = 1536
+    EVALUATION_LLM_TIMEOUT: float = 30.0
+    # Keep memory extraction independent from the general-chat model's regional availability.
+    MEMORY_LLM_MODEL: str = "deepseek/deepseek-v4-flash"
     PDFTOTEXT_PATH: str = ""
     RESUME_MAX_BYTES: int = 10 * 1024 * 1024
     RESUME_OCR_MAX_PAGES: int = 8
@@ -58,6 +70,11 @@ class Settings(BaseSettings):
     RESUME_QUEUE_NAME: str = "resume_parse"
     # 单位s
     RESUME_QUEUE_TIMEOUT: int = 900
+    CODE_QUEUE_NAME: str = "code_execution"
+    CODE_QUEUE_TIMEOUT: int = 90
+    EVALUATION_QUEUE_NAME: str = "interview_evaluation"
+    EVALUATION_QUEUE_TIMEOUT: int = 120
+    CAREER_JOB_CACHE_TTL_SECONDS: int = 1800
 
     STT_API_URL: str = "http://127.0.0.1:8000/v1/"
     LLM_API_URL: str = "http://127.0.0.1:11434/v1/"
@@ -84,12 +101,14 @@ class Settings(BaseSettings):
     JUDGE0_API_URL: str = "http://127.0.0.1:2358"
     JUDGE0_API_KEY: str = ""
     JUDGE0_TIMEOUT: float = 20.0
+    JUDGE0_POLL_INTERVAL: float = 0.5
+    JUDGE0_CACHE_TTL_SECONDS: int = 900
     # Judge0 1.13 requires this mode on hosts using cgroup v2.
     JUDGE0_WINDOWS_COMPAT_MODE: bool = True
     JUDGE0_WINDOWS_MEMORY_LIMIT_KB: int = 1048576
     JUDGE0_JAVA_MEMORY_LIMIT_KB: int = 4194304
     MEM0_ADD_TIMEOUT: float = 20.0
-    MEM0_ADD_RETRIES: int = 1
+    MEM0_ADD_RETRIES: int = 0
     MEM0_SEARCH_TIMEOUT: float = 10.0
     LLM_INPUT_USD_PER_1M: float = 0.0
     LLM_OUTPUT_USD_PER_1M: float = 0.0

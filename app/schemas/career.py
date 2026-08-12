@@ -126,3 +126,28 @@ class ResumeDocumentUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
     content: dict[str, Any] | None = None
     status: str | None = Field(default=None, pattern=r"^[a-z_]{1,32}$")
+
+
+DocumentType = Literal["technical_doc", "code", "other"]
+
+
+class CareerKnowledgeDocumentRead(BaseModel):
+    id: int
+    fact_id: int | None = None
+    title: str
+    file_name: str
+    document_type: DocumentType
+    content_type: str
+    content_text: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    source_hash: str
+    is_archived: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class CareerKnowledgeDocumentUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    document_type: DocumentType | None = None
+    content_text: str | None = Field(default=None, min_length=1, max_length=100000)
+    is_archived: bool | None = None

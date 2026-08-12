@@ -1,21 +1,25 @@
 import asyncio
 import json
 import re
+from pathlib import Path
+from time import perf_counter
 from typing import Annotated, Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.db.session import get_db
-from app.models.career import CareerFact, JobPosting, ResumeDocument
+from app.models.career import CareerFact, CareerKnowledgeDocument, JobPosting, ResumeDocument
 from app.models.user import User
 from app.schemas.career import (
     CareerFactCreate,
     CareerFactRead,
     CareerFactUpdate,
+    CareerKnowledgeDocumentRead,
+    CareerKnowledgeDocumentUpdate,
     FactExtractionResponse,
     FactExtractionWarning,
     JobImportRequest,
@@ -28,10 +32,13 @@ from app.schemas.career import (
     TailoredResumeRequest,
 )
 from app.services.career_studio import CareerStudioService
+from app.utils.logger import setup_logger
 from app.services.resume_tex_renderer import build_tex_bundle, compile_resume_pdf
+from app.services.career_knowledge import edited_source_hash, parse_document
 
 router = APIRouter()
 career_studio = CareerStudioService()
+logger = setup_logger(__name__)
 
 
 def _json_load(value: str, fallback: Any) -> Any:
@@ -334,6 +341,130 @@ async def _owned_resume(db: AsyncSession, user_id: int, resume_id: int) -> Resum
     return document
 
 
+async def _owned_knowledge_document(db: AsyncSession, user_id: int, document_id: int) -> CareerKnowledgeDocument:
+    document = await db.scalar(
+        select(CareerKnowledgeDocument).where(
+            CareerKnowledgeDocument.id == document_id,
+            CareerKnowledgeDocument.user_id == user_id,
+        )
+    )
+    if not document:
+        raise HTTPException(status_code=404, detail="Knowledge document not found")
+    return document
+
+
+def _knowledge_document_response(document: CareerKnowledgeDocument) -> CareerKnowledgeDocumentRead:
+    return CareerKnowledgeDocumentRead(
+        id=document.id,
+        fact_id=document.fact_id,
+        title=document.title,
+        file_name=document.file_name,
+        document_type=document.document_type,
+        content_type=document.content_type,
+        content_text=document.content_text,
+        metadata=_json_load(document.metadata_json, {}),
+        source_hash=document.source_hash,
+        is_archived=document.is_archived,
+        created_at=document.created_at,
+        updated_at=document.updated_at,
+    )
+
+
+@router.get("/documents", response_model=list[CareerKnowledgeDocumentRead])
+async def list_knowledge_documents(
+    include_archived: bool = False,
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+    current_user: Annotated[User, Depends(get_current_user)] = None,
+) -> list[CareerKnowledgeDocumentRead]:
+    query = select(CareerKnowledgeDocument).where(CareerKnowledgeDocument.user_id == current_user.id)
+    if not include_archived:
+        query = query.where(CareerKnowledgeDocument.is_archived.is_(False))
+    rows = (await db.scalars(query.order_by(CareerKnowledgeDocument.updated_at.desc()))).all()
+    return [_knowledge_document_response(document) for document in rows]
+
+
+@router.post("/documents/upload", response_model=CareerKnowledgeDocumentRead, status_code=status.HTTP_201_CREATED)
+async def upload_knowledge_document(
+    file: UploadFile = File(...),
+    fact_id: int = Form(...),
+    title: str | None = Form(default=None),
+    db: Annotated[AsyncSession, Depends(get_db)] = None,
+    current_user: Annotated[User, Depends(get_current_user)] = None,
+) -> CareerKnowledgeDocumentRead:
+    file_name = Path(file.filename or "uploaded-document").name[:255]
+    if Path(file_name).suffix.lower() != ".md":
+        raise HTTPException(status_code=400, detail="技术资料目前只支持 Markdown（.md）文件")
+    fact = await _owned_fact(db, current_user.id, fact_id)
+    if fact.fact_type != "project":
+        raise HTTPException(status_code=400, detail="技术文档只能绑定到项目事实")
+    data = await file.read(10 * 1024 * 1024 + 1)
+    try:
+        parsed = parse_document(file_name, file.content_type, data, "technical_doc")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    document = CareerKnowledgeDocument(
+        user_id=current_user.id,
+        fact_id=fact_id,
+        title=(title or Path(file_name).stem or "未命名技术资料").strip()[:255],
+        file_name=file_name,
+        document_type=parsed["document_type"],
+        content_type=file.content_type or "application/octet-stream",
+        content_text=parsed["content_text"],
+        metadata_json=json.dumps(parsed["metadata"], ensure_ascii=False),
+        source_hash=parsed["source_hash"],
+    )
+    db.add(document)
+    await db.commit()
+    await db.refresh(document)
+    return _knowledge_document_response(document)
+
+
+@router.put("/documents/{document_id}", response_model=CareerKnowledgeDocumentRead)
+async def update_knowledge_document(
+    document_id: int,
+    payload: CareerKnowledgeDocumentUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> CareerKnowledgeDocumentRead:
+    document = await _owned_knowledge_document(db, current_user.id, document_id)
+    updates = payload.model_dump(exclude_unset=True)
+    if "title" in updates:
+        title = updates["title"].strip()
+        if not title:
+            raise HTTPException(status_code=400, detail="资料名称不能为空")
+        document.title = title
+    if "document_type" in updates:
+        document.document_type = updates["document_type"]
+    if "content_text" in updates:
+        content_text = updates["content_text"].strip()
+        if not content_text:
+            raise HTTPException(status_code=400, detail="资料正文不能为空")
+        document.content_text = content_text
+        metadata = _json_load(document.metadata_json, {})
+        metadata.update({"edited_in_ui": True, "character_count": len(document.content_text), "parser": "editor"})
+        document.metadata_json = json.dumps(metadata, ensure_ascii=False)
+        document.source_hash = edited_source_hash(document.content_text)
+    if "is_archived" in updates:
+        document.is_archived = updates["is_archived"]
+    await db.commit()
+    await db.refresh(document)
+    return _knowledge_document_response(document)
+
+
+@router.delete("/documents/{document_id}", response_model=CareerKnowledgeDocumentRead)
+async def archive_knowledge_document(
+    document_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> CareerKnowledgeDocumentRead:
+    document = await _owned_knowledge_document(db, current_user.id, document_id)
+    document.is_archived = True
+    await db.commit()
+    await db.refresh(document)
+    return _knowledge_document_response(document)
+
+
 @router.get("/facts", response_model=list[CareerFactRead])
 async def list_facts(
     include_archived: bool = False,
@@ -551,6 +682,7 @@ async def import_job(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> JobPostingRead:
+    started_at = perf_counter()
     source_url = str(payload.source_url) if payload.source_url else None
     try:
         raw_content = payload.raw_content or await career_studio.fetch_job_page(source_url or "")
@@ -572,6 +704,13 @@ async def import_job(
     db.add(job)
     await db.commit()
     await db.refresh(job)
+    logger.info(
+        "Career job import completed in %.0fms source_url=%s raw_chars=%s job_id=%s",
+        (perf_counter() - started_at) * 1000,
+        bool(source_url),
+        len(raw_content),
+        job.id,
+    )
     return _job_response(job)
 
 
