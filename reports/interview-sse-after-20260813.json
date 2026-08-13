@@ -1,0 +1,179 @@
+{
+  "started_at": "2026-08-13T08:12:35.217519+00:00",
+  "base_url": "http://127.0.0.1:8000",
+  "mode": "scenario",
+  "requests": 6,
+  "concurrency": 3,
+  "persist_wait_seconds": 2.0,
+  "queue_wait_seconds": 5.0,
+  "worker_assumption": "temporary RQ worker for interview_evaluation",
+  "resource": {
+    "backend_rss_before_mb": 549.29,
+    "backend_rss_after_mb": 496.64
+  },
+  "queue": {
+    "before": {
+      "queued": 0,
+      "started": 0,
+      "failed": 12,
+      "finished": 1
+    },
+    "after": {
+      "queued": 2,
+      "started": 1,
+      "failed": 12,
+      "finished": 1
+    }
+  },
+  "summary": {
+    "requests": 12,
+    "successes": 12,
+    "failure_rate": 0.0,
+    "ttft_ms": {
+      "avg": 13352.29,
+      "p50": 11536.15,
+      "p95": 31627.51,
+      "max": 31627.51
+    },
+    "total_ms": {
+      "avg": 15819.15,
+      "p50": 12652.6,
+      "p95": 32438.37,
+      "max": 32438.37
+    }
+  },
+  "results": [
+    {
+      "phase": "opening",
+      "status_code": 200,
+      "success": true,
+      "ttft_ms": 31627.51,
+      "total_ms": 32438.37,
+      "chunks": 15,
+      "content_chars": 147,
+      "error": null,
+      "content_preview": "你简历里提到面面通项目用 LangGraph 编排了 Agent 工作流，还接了多个工具节点。先简单用两三句话描述一下，这个 Agent 从收到用户请求到最终返回回答，核心的工作流程是怎么走的？比如 Supervisor 和 Researc"
+    },
+    {
+      "phase": "answer_and_queue_evaluation",
+      "status_code": 200,
+      "success": true,
+      "ttft_ms": 6399.84,
+      "total_ms": 6953.16,
+      "chunks": 25,
+      "content_chars": 84,
+      "error": null,
+      "content_preview": "你提到了用 Redis 和 RQ 把评估任务异步拆分出去。这个决策是怎么做的——为什么选择 RQ 而不是 Celery 或者直接在线程池里跑？当时有没有对比过其他方案？"
+    },
+    {
+      "phase": "opening",
+      "status_code": 200,
+      "success": true,
+      "ttft_ms": 17724.73,
+      "total_ms": 23026.38,
+      "chunks": 35,
+      "content_chars": 142,
+      "error": null,
+      "content_preview": "你好，我是今天的一面面试官。先做个简单的开场：你简历里提到在“面面通”项目里用 FastAPI 做了后端，同时用 LangGraph 编排 Agent。那我先问个基础问题——你在这个项目里用到了 RAG，能说说你理解的 RAG 检索增强生成"
+    },
+    {
+      "phase": "answer_and_queue_evaluation",
+      "status_code": 200,
+      "success": true,
+      "ttft_ms": 13617.52,
+      "total_ms": 21543.79,
+      "chunks": 40,
+      "content_chars": 106,
+      "error": null,
+      "content_preview": "好的，我们直接开始。首先核实一个基础问题：在面面通项目里，你提到了使用 RQ 做异步任务。如果评估任务执行过程中进程意外中断，RQ 的默认行为会怎么处理这个任务？你们在上线时有没有针对这种场景做过额外的保障设计？"
+    },
+    {
+      "phase": "opening",
+      "status_code": 200,
+      "success": true,
+      "ttft_ms": 19245.7,
+      "total_ms": 20551.49,
+      "chunks": 19,
+      "content_chars": 162,
+      "error": null,
+      "content_preview": "你好，我是今天的一轮面试官。我们直接开始。\n\n你简历里面面通项目用 LangGraph 做了 Agent 编排，也接入了工具调用。我想先问一个基础问题：在你们那个 Tool Calling 流程里，模型是怎么判断“当前信息足够回答用户”就直"
+    },
+    {
+      "phase": "answer_and_queue_evaluation",
+      "status_code": 200,
+      "success": true,
+      "ttft_ms": 10239.09,
+      "total_ms": 11234.54,
+      "chunks": 56,
+      "content_chars": 223,
+      "error": null,
+      "content_preview": "你提到了后端和异步任务设计，但我想先聚焦在 Tool Calling 的决策机制上。你刚才说的这部分和 LangGraph 里模型判断“是否继续调用工具”的逻辑关系不大。\n\n我再问得具体一点：在你们面面通项目的 LangGraph 工作流里"
+    },
+    {
+      "phase": "opening",
+      "status_code": 200,
+      "success": true,
+      "ttft_ms": 9353.89,
+      "total_ms": 10070.28,
+      "chunks": 37,
+      "content_chars": 168,
+      "error": null,
+      "content_preview": "好的，我们开始。你的简历里提到在“面面通”项目中使用了 LangGraph 编排 Agent 工作流，并且通过 MCP 实现了工具调用。我们先从基础聊起，你能否解释一下，在 LangGraph 的 Supervisor 节点里，你是如何决定"
+    },
+    {
+      "phase": "answer_and_queue_evaluation",
+      "status_code": 200,
+      "success": true,
+      "ttft_ms": 9916.64,
+      "total_ms": 10520.66,
+      "chunks": 28,
+      "content_chars": 145,
+      "error": null,
+      "content_preview": "你提到了后端和异步任务，但我问的是 LangGraph 里 Supervisor 的路由逻辑。你简历上写的是用 LangGraph 编排 Agent，那 Supervisor 具体是怎么判断一个请求该走 Researcher 还是 Skil"
+    },
+    {
+      "phase": "opening",
+      "status_code": 200,
+      "success": true,
+      "ttft_ms": 6934.42,
+      "total_ms": 12652.6,
+      "chunks": 38,
+      "content_chars": 142,
+      "error": null,
+      "content_preview": "好的，我们开始。你简历里提到在“面面通”项目里用到了 LangGraph 编排 Agent 工作流，并且接入了 MCP 来实现工具调用。先问一个基础问题：当 Agent 需要调用一个外部工具时，从模型发出 tool call 到工具真正执行"
+    },
+    {
+      "phase": "answer_and_queue_evaluation",
+      "status_code": 200,
+      "success": true,
+      "ttft_ms": 14040.19,
+      "total_ms": 18552.07,
+      "chunks": 37,
+      "content_chars": 117,
+      "error": null,
+      "content_preview": "好，我们先从岗位相关的基础切入。你简历里提到面面通项目用 FastAPI 搭后端，还用了 Redis 做异步任务。问一个偏实际的问题：你当时为什么选择 RQ 而不是 Celery 来处理异步评估任务？你在技术选型时主要考虑了哪些因素？"
+    },
+    {
+      "phase": "opening",
+      "status_code": 200,
+      "success": true,
+      "ttft_ms": 9591.8,
+      "total_ms": 10106.87,
+      "chunks": 43,
+      "content_chars": 157,
+      "error": null,
+      "content_preview": "好的，我们开始。你简历里提到在“面面通”项目里用 LangGraph 编排了 Agent 工作流，并且接入了 MCP 来调用搜索和网页抓取工具。我想先确认一个基础问题：当 Agent 需要调用工具时，从收到用户请求到最终返回回答，这个过程中"
+    },
+    {
+      "phase": "answer_and_queue_evaluation",
+      "status_code": 200,
+      "success": true,
+      "ttft_ms": 11536.15,
+      "total_ms": 12179.59,
+      "chunks": 35,
+      "content_chars": 128,
+      "error": null,
+      "content_preview": "你提到了后端接口和异步任务设计，这属于项目架构的一部分。但我刚才问的是 Agent 调用工具的决策过程——模型怎么知道该调哪个工具、什么时候停。你简历和项目文档里提到用 LangChain ReAct Agent 管理这个循环，能具体说一下"
+    }
+  ]
+}

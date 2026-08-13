@@ -22,6 +22,7 @@ from app.schemas.career import (
     CareerKnowledgeDocumentUpdate,
     FactExtractionResponse,
     FactExtractionWarning,
+    MarkdownFactExtractionResponse,
     JobImportRequest,
     JobPostingRead,
     JobPostingUpdate,
@@ -32,6 +33,7 @@ from app.schemas.career import (
     TailoredResumeRequest,
 )
 from app.services.career_studio import CareerStudioService
+from app.services.task_queue import QueueUnavailable, enqueue_career_fact_job, get_career_fact_job
 from app.utils.logger import setup_logger
 from app.services.resume_tex_renderer import build_tex_bundle, compile_resume_pdf
 from app.services.career_knowledge import edited_source_hash, parse_document
@@ -589,6 +591,80 @@ async def extract_resume_facts(
         )
     except ValueError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@router.post("/facts/extract-from-markdown", response_model=MarkdownFactExtractionResponse, status_code=status.HTTP_202_ACCEPTED)
+async def extract_fact_from_markdown(
+    file: UploadFile = File(...),
+    current_user: Annotated[User, Depends(get_current_user)] = None,
+) -> MarkdownFactExtractionResponse:
+    file_name = Path(file.filename or "uploaded-document").name[:255]
+    if Path(file_name).suffix.lower() != ".md":
+        raise HTTPException(status_code=400, detail="事实提炼目前只支持 Markdown（.md）文件")
+    data = await file.read(10 * 1024 * 1024 + 1)
+    try:
+        parsed = parse_document(file_name, file.content_type, data, "technical_doc")
+        source_document = {
+            "file_name": file_name,
+            "title": Path(file_name).stem[:255] or "未命名技术资料",
+            "document_type": parsed["document_type"],
+            "content_type": file.content_type or "text/markdown",
+            "character_count": parsed["metadata"].get("character_count", len(parsed["content_text"])),
+            "source_hash": parsed["source_hash"],
+        }
+        queue_job = enqueue_career_fact_job(
+            {"file_name": file_name, "content_text": parsed["content_text"], "source_document": source_document},
+            current_user.id,
+        )
+    except QueueUnavailable as exc:
+        raise HTTPException(status_code=503, detail="事实提炼队列暂时不可用，请稍后重试。") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Markdown 事实任务创建失败：{str(exc).splitlines()[0][:300]}") from exc
+
+    return MarkdownFactExtractionResponse(
+        job_id=queue_job.id,
+        source_document=source_document,
+        status="queued",
+        message="Markdown 已上传，正在后台提炼项目事实。",
+    )
+
+
+@router.get("/facts/extract-from-markdown/jobs/{job_id}", response_model=MarkdownFactExtractionResponse)
+async def read_markdown_fact_job(
+    job_id: str,
+    current_user: Annotated[User, Depends(get_current_user)] = None,
+) -> MarkdownFactExtractionResponse:
+    try:
+        job = get_career_fact_job(job_id)
+    except QueueUnavailable as exc:
+        raise HTTPException(status_code=503, detail="事实提炼队列暂时不可用，请稍后重试。") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="事实提炼任务不存在或已过期。") from exc
+    if str(job.meta.get("user_id")) != str(current_user.id):
+        raise HTTPException(status_code=404, detail="事实提炼任务不存在。")
+
+    status_value = job.get_status(refresh=True)
+    if status_value in {"queued", "started", "deferred", "scheduled"}:
+        return MarkdownFactExtractionResponse(job_id=job.id, status="processing", message="AI 正在提炼项目事实，请稍候。")
+    if status_value == "failed":
+        return MarkdownFactExtractionResponse(job_id=job.id, status="failed", message="Markdown 事实提炼失败，请检查文档后重试。")
+    if status_value != "finished" or not isinstance(job.result, dict):
+        return MarkdownFactExtractionResponse(job_id=job.id, status="processing", message="AI 正在提炼项目事实，请稍候。")
+    try:
+        result = job.result
+        return MarkdownFactExtractionResponse(
+            job_id=job.id,
+            fact=CareerFactCreate.model_validate(result.get("fact")),
+            source_document=result.get("source_document") or {},
+            warnings=result.get("warnings") or [],
+            quality=result.get("quality") or {},
+            status=result.get("status") or "draft",
+            message=result.get("message") or "已从 Markdown 提取项目事实草稿，请核对后保存。",
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Markdown 事实结果校验失败：{str(exc).splitlines()[0][:300]}") from exc
 
 
 @router.post("/profile/import", response_model=ResumeProfileImportResponse)

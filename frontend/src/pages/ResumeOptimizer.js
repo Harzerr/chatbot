@@ -260,7 +260,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
   const updateItem = (sectionIndex, itemIndex, value) => {
     onChange(updateSection(content, sectionIndex, (section) => {
       const next = { ...section, items: [...(section.items || [])] };
-      next.items[itemIndex] = { ...next.items[itemIndex], text: value };
+      next.items[itemIndex] = { ...next.items[itemIndex], label: '', text: value };
       return next;
     }));
   };
@@ -392,7 +392,7 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
       key: `${key}-item-${itemIndex}`,
       node: (() => {
         const style = getSectionStyle(key);
-        return <Box sx={{ breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${style.fontSize}pt`, fontWeight: style.fontWeight, color: style.color }}>{itemIndex === 0 && visibleEntries.length === 0 && sectionHeading(section.heading)}<Box sx={{ position: 'relative', display: 'flex', alignItems: 'flex-start', width: '100%' }}><ResumeBulletMarker editable={showEditTools} onDelete={() => deleteItem(sectionIndex, itemIndex)} /><RichTextEditor value={item.text || item.label || ''} onChange={(value) => updateItem(sectionIndex, itemIndex, value)} onBackspaceAtStart={() => deleteItem(sectionIndex, itemIndex)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} />{showEditTools && <Tooltip title="删除要点"><IconButton size="small" color="error" onClick={() => deleteItem(sectionIndex, itemIndex)} sx={{ position: 'absolute', right: -26, top: -4, p: 0.25 }}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></Tooltip>}</Box></Box>;
+        return <Box sx={{ breakInside: 'avoid', pageBreakInside: 'avoid', fontSize: `${style.fontSize}pt`, fontWeight: style.fontWeight, color: style.color }}>{itemIndex === 0 && visibleEntries.length === 0 && sectionHeading(section.heading)}<Box sx={{ position: 'relative', display: 'flex', alignItems: 'flex-start', width: '100%' }}><ResumeBulletMarker editable={showEditTools} onDelete={() => deleteItem(sectionIndex, itemIndex)} /><RichTextEditor value={editorValueForItem(item)} onChange={(value) => updateItem(sectionIndex, itemIndex, value)} onBackspaceAtStart={() => deleteItem(sectionIndex, itemIndex)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} />{showEditTools && <Tooltip title="删除要点"><IconButton size="small" color="error" onClick={() => deleteItem(sectionIndex, itemIndex)} sx={{ position: 'absolute', right: -26, top: -4, p: 0.25 }}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></Tooltip>}</Box></Box>;
       })(),
     }));
   });

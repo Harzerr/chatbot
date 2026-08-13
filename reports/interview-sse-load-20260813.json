@@ -1,0 +1,113 @@
+{
+  "started_at": "2026-08-13T05:56:25.806333+00:00",
+  "base_url": "http://127.0.0.1:8000",
+  "mode": "scenario",
+  "requests": 3,
+  "concurrency": 2,
+  "persist_wait_seconds": 2.0,
+  "queue_wait_seconds": 5.0,
+  "worker_assumption": "temporary RQ worker for interview_evaluation",
+  "resource": {
+    "backend_rss_before_mb": 49.56,
+    "backend_rss_after_mb": 113.5
+  },
+  "queue": {
+    "before": {
+      "queued": 0,
+      "started": 0,
+      "failed": 8,
+      "finished": 1
+    },
+    "after": {
+      "queued": 1,
+      "started": 1,
+      "failed": 8,
+      "finished": 1
+    }
+  },
+  "summary": {
+    "requests": 6,
+    "successes": 6,
+    "failure_rate": 0.0,
+    "ttft_ms": {
+      "avg": 13106.4,
+      "p50": 16485.95,
+      "p95": 19707.49,
+      "max": 19707.49
+    },
+    "total_ms": {
+      "avg": 14646.52,
+      "p50": 18276.32,
+      "p95": 21739.41,
+      "max": 21739.41
+    }
+  },
+  "results": [
+    {
+      "phase": "opening",
+      "status_code": 200,
+      "success": true,
+      "ttft_ms": 19707.49,
+      "total_ms": 21739.41,
+      "chunks": 42,
+      "content_chars": 150,
+      "error": null,
+      "content_preview": "好，我们开始。你简历里提到用 FastAPI 做 AI 模拟面试平台的后端，那先问一个基础问题：FastAPI 的依赖注入系统是怎么工作的？你在项目中怎么用它来组织像简历解析、会话管理这类逻辑的？另外，FastAPI 处理异步任务时，如果某"
+    },
+    {
+      "phase": "answer_and_queue_evaluation",
+      "status_code": 200,
+      "success": true,
+      "ttft_ms": 7665.27,
+      "total_ms": 10655.43,
+      "chunks": 38,
+      "content_chars": 143,
+      "error": null,
+      "content_preview": "你提到了用 Redis 和 RQ 把评估任务异步化，那具体说一下：你当时是怎么设计这个异步流程的？比如用户提交面试回答之后，从接口收到请求到最终返回报告，中间经过了哪些步骤？RQ 的任务队列是怎么和 FastAPI 的事件循环配合的，有没有"
+    },
+    {
+      "phase": "opening",
+      "status_code": 200,
+      "success": true,
+      "ttft_ms": 17951.88,
+      "total_ms": 19568.0,
+      "chunks": 20,
+      "content_chars": 170,
+      "error": null,
+      "content_preview": "好的，严清兰，欢迎你参加今天的面试。我是今天的面试官，接下来会从技术基础开始，逐步深入聊一聊你的项目经历。\n\n我看到你简历里提到了“面面通”这个项目，用到了 FastAPI 和 LangGraph，并且集成了 RAG 能力。那你先说说，在你"
+    },
+    {
+      "phase": "answer_and_queue_evaluation",
+      "status_code": 200,
+      "success": true,
+      "ttft_ms": 7807.62,
+      "total_ms": 7830.84,
+      "chunks": 45,
+      "content_chars": 84,
+      "error": null,
+      "content_preview": "你提到了用 Redis 和 RQ 来拆分评估任务。那我想问一个具体的技术选型问题：为什么当时选择了 RQ 而不是 Celery 来做异步任务队列？你主要考虑了哪些因素？"
+    },
+    {
+      "phase": "opening",
+      "status_code": 200,
+      "success": true,
+      "ttft_ms": 16485.95,
+      "total_ms": 18276.32,
+      "chunks": 29,
+      "content_chars": 134,
+      "error": null,
+      "content_preview": "你好，我是今天负责你一面面试的算法工程师。我们直接开始。\n\n你简历里提到在“面面通”项目中用到了向量检索来做岗位知识召回，这其实是一个典型的 RAG 场景。你先说说，一个完整的 RAG 流程通常包含哪几个关键环节？你在设计的时候，对检索质量"
+    },
+    {
+      "phase": "answer_and_queue_evaluation",
+      "status_code": 200,
+      "success": true,
+      "ttft_ms": 9020.17,
+      "total_ms": 9809.11,
+      "chunks": 76,
+      "content_chars": 136,
+      "error": null,
+      "content_preview": "你提到了工程层面的异步拆分和监控，这个设计思路是合理的。不过我想先回到 RAG 本身——你项目中用 Qdrant 做向量检索，那检索阶段你具体用了什么策略来保证召回的相关性？生成阶段又怎么控制模型不要偏离检索到的上下文？另外，你提到的“通过"
+    }
+  ]
+}

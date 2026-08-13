@@ -13,10 +13,16 @@ from app.agent.langgraph_agent import get_graph, create_initial_state
 from app.core.config import settings
 from app.schemas.chat import AnswerEvaluation
 from app.services.embedding_provider import get_mem0_embedder_config
+from app.services.conversation_context import render_history_context, select_history_context
+from app.services.conversation_summary import get_conversation_summary
 from app.services.vector_store import MultiTenantVectorStore
 from app.utils.logger import setup_logger
 from app.services.metrics import record_ai_metric
-from app.services.task_queue import QueueUnavailable, enqueue_evaluation_job
+from app.services.task_queue import (
+    QueueUnavailable,
+    enqueue_conversation_summary_job,
+    enqueue_evaluation_job,
+)
 from app.services.stream_context import StreamCallback, current_stream_callback
 
 logger = setup_logger(__name__)
@@ -129,10 +135,10 @@ class AISupport:
         self.__vector_store = vector_store
         self.__graph: CompiledStateGraph = get_graph()
 
-    def __build_conversation_history_messages(self, relevant_docs: list[dict]) -> list:
+    def __build_conversation_history_messages(self, history_context_docs: list[dict]) -> list:
         history_messages = []
 
-        for doc in relevant_docs[-6:]:
+        for doc in history_context_docs:
             question_text = (doc.get("user_message") or "").strip()
             answer_text = (doc.get("assistant_message") or "").strip()
 
@@ -184,7 +190,7 @@ class AISupport:
 
         memory_scope = _tenant_user_scope(tenant_id, user_id)
         memory_started_at = perf_counter()
-        memories, relevant_docs = await asyncio.gather(
+        memories, relevant_docs, conversation_summary = await asyncio.gather(
             self.__search_memory(question, memory_scope=memory_scope),
             asyncio.to_thread(
                 self.__vector_store.get_chat_by_id,
@@ -192,11 +198,56 @@ class AISupport:
                 user_id=user_id,
                 tenant_id=tenant_id,
             ),
+            asyncio.to_thread(get_conversation_summary, tenant_id, user_id, chat_id),
         )
         logger.info("Interview memory search completed in %.0fms", (perf_counter() - memory_started_at) * 1000)
 
         history_started_at = perf_counter()
-        logger.info("Interview chat-history retrieval completed in %.0fms", (perf_counter() - history_started_at) * 1000)
+        semantic_history_docs = []
+        if len(relevant_docs) > settings.INTERVIEW_HISTORY_RECENT_TURNS:
+            try:
+                semantic_history_docs = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        self.__vector_store.search_chat_by_id,
+                        query=question,
+                        chat_id=chat_id,
+                        user_id=user_id,
+                        tenant_id=tenant_id,
+                        limit=settings.INTERVIEW_HISTORY_RELEVANT_TURNS,
+                    ),
+                    timeout=settings.INTERVIEW_HISTORY_SEARCH_TIMEOUT,
+                )
+            except Exception as history_error:
+                logger.warning("Semantic chat-history search failed; using recent turns only: %s", history_error)
+
+        summary_content = str((conversation_summary or {}).get("content") or "").strip()
+        summary_evidence_docs = semantic_history_docs
+        history_relevant_turns = settings.INTERVIEW_HISTORY_RELEVANT_TURNS
+        if summary_content:
+            # The summary covers older turns; retain only a small number of raw
+            # evidence turns so the model can verify important details.
+            summary_evidence_docs = semantic_history_docs[: settings.CONVERSATION_SUMMARY_EVIDENCE_TURNS]
+            history_relevant_turns = settings.CONVERSATION_SUMMARY_EVIDENCE_TURNS
+
+        history_context_docs = select_history_context(
+            relevant_docs,
+            summary_evidence_docs,
+            recent_turns=(
+                settings.CONVERSATION_SUMMARY_RECENT_TURNS
+                if summary_content
+                else settings.INTERVIEW_HISTORY_RECENT_TURNS
+            ),
+            relevant_turns=history_relevant_turns,
+            max_chars=settings.INTERVIEW_HISTORY_CONTEXT_MAX_CHARS,
+        )
+
+        logger.info(
+            "Interview chat-history context built in %.0fms: stored=%s semantic=%s selected=%s",
+            (perf_counter() - history_started_at) * 1000,
+            len(relevant_docs),
+            len(semantic_history_docs),
+            len(history_context_docs),
+        )
         retrieval_count = len(relevant_docs)
         logger.info("Retrieved %s scoped chat-history records for chat_id=%s", len(relevant_docs), chat_id)
         previous_interviewer_question = relevant_docs[-1].get("assistant_message") if relevant_docs else None
@@ -204,15 +255,15 @@ class AISupport:
         if memories['results']:
             for memory in memories['results']:
                 context += f" - {memory['memory']}\n"
-        
-        if relevant_docs:
-            context += "\nRelevant chat history:\n"
-            for doc in relevant_docs[-4:]:
-                question_text = (doc.get("user_message", "") or "")[:800]
-                answer_text = (doc.get("assistant_message", "") or "")[:1000]
 
-                context += f" - User: {question_text}\n"
-                context += f" - Assistant: {answer_text}\n"
+        if summary_content:
+            context += "\nRolling conversation summary:\n"
+            context += summary_content
+        
+        rendered_history = render_history_context(history_context_docs)
+        if rendered_history:
+            context += "\nRelevant chat history:\n"
+            context += rendered_history
 
 
         thread_id = f"{memory_scope}:chat-{chat_id}"
@@ -250,6 +301,7 @@ class AISupport:
                 active_skill=active_skill,
                 previous_interviewer_question=previous_interviewer_question,
                 relevant_docs=relevant_docs,
+                history_context_docs=history_context_docs,
                 context=context,
                 interview_role=interview_role,
                 interview_level=interview_level,
@@ -277,7 +329,7 @@ class AISupport:
             evaluation_request = response_state.get("evaluation_request")
             answer_counted = bool(response_state.get("answer_counted", False))
         else:
-            history_messages = self.__build_conversation_history_messages(relevant_docs)
+            history_messages = self.__build_conversation_history_messages(history_context_docs)
             messages = [
                 SystemMessage(content=f"""You are a helpful AI assistant.
 
@@ -332,6 +384,7 @@ class AISupport:
                 evaluation=evaluation,
                 evaluation_request=evaluation_request,
                 answer_counted=answer_counted,
+                history_turn_count=len(relevant_docs) + 1,
             )
         )
 
@@ -364,6 +417,7 @@ class AISupport:
         evaluation: AnswerEvaluation | None,
         evaluation_request: dict | None,
         answer_counted: bool,
+        history_turn_count: int,
     ) -> None:
         memory_task = self.__add_memory(
             question,
@@ -435,6 +489,26 @@ class AISupport:
                     status="failed",
                     error_message=str(exc),
                 )
+
+        summary_trigger = settings.CONVERSATION_SUMMARY_TRIGGER_TURNS
+        summary_batch = max(1, settings.CONVERSATION_SUMMARY_BATCH_TURNS)
+        should_enqueue_summary = (
+            history_turn_count >= summary_trigger
+            and (history_turn_count - summary_trigger) % summary_batch == 0
+        )
+        if should_enqueue_summary:
+            try:
+                job = await asyncio.to_thread(
+                    enqueue_conversation_summary_job,
+                    {
+                        "tenant_id": str(tenant_id),
+                        "user_id": str(user_id),
+                        "chat_id": str(chat_id),
+                    },
+                )
+                logger.info("Conversation summary queued: chat_id=%s job_id=%s", chat_id, job.id)
+            except QueueUnavailable as exc:
+                logger.warning("Conversation summary queue unavailable: chat_id=%s error=%s", chat_id, exc)
 
     async def __add_memory(self, question, response, memory_scope: str, tenant_id: str):
         payload = f"User: {question}\nAssistant: {response}"

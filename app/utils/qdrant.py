@@ -43,6 +43,8 @@ def format_chat_results(points) -> List[Dict[str, Any]]:
             "evaluation_error": metadata.get("evaluation_error"),
             "answer_counted": metadata.get("answer_counted"),
         }
+        if getattr(point, "score", None) is not None:
+            chat_msg["_score"] = float(point.score)
         results.append(chat_msg)
 
     return results

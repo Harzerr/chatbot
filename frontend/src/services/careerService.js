@@ -7,6 +7,12 @@ const careerService = {
   archiveFact: async (id) => (await axios.delete(`/api/v1/career/facts/${id}`)).data,
   deleteFact: async (id) => (await axios.delete(`/api/v1/career/facts/${id}/permanently`)).data,
   extractFacts: async () => (await axios.post('/api/v1/career/facts/extract')).data,
+  extractFactFromMarkdown: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return (await axios.post('/api/v1/career/facts/extract-from-markdown', formData)).data;
+  },
+  getMarkdownFactJob: async (jobId) => (await axios.get(`/api/v1/career/facts/extract-from-markdown/jobs/${jobId}`)).data,
   listKnowledgeDocuments: async () => (await axios.get('/api/v1/career/documents')).data,
   uploadKnowledgeDocument: async ({ file, factId, title }) => {
     const formData = new FormData();

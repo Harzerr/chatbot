@@ -1,0 +1,179 @@
+{
+  "started_at": "2026-08-13T08:07:15.487145+00:00",
+  "base_url": "http://127.0.0.1:18000",
+  "mode": "scenario",
+  "requests": 6,
+  "concurrency": 3,
+  "persist_wait_seconds": 2.0,
+  "queue_wait_seconds": 5.0,
+  "worker_assumption": "temporary RQ worker for interview_evaluation",
+  "resource": {
+    "backend_rss_before_mb": 450.63,
+    "backend_rss_after_mb": 549.29
+  },
+  "queue": {
+    "before": {
+      "queued": 0,
+      "started": 0,
+      "failed": 12,
+      "finished": 1
+    },
+    "after": {
+      "queued": 0,
+      "started": 0,
+      "failed": 12,
+      "finished": 1
+    }
+  },
+  "summary": {
+    "requests": 12,
+    "successes": 12,
+    "failure_rate": 0.0,
+    "ttft_ms": {
+      "avg": 61332.01,
+      "p50": 58541.88,
+      "p95": 111512.74,
+      "max": 111512.74
+    },
+    "total_ms": {
+      "avg": 61332.81,
+      "p50": 58542.69,
+      "p95": 111513.43,
+      "max": 111513.43
+    }
+  },
+  "results": [
+    {
+      "phase": "opening",
+      "status_code": 200,
+      "success": true,
+      "ttft_ms": 25727.3,
+      "total_ms": 25728.19,
+      "chunks": 6,
+      "content_chars": 57,
+      "error": null,
+      "content_preview": "你简历里提到在面面通项目里用向量检索做岗位知识召回，那我们聊聊RAG。你理解的RAG，检索增强到底解决了什么问题？"
+    },
+    {
+      "phase": "answer_and_queue_evaluation",
+      "status_code": 200,
+      "success": true,
+      "ttft_ms": 97052.34,
+      "total_ms": 97052.94,
+      "chunks": 7,
+      "content_chars": 65,
+      "error": null,
+      "content_preview": "我问的是RAG解决的核心问题，不是你的项目分工。你理解一下，为什么一个AI面试系统需要引入检索增强，而不是直接让大模型凭知识回答？"
+    },
+    {
+      "phase": "opening",
+      "status_code": 200,
+      "success": true,
+      "ttft_ms": 40779.9,
+      "total_ms": 40780.92,
+      "chunks": 8,
+      "content_chars": 76,
+      "error": null,
+      "content_preview": "你好，欢迎参加这场面试。你先从你的专业知识做一个简短的自我介绍吧，重点说说你掌握的 AI 算法或者后端开发相关的技能，以及你觉得自己最擅长的方向是什么。"
+    },
+    {
+      "phase": "answer_and_queue_evaluation",
+      "status_code": 200,
+      "success": true,
+      "ttft_ms": 111512.74,
+      "total_ms": 111513.43,
+      "chunks": 8,
+      "content_chars": 76,
+      "error": null,
+      "content_preview": "你提到了用 Redis 和 RQ 做异步任务拆分。追问一下：你在实际使用 RQ 时，有没有遇到过任务丢失或 worker 崩溃的场景？当时是怎么处理的？"
+    },
+    {
+      "phase": "opening",
+      "status_code": 200,
+      "success": true,
+      "ttft_ms": 49587.27,
+      "total_ms": 49588.27,
+      "chunks": 16,
+      "content_chars": 153,
+      "error": null,
+      "content_preview": "好的，我们开始。先问一个基础问题：你简历里提到在“面面通”项目里用到了 LangGraph 编排 Agent 工作流，并且通过 MCP 实现了工具调用。请你解释一下，在一个基于 LLM 的 Agent 系统中，当模型决定调用一个工具时，从模"
+    },
+    {
+      "phase": "answer_and_queue_evaluation",
+      "status_code": 200,
+      "success": true,
+      "ttft_ms": 58541.88,
+      "total_ms": 58542.69,
+      "chunks": 12,
+      "content_chars": 114,
+      "error": null,
+      "content_preview": "你提到了异步任务拆分，这跟工具调用流程是两回事。我想回到刚才的问题上：当LLM返回一个tool_call指令时，后端具体怎么解析这个指令、怎么找到对应的工具函数、执行完后又怎么把结果塞回给模型继续推理？你项目里这块是怎么实现的？"
+    },
+    {
+      "phase": "opening",
+      "status_code": 200,
+      "success": true,
+      "ttft_ms": 43259.5,
+      "total_ms": 43260.31,
+      "chunks": 13,
+      "content_chars": 130,
+      "error": null,
+      "content_preview": "你好，我是今天的技术面试官。先简单聊一下，你简历里提到在“面面通”项目里用 FastAPI 做了后端，也用了 Redis 做异步任务。那我们先从基础开始——你讲讲 FastAPI 的异步机制是怎么工作的？比如它和传统 WSGI 框架在处理并"
+    },
+    {
+      "phase": "answer_and_queue_evaluation",
+      "status_code": 200,
+      "success": true,
+      "ttft_ms": 85676.25,
+      "total_ms": 85677.08,
+      "chunks": 13,
+      "content_chars": 126,
+      "error": null,
+      "content_preview": "你刚才描述的是项目里做了什么，但我问的是 FastAPI 的异步机制本身。你项目里用了 RQ 把任务拆出去，那说明主请求是异步的——如果我在你的接口里放一个阻塞的同步调用，比如 requests.post，放进 async def 接口里，"
+    },
+    {
+      "phase": "opening",
+      "status_code": 200,
+      "success": true,
+      "ttft_ms": 17785.78,
+      "total_ms": 17786.54,
+      "chunks": 12,
+      "content_chars": 112,
+      "error": null,
+      "content_preview": "好的，我们开始。先问一个基础问题。\n\n你简历里提到在“面面通”项目里用到了 **RAG** 和 **向量检索**。那你先说说，RAG 解决的核心问题是什么？在什么场景下你会觉得“这里必须上 RAG，而不是直接让大模型回答”？"
+    },
+    {
+      "phase": "answer_and_queue_evaluation",
+      "status_code": 200,
+      "success": true,
+      "ttft_ms": 97857.75,
+      "total_ms": 97858.76,
+      "chunks": 16,
+      "content_chars": 152,
+      "error": null,
+      "content_preview": "我问的是**RAG解决的核心问题**，以及你判断“该上RAG”的决策依据。你刚才描述的是你的任务调度架构，并没有回答这个问题。\n\n那换个角度：你项目中既然用到了向量检索做岗位知识召回，那这个召回是为了解决什么问题？如果不用RAG，直接靠La"
+    },
+    {
+      "phase": "opening",
+      "status_code": 200,
+      "success": true,
+      "ttft_ms": 35175.17,
+      "total_ms": 35175.75,
+      "chunks": 7,
+      "content_chars": 70,
+      "error": null,
+      "content_preview": "我们开始吧。先问个基础题：你简历里有RAG相关的经验，那说说RAG从用户提问到最终生成回答，核心流程是怎样的？你觉得哪个环节对效果影响最大？"
+    },
+    {
+      "phase": "answer_and_queue_evaluation",
+      "status_code": 200,
+      "success": true,
+      "ttft_ms": 73028.24,
+      "total_ms": 73028.89,
+      "chunks": 8,
+      "content_chars": 75,
+      "error": null,
+      "content_preview": "你提到用 Redis 和 RQ 把评估任务从主请求里拆出去，这个异步化是出于什么考虑？如果评估任务本身很快，拆出去反而增加复杂度，你怎么判断该不该拆？"
+    }
+  ]
+}

@@ -49,8 +49,11 @@ class Settings(BaseSettings):
     LLM_MAX_TOKENS: int = 512
     LLM_TIMEOUT: float = 30.0
     CAREER_LLM_MODEL: str = "deepseek/deepseek-v4-flash"
-    CAREER_LLM_MAX_TOKENS: int = 768
+    # Career extraction returns detailed bullets plus an evidence map.
+    CAREER_LLM_MAX_TOKENS: int = 1600
     CAREER_LLM_TIMEOUT: float = 30.0
+    CAREER_RESUME_MAX_TOKENS: int = 5000
+    CAREER_RESUME_TIMEOUT: float = 60.0
     # Interview traffic uses a model available in the server's OpenRouter region.
     INTERVIEW_LLM_MODEL: str = "deepseek/deepseek-v4-flash"
     INTERVIEW_LLM_MAX_TOKENS: int = 1024
@@ -70,10 +73,22 @@ class Settings(BaseSettings):
     RESUME_QUEUE_NAME: str = "resume_parse"
     # 单位s
     RESUME_QUEUE_TIMEOUT: int = 900
+    CAREER_FACT_QUEUE_NAME: str = "career_fact_extraction"
+    CAREER_FACT_QUEUE_TIMEOUT: int = 180
     CODE_QUEUE_NAME: str = "code_execution"
     CODE_QUEUE_TIMEOUT: int = 90
     EVALUATION_QUEUE_NAME: str = "interview_evaluation"
     EVALUATION_QUEUE_TIMEOUT: int = 120
+    CONVERSATION_SUMMARY_QUEUE_NAME: str = "conversation_summary"
+    CONVERSATION_SUMMARY_QUEUE_TIMEOUT: int = 180
+    CONVERSATION_SUMMARY_TRIGGER_TURNS: int = 8
+    CONVERSATION_SUMMARY_BATCH_TURNS: int = 4
+    CONVERSATION_SUMMARY_RECENT_TURNS: int = 4
+    CONVERSATION_SUMMARY_EVIDENCE_TURNS: int = 2
+    CONVERSATION_SUMMARY_MAX_CHARS: int = 6000
+    CONVERSATION_SUMMARY_SOURCE_MAX_CHARS: int = 20000
+    CONVERSATION_SUMMARY_TIMEOUT: float = 45.0
+    CONVERSATION_SUMMARY_LLM_MAX_TOKENS: int = 800
     CAREER_JOB_CACHE_TTL_SECONDS: int = 1800
 
     STT_API_URL: str = "http://127.0.0.1:8000/v1/"
@@ -110,6 +125,10 @@ class Settings(BaseSettings):
     MEM0_ADD_TIMEOUT: float = 20.0
     MEM0_ADD_RETRIES: int = 0
     MEM0_SEARCH_TIMEOUT: float = 10.0
+    INTERVIEW_HISTORY_RECENT_TURNS: int = 4
+    INTERVIEW_HISTORY_RELEVANT_TURNS: int = 6
+    INTERVIEW_HISTORY_CONTEXT_MAX_CHARS: int = 12000
+    INTERVIEW_HISTORY_SEARCH_TIMEOUT: float = 5.0
     LLM_INPUT_USD_PER_1M: float = 0.0
     LLM_OUTPUT_USD_PER_1M: float = 0.0
 

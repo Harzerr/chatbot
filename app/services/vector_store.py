@@ -22,7 +22,7 @@ class MultiTenantVectorStore:
     """
     _instance = None
 
-    def __new__(cls):
+    def __new__(cls, *args, **kwargs):
         if cls._instance is None:
             cls._instance = super(MultiTenantVectorStore, cls).__new__(cls)
             cls._instance._initialized = False
@@ -32,6 +32,7 @@ class MultiTenantVectorStore:
         self,
         collection_name: str = "multi_tenant_chat_history",
         embedding: Optional[Embeddings] = None,
+        use_embedding: bool = True,
     ):
         """Initialize the multi-tenant vector store.
         
@@ -43,7 +44,7 @@ class MultiTenantVectorStore:
             return
         self.collection_name = collection_name
         self.embedding_size = settings.EMBEDDING_DIMENSIONS
-        self.embedding = embedding or create_embeddings()
+        self.embedding = embedding if embedding is not None else (create_embeddings() if use_embedding else None)
         self.client = self._create_client()
 
         self._ensure_collection_exists()
@@ -212,6 +213,51 @@ class MultiTenantVectorStore:
         results = format_chat_results(response[0])
         results.sort(key=lambda x: x.get("timestamp", ""))
         return results
+
+    def search_chat_by_id(
+        self,
+        query: str,
+        chat_id: str,
+        tenant_id: str,
+        user_id: str,
+        limit: int = 6,
+    ) -> List[Dict[str, Any]]:
+        """Retrieve semantically relevant older turns from one owned chat."""
+        if not query.strip():
+            return []
+
+        chat_filter = models.Filter(
+            must=[
+                models.FieldCondition(
+                    key="metadata.tenant_id",
+                    match=models.MatchValue(value=tenant_id),
+                ),
+                models.FieldCondition(
+                    key="metadata.user_id",
+                    match=models.MatchValue(value=str(user_id)),
+                ),
+                models.FieldCondition(
+                    key="metadata.chat_id",
+                    match=models.MatchValue(value=chat_id),
+                ),
+            ]
+        )
+
+        def search() -> List[Dict[str, Any]]:
+            if self.embedding is None:
+                raise RuntimeError("Semantic search requires an embedding provider")
+            query_vector = self.embedding.embed_query(query)
+            response = self.client.query_points(
+                collection_name=self.collection_name,
+                query=query_vector,
+                query_filter=chat_filter,
+                limit=limit,
+                with_payload=True,
+                with_vectors=False,
+            )
+            return format_chat_results(response.points)
+
+        return self._run_with_reconnect("search_chat_by_id", search)
 
     def delete_chat_by_id(self, chat_id: str, tenant_id: str, user_id: str) -> None:
         """Delete every vector point belonging to one user's interview session."""

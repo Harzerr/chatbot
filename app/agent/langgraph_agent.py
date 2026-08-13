@@ -103,6 +103,7 @@ class AgentState(TypedDict):
     active_skill: Optional[str]
     previous_interviewer_question: Optional[str]
     relevant_docs: List[dict]
+    history_context_docs: List[dict]
     context: str
     interview_role: Optional[str]
     interview_level: Optional[str]
@@ -508,6 +509,7 @@ def create_initial_state(messages: List[BaseMessage], max_iterations: int, **kwa
         "active_skill": kwargs.get("active_skill"),
         "previous_interviewer_question": kwargs.get("previous_interviewer_question"),
         "relevant_docs": kwargs.get("relevant_docs", []),
+        "history_context_docs": kwargs.get("history_context_docs", []),
         "context": kwargs.get("context", ""),
         "interview_role": kwargs.get("interview_role"),
         "interview_level": kwargs.get("interview_level"),

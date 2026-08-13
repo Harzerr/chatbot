@@ -121,6 +121,7 @@ class InterviewSkillRunner:
             question=_latest_message_text(state),
             previous_interviewer_question=state.get("previous_interviewer_question"),
             relevant_docs=state.get("relevant_docs", []),
+            history_context_docs=state.get("history_context_docs", []),
             context=state.get("context", ""),
             interview_role=state.get("interview_role"),
             interview_level=state.get("interview_level"),
@@ -163,6 +164,12 @@ def create_default_skill_registry(llm) -> SkillRegistry:
     for skill_spec in discover_skill_specs():
         factory = runner_factories.get(skill_spec.name)
         if factory is None:
+            if skill_spec.name == "resume-optimizer-skill":
+                logger.info(
+                    "Discovered instruction-only skill '%s'; CareerStudioService loads it for Markdown fact extraction",
+                    skill_spec.name,
+                )
+                continue
             logger.warning(
                 "Discovered skill '%s' at %s but no runner factory is registered for it yet",
                 skill_spec.name,

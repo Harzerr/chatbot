@@ -626,9 +626,9 @@ JD 分析：
             HumanMessage(content=question),
         ]
 
-    def _build_history_messages(self, relevant_docs: list[dict]) -> list:
+    def _build_history_messages(self, history_context_docs: list[dict]) -> list:
         history = []
-        for doc in relevant_docs[-4:]:
+        for doc in history_context_docs:
             if doc.get("user_message"):
                 history.append(HumanMessage(content=doc["user_message"]))
             if doc.get("assistant_message"):
@@ -640,6 +640,7 @@ JD 分析：
         question: str,
         previous_interviewer_question: str | None,
         relevant_docs: list[dict],
+        history_context_docs: list[dict] | None,
         context: str,
         interview_role: str | None,
         interview_level: str | None,
@@ -699,7 +700,7 @@ JD 分析：
             interview_type=interview_type,
         )
         company_style = self._get_company_style(target_company)
-        history_messages = self._build_history_messages(relevant_docs)
+        history_messages = self._build_history_messages(history_context_docs or relevant_docs)
         question_bank_context = get_question_bank_context(normalized_role, interview_type)
         role_knowledge_context = self._get_role_knowledge_context(
             interview_role=normalized_role,
