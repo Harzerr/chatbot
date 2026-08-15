@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from app.agent.evaluation_agent import EvaluationAgent
 from app.services.interview_assessment import (
@@ -12,16 +12,19 @@ from app.services.interview_assessment import (
     infer_capability_tags,
     is_countable_answer,
     is_non_answer,
+    should_use_career_evidence,
 )
-from app.schemas.chat import AnswerEvaluation, RubricScore
+from app.schemas.chat import AnswerEvaluation, LLMAnswerEvaluation, RubricScore
 from app.schemas.evaluation import EvaluationRequest
 from app.services.interview_evaluator import InterviewEvaluator
 from app.services.interview_report import InterviewReportBuilder
+from app.services.interview_report_pdf import InterviewReportPdfBuilder
 
 
 class InterviewAssessmentTests(unittest.TestCase):
     def test_non_answers_are_not_counted(self):
         self.assertTrue(is_non_answer("我不太了解这个机制"))
+        self.assertTrue(is_non_answer("这个我不太清楚"))
         self.assertTrue(is_non_answer("不清楚"))
         self.assertFalse(is_non_answer("我不了解旧方案，但我会通过 Redis 过期策略和监控来验证。"))
         self.assertFalse(is_countable_answer("开始面试", has_previous_question=False))
@@ -56,9 +59,195 @@ class InterviewAssessmentTests(unittest.TestCase):
         self.assertEqual(len(questions), 1)
         self.assertIn("缓存失效重试", questions[0]["question"])
 
+    def test_report_rechecks_stale_counted_unknown_answers(self):
+        builder = InterviewReportBuilder.__new__(InterviewReportBuilder)
+        questions = builder._build_interview_questions_from_chat_messages([
+            {"user_message": "开始面试", "assistant_message": "请解释 Redis 的一致性方案。"},
+            {
+                "user_message": "这个我不太清楚",
+                "assistant_message": "那换一个问题：如何设计缓存失效重试？",
+                "answer_counted": True,
+                "evaluation_status": None,
+            },
+            {
+                "user_message": "我会记录失败事件并通过重试补偿。",
+                "assistant_message": "本场面试已结束。",
+                "answer_counted": True,
+                "evaluation_status": "completed",
+                "evaluation": {"expected_key_points": ["说明重试和补偿机制"]},
+            },
+        ], include_reference_answers=False)
+        self.assertEqual(len(questions), 1)
+        self.assertTrue(questions[0]["answer_counted"])
+
+    def test_partial_report_does_not_generate_reference_answers(self):
+        builder = InterviewReportBuilder.__new__(InterviewReportBuilder)
+        messages = [
+            {"user_message": "开始面试", "assistant_message": "请解释 Redis 的一致性方案。"},
+            {
+                "user_message": "我会先更新数据库，再删除缓存并做失败补偿。",
+                "assistant_message": "下一题：如何定位缓存击穿？",
+                "evaluation_status": "processing",
+            },
+        ]
+        with patch.object(builder, "_generate_reference_answers") as generate:
+            questions = builder._build_interview_questions_from_chat_messages(
+                messages,
+                include_reference_answers=False,
+            )
+        generate.assert_not_called()
+        self.assertEqual(len(questions), 1)
+        self.assertEqual(questions[0]["reference_answer"], "暂时无法生成参考答案。")
+
+    def test_report_keeps_evaluation_state_for_question_record(self):
+        builder = InterviewReportBuilder.__new__(InterviewReportBuilder)
+        messages = [
+            {"user_message": "开始面试", "assistant_message": "请解释 Redis 的一致性方案。"},
+            {
+                "user_message": "我会先更新数据库，再删除缓存。",
+                "assistant_message": "下一题。",
+                "evaluation_status": "failed",
+                "evaluation_error": "模型输出超出长度限制",
+            },
+        ]
+        questions = builder._build_interview_questions_from_chat_messages(
+            messages,
+            include_reference_answers=False,
+        )
+        self.assertEqual(questions[0]["evaluation_status"], "failed")
+        self.assertEqual(questions[0]["evaluation_error"], "模型输出超出长度限制")
+
+    def test_report_omits_dimension_defaults_when_only_overall_score_exists(self):
+        builder = InterviewReportBuilder.__new__(InterviewReportBuilder)
+        messages = [
+            {
+                "user_message": "我会先拆分问题，再通过监控验证结果。",
+                "assistant_message": "请说明你的排障方法。",
+                "evaluation": {
+                    "overall_score": 72,
+                    "technical_accuracy": 0,
+                    "knowledge_depth": 0,
+                    "communication_clarity": 0,
+                    "logical_structure": 0,
+                    "problem_solving": 0,
+                    "job_match_score": 0,
+                },
+            },
+        ]
+        report = builder.build("chat-1", messages, include_reference_answers=False)
+        self.assertEqual(report.overall_score, 72)
+        self.assertIsNone(report.technical_accuracy)
+        self.assertIsNone(report.knowledge_depth)
+        self.assertIsNone(report.job_match_score)
+
+    def test_report_keeps_explicit_zero_dimensions_when_overall_is_zero(self):
+        builder = InterviewReportBuilder.__new__(InterviewReportBuilder)
+        messages = [
+            {
+                "user_message": "没有给出有效回答。",
+                "assistant_message": "请说明你的排障方法。",
+                "evaluation": {
+                    "overall_score": 0,
+                    "technical_accuracy": 0,
+                    "knowledge_depth": 0,
+                    "communication_clarity": 0,
+                    "logical_structure": 0,
+                    "problem_solving": 0,
+                    "job_match_score": 0,
+                },
+            },
+        ]
+        report = builder.build("chat-2", messages, include_reference_answers=False)
+        self.assertEqual(report.technical_accuracy, 0)
+        self.assertEqual(report.job_match_score, 0)
+
+    def test_report_uses_candidate_answer_as_unverified_evidence(self):
+        builder = InterviewReportBuilder.__new__(InterviewReportBuilder)
+        capabilities = builder._build_competency_assessments([
+            {
+                "overall_score": 72,
+                "capability_tags": ["系统设计"],
+                "_candidate_answer": "我会先拆分服务边界，再通过监控验证延迟。",
+            },
+        ])
+        self.assertIn("作答摘录（待核验）", capabilities[0].evidence[0])
+
+    def test_evaluator_preserves_rag_evidence_provenance(self):
+        context = (
+            "用户上传的技术资料：\n"
+            "[证据ID：fact-1:0｜职业事实：12｜文档：项目说明｜章节：架构]\n"
+            "使用 Redis 和 RQ 将耗时任务移出请求线程。"
+        )
+        evidence, evidence_ids = InterviewEvaluator._retrieved_knowledge_evidence(context)
+        self.assertEqual(evidence_ids, ["fact-1:0"])
+        self.assertIn("项目说明", evidence[0])
+        self.assertIn("RQ", evidence[0])
+
+    def test_evaluator_parses_structured_evidence_metadata_and_legacy_headers(self):
+        structured = (
+            "[证据ID：17:17:0｜职业事实：42｜文档：面试平台技术文档｜章节：评估链路｜"
+            "版本：abc123456789｜检索分数：2.75]\n"
+            "使用 Judge0 执行代码并保存超时结果。"
+        )
+        legacy = (
+            "[证据ID：17:17:1｜职业事实：42｜文档：面试平台技术文档｜章节：代码执行]\n"
+            "保存编译状态和运行状态。"
+        )
+
+        structured_items = InterviewEvaluator._retrieved_knowledge_items(structured)
+        legacy_items = InterviewEvaluator._retrieved_knowledge_items(legacy)
+
+        self.assertEqual(len(structured_items), 1)
+        self.assertEqual(structured_items[0].source_version, "abc123456789")
+        self.assertEqual(structured_items[0].retrieval_score, 2.75)
+        self.assertEqual(structured_items[0].verification_status, "user_provided")
+        self.assertEqual(len(legacy_items), 1)
+        self.assertIsNone(legacy_items[0].retrieval_score)
+
+    def test_report_prefers_rag_evidence_over_candidate_answer_fallback(self):
+        builder = InterviewReportBuilder.__new__(InterviewReportBuilder)
+        capabilities = builder._build_competency_assessments([
+            {
+                "overall_score": 80,
+                "capability_tags": ["项目实践"],
+                "knowledge_evidence": ["[证据ID：fact-1:0] RQ 异步任务"],
+                "_candidate_answer": "我说过自己做过这个项目。",
+            },
+        ])
+        self.assertIn("RQ 异步任务", capabilities[0].evidence[0])
+        self.assertNotIn("我说过自己做过", " ".join(capabilities[0].evidence))
+
+    def test_code_answer_is_rendered_as_verbatim_block(self):
+        self.assertTrue(InterviewReportPdfBuilder._is_code_answer(
+            "class Solution { return answer; }",
+            type("Evaluation", (), {"question_type": "代码题"})(),
+        ))
+        block = InterviewReportPdfBuilder._code_block("```python\ndef solve():\n    return 1\n```")
+        self.assertIn("\\begin{Verbatim}", block)
+        self.assertNotIn("```", block)
+
+    def test_fallback_evaluation_still_has_reference_points(self):
+        builder = InterviewReportBuilder.__new__(InterviewReportBuilder)
+        reference = builder._format_reference_answer_from_evaluation({
+            "evaluation_mode": "fallback",
+            "rubric_scores": [
+                {
+                    "label": "技术正确性",
+                    "missing_points": ["缺少边界条件说明"],
+                },
+            ],
+        })
+        self.assertIn("参考要点", reference)
+        self.assertIn("技术正确性", reference)
+        self.assertNotIn("暂时无法生成参考答案", reference)
+
     def test_classifies_project_and_coding_questions(self):
         self.assertEqual(classify_question_type("介绍一下你在这个项目里负责什么，以及如何优化延迟"), "项目深挖题")
         self.assertEqual(classify_question_type("请手撕代码实现 LRU，并分析时间复杂度"), "代码题")
+        self.assertTrue(should_use_career_evidence("请介绍你在实习项目中负责的缓存优化"))
+        self.assertFalse(should_use_career_evidence("请实现二叉树右视图并分析时间复杂度"))
+        self.assertFalse(should_use_career_evidence("什么是 Redis 的持久化机制"))
+        self.assertFalse(should_use_career_evidence("Redis 缓存击穿怎么优化，线上指标如何监控"))
 
     def test_project_rubric_has_explicit_weighting(self):
         rubric = get_rubric("项目深挖题")
@@ -82,6 +271,36 @@ class InterviewAssessmentTests(unittest.TestCase):
         self.assertIn("系统设计", tags)
         self.assertGreaterEqual(calculate_confidence("x" * 200, 5, True, True), 40)
         self.assertLessEqual(calculate_confidence("x" * 200, 5, True, True), 85)
+
+    def test_fallback_evaluation_exposes_auditable_scoring_basis(self):
+        result = InterviewEvaluator._fallback_evaluation(
+            user_answer="我会先确认缓存一致性，再通过 Redis 重试和监控验证结果。",
+            question_type="技术原理题",
+            rubric=get_rubric("技术原理题"),
+            capability_tags=["缓存与一致性"],
+            reason="主请求 LengthFinishReasonError；紧凑请求 TimeoutError",
+        )
+        self.assertEqual(result.evaluation_mode, "fallback")
+        self.assertTrue(result.evaluation_basis)
+        self.assertIn("rubric-v2", result.evaluation_basis[0])
+        self.assertIn("综合分", result.evaluation_basis[2])
+        self.assertTrue(all(item.rationale for item in result.rubric_scores))
+        self.assertIn("LengthFinishReasonError", result.evidence_warnings[0])
+        self.assertTrue(result.capability_assessments)
+
+    def test_compact_evaluation_prompt_is_bounded_and_does_not_duplicate_full_prompt(self):
+        prompt = InterviewEvaluator._build_compact_prompt(
+            role="后端工程师",
+            level="中级",
+            interview_kind="一面",
+            question_type="技术原理题",
+            previous_question="问题 " * 1000,
+            user_answer="回答 " * 2000,
+            rubric=get_rubric("技术原理题"),
+            knowledge_context="资料 " * 2000,
+        )
+        self.assertLess(len(prompt), 5000)
+        self.assertIn("只输出结构化 JSON", prompt)
 
     def test_rubric_overrides_model_total_and_report_aggregates_evidence(self):
         evaluation = AnswerEvaluation(
@@ -157,6 +376,25 @@ class InterviewAssessmentTests(unittest.TestCase):
         self.assertEqual(correctness.score, 1)
         self.assertLess(result.overall_score, 100)
 
+    def test_incomplete_rubric_is_not_silently_converted_to_zero(self):
+        rubric = get_rubric("技术原理题")
+        incomplete = LLMAnswerEvaluation(
+            technical_accuracy=0,
+            knowledge_depth=0,
+            communication_clarity=0,
+            logical_structure=0,
+            problem_solving=0,
+            overall_score=0,
+            summary="模型未完整返回评分。",
+            rubric_scores=[RubricScore(
+                dimension=rubric[0].key,
+                label=rubric[0].label,
+                score=0,
+            )],
+        )
+        with self.assertRaisesRegex(ValueError, "Rubric 输出不完整"):
+            InterviewEvaluator._validate_rubric_completeness(incomplete, rubric)
+
 
 class EvaluationAgentTests(unittest.IsolatedAsyncioTestCase):
     def _evaluation(self, evidence: list[str]) -> AnswerEvaluation:
@@ -218,6 +456,48 @@ class EvaluationAgentTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result.evidence_grounded)
         self.assertEqual(result.rubric_scores[0].evidence, [])
         self.assertTrue(result.evidence_warnings)
+
+    async def test_evaluator_agent_preserves_fallback_warning(self):
+        core_evaluator = type("CoreEvaluator", (), {})()
+        core_evaluator.evaluate_answer = AsyncMock(return_value=AnswerEvaluation(
+            technical_accuracy=50,
+            knowledge_depth=50,
+            communication_clarity=50,
+            logical_structure=50,
+            problem_solving=50,
+            overall_score=50,
+            summary="规则降级",
+            strengths=[],
+            improvement_areas=[],
+            evaluation_mode="fallback",
+            evidence_warnings=["远程评估调用失败：TimeoutError。"],
+        ))
+        core_evaluator.should_evaluate = lambda answer, question: True
+        agent = EvaluationAgent(core_evaluator)
+        result = await agent.evaluate(EvaluationRequest(
+            previous_question="请解释缓存一致性。",
+            user_answer="我会使用缓存和重试机制。",
+        ))
+        self.assertTrue(any("TimeoutError" in item for item in result.evidence_warnings))
+
+    async def test_incomplete_llm_output_falls_back_instead_of_returning_zero(self):
+        evaluator = InterviewEvaluator.__new__(InterviewEvaluator)
+        evaluator.llm = object()
+        evaluator.compact_llm = object()
+        evaluator._invoke_json = AsyncMock(side_effect=ValueError("Rubric 输出不完整"))
+
+        result = await evaluator.evaluate_answer(
+            previous_question="请解释 Redis 缓存一致性。",
+            user_answer="我会先更新数据库，再删除缓存，并增加失败重试和监控。",
+            interview_role="后端工程师",
+            interview_level="中级",
+            interview_type="技术面",
+        )
+
+        self.assertEqual(result.evaluation_mode, "fallback")
+        self.assertGreater(result.overall_score, 0)
+        self.assertIn("Rubric 输出不完整", result.evidence_warnings[0])
+        self.assertEqual(evaluator._invoke_json.await_count, 2)
 
 
 if __name__ == "__main__":

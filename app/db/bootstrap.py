@@ -25,6 +25,18 @@ USER_PROFILE_COLUMNS = {
     "education_json": "ALTER TABLE users ADD COLUMN education_json TEXT NOT NULL DEFAULT '[]'",
 }
 
+AI_METRIC_COLUMNS = {
+    "model_latency_ms": "ALTER TABLE ai_request_metrics ADD COLUMN model_latency_ms FLOAT NOT NULL DEFAULT 0",
+    "queue_wait_ms": "ALTER TABLE ai_request_metrics ADD COLUMN queue_wait_ms FLOAT NOT NULL DEFAULT 0",
+    "total_tokens": "ALTER TABLE ai_request_metrics ADD COLUMN total_tokens INTEGER NOT NULL DEFAULT 0",
+    "cache_hit": "ALTER TABLE ai_request_metrics ADD COLUMN cache_hit INTEGER NOT NULL DEFAULT 0",
+    "attempt": "ALTER TABLE ai_request_metrics ADD COLUMN attempt INTEGER NOT NULL DEFAULT 1",
+    "evidence_retrieval_count": "ALTER TABLE ai_request_metrics ADD COLUMN evidence_retrieval_count INTEGER NOT NULL DEFAULT 0",
+    "evidence_context_chars": "ALTER TABLE ai_request_metrics ADD COLUMN evidence_context_chars INTEGER NOT NULL DEFAULT 0",
+    "evidence_cache_hit": "ALTER TABLE ai_request_metrics ADD COLUMN evidence_cache_hit INTEGER NOT NULL DEFAULT 0",
+    "evidence_retrieval_method": "ALTER TABLE ai_request_metrics ADD COLUMN evidence_retrieval_method VARCHAR(64) NOT NULL DEFAULT 'none'",
+}
+
 
 async def ensure_user_profile_columns(async_engine: AsyncEngine) -> None:
     async with async_engine.begin() as conn:
@@ -61,3 +73,13 @@ async def ensure_career_knowledge_columns(async_engine: AsyncEngine) -> None:
         existing = {row[1] for row in result.fetchall()}
         if existing and "fact_id" not in existing:
             await conn.execute(text("ALTER TABLE career_knowledge_documents ADD COLUMN fact_id INTEGER"))
+
+
+async def ensure_ai_metric_columns(async_engine: AsyncEngine) -> None:
+    async with async_engine.begin() as conn:
+        result = await conn.execute(text("PRAGMA table_info(ai_request_metrics)"))
+        existing = {row[1] for row in result.fetchall()}
+        for name, ddl in AI_METRIC_COLUMNS.items():
+            if name not in existing:
+                logger.info("Adding missing ai_request_metrics.%s column", name)
+                await conn.execute(text(ddl))

@@ -9,7 +9,9 @@ ASSESSMENT_VERSION = "rubric-v2"
 NON_ANSWER_MARKERS = (
     "不知道",
     "不清楚",
+    "不太清楚",
     "不了解",
+    "不太知道",
     "不太了解",
     "没了解过",
     "没接触过",
@@ -59,9 +61,9 @@ def count_countable_answers(chat_messages: list[dict]) -> int:
         1
         for message in chat_messages
         if (
-            bool(message["answer_counted"])
-            if message.get("answer_counted") is not None
-            else is_countable_answer(message.get("user_message"))
+            is_countable_answer(message.get("user_message"))
+            if message.get("answer_counted") is None
+            else bool(message["answer_counted"]) and is_countable_answer(message.get("user_message"))
         )
     )
 
@@ -123,7 +125,10 @@ def classify_question_type(question: str, interview_type: str | None = None) -> 
     normalized = (question or "").lower()
     if any(marker in normalized for marker in ("手撕代码", "代码题", "实现一个", "时间复杂度", "空间复杂度", "```", "#include", "def ", "class ")):
         return "代码题"
-    if any(marker in normalized for marker in ("项目", "实习", "你负责", "你的职责", "你做过", "怎么优化", "遇到什么问题", "成果", "指标")):
+    if any(marker in normalized for marker in (
+        "项目", "实习", "工作经历", "项目经历", "项目中", "项目里", "实习中",
+        "你负责", "你的职责", "你做过", "怎么优化", "遇到什么问题", "成果", "指标",
+    )):
         return "项目深挖题"
     if any(marker in normalized for marker in ("设计一个", "系统设计", "架构", "如何设计", "高并发", "高可用", "扩展性", "容量")):
         return "系统设计题"
@@ -132,6 +137,16 @@ def classify_question_type(question: str, interview_type: str | None = None) -> 
     if any(marker in normalized for marker in ("原理", "区别", "为什么", "如何保证", "机制", "是什么", "怎么实现")):
         return "技术原理题"
     return "通用技术题"
+
+
+def should_use_career_evidence(question: str | None) -> bool:
+    """Only project or internship deep dives need career-fact evidence."""
+    normalized = (question or "").lower()
+    if any(marker in normalized for marker in ("手撕代码", "代码题", "实现一个", "时间复杂度", "空间复杂度", "```", "#include", "def ", "class ")):
+        return False
+    return any(marker in normalized for marker in (
+        "项目", "实习", "工作经历", "项目经历", "项目中", "项目里", "实习中", "实习经历",
+    ))
 
 
 def get_rubric(question_type: str) -> tuple[RubricDimensionSpec, ...]:

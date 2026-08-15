@@ -24,6 +24,7 @@ class SkillResult:
     evaluation_request: dict | None = None
     is_finished: bool = False
     answer_counted: bool = False
+    model_usage: dict | None = None
 
 
 class SkillRunner:
@@ -131,6 +132,7 @@ class InterviewSkillRunner:
             resume_content=state.get("resume_content"),
             code_execution=state.get("code_execution"),
             knowledge_context=state.get("knowledge_context"),
+            knowledge_context_cache_hit=state.get("knowledge_context_cache_hit", False),
         )
         return SkillResult(
             response=result["response"],
@@ -139,6 +141,7 @@ class InterviewSkillRunner:
             evaluation_request=result.get("evaluation_request"),
             is_finished=result.get("is_finished", False),
             answer_counted=result.get("answer_counted", False),
+            model_usage=result.get("model_usage"),
         )
 
 

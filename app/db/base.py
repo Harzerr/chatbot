@@ -3,5 +3,5 @@ from app.models.career import CareerFact, CareerKnowledgeDocument, JobPosting, R
 from app.models.interview_session import InterviewSession  # noqa
 from app.models.training import TrainingAttempt, TrainingItem  # noqa
 from app.models.user import User  # noqa
-from app.models.ai_metrics import AIRequestMetric  # noqa
+from app.models.ai_metrics import AIRequestMetric, ToolCallMetric  # noqa
 from app.models.resume import ResumeParseJob, ResumeSource  # noqa

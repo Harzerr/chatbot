@@ -65,7 +65,11 @@ const inferAssistantTag = (content = '') => {
   return '技术追问';
 };
 
-const MessageBubble = ({ content, role, isStreaming = false }) => {
+const MessageBubble = ({
+  content,
+  role,
+  isStreaming = false,
+}) => {
   const isCandidate = role === 'user';
   const speaker = isCandidate ? '候选人' : 'AI 面试官';
   const tag = isCandidate ? '回答' : inferAssistantTag(content);

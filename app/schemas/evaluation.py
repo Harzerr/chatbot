@@ -1,6 +1,18 @@
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+
+
+class EvidenceFeedback(BaseModel):
+    """User verification of one retrieved career-document evidence item."""
+
+    evidence_id: str = Field(min_length=1, max_length=255)
+    verdict: Literal["correct", "incorrect", "partial"]
+    correction: str = Field(default="", max_length=2000)
+
+
+class EvidenceFeedbackRequest(BaseModel):
+    feedback: list[EvidenceFeedback] = Field(min_length=1, max_length=12)
 
 
 class EvaluationRequest(BaseModel):
@@ -14,6 +26,8 @@ class EvaluationRequest(BaseModel):
     resume_content: str | None = None
     code_execution: dict[str, Any] | None = None
     knowledge_context: str | None = None
+    knowledge_context_cache_hit: bool = False
+    evidence_feedback: list[EvidenceFeedback] = Field(default_factory=list)
 
 
 class EvaluationRunMetadata(BaseModel):
@@ -21,5 +35,10 @@ class EvaluationRunMetadata(BaseModel):
     evaluator_model: str = ""
     evaluation_run_id: str = ""
     latency_ms: int = 0
+    model_latency_ms: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    attempts: int = 0
     evidence_grounded: bool = False
     evidence_warnings: list[str] = Field(default_factory=list)

@@ -16,6 +16,7 @@ MCP_SEARCH_CMD="${MCP_SEARCH_CMD:-python -m app.mcp_server.search_server}"
 MCP_SCRAPE_CMD="${MCP_SCRAPE_CMD:-python -m app.mcp_server.web_scrapping_server}"
 BACKEND_CMD="${BACKEND_CMD:-python app.py}"
 RESUME_WORKER_CMD="${RESUME_WORKER_CMD:-python -m app.workers.resume_worker}"
+EVALUATION_WORKER_CMD="${EVALUATION_WORKER_CMD:-python -m app.workers.evaluation_worker}"
 FRONTEND_CMD="${FRONTEND_CMD:-npm start}"
 
 LOCAL_NO_PROXY="${LOCAL_NO_PROXY:-localhost,127.0.0.1,::1}"
@@ -100,6 +101,7 @@ main() {
   send_window "mcp_search" "${PROJECT_DIR}" "${MCP_SEARCH_CMD}" "${LOG_DIR}/mcp_search.log"
   send_window "mcp_scrape" "${PROJECT_DIR}" "${MCP_SCRAPE_CMD}" "${LOG_DIR}/mcp_scrape.log"
   send_window "resume_worker" "${PROJECT_DIR}" "${RESUME_WORKER_CMD}" "${LOG_DIR}/resume_worker.log"
+  send_window "evaluation_worker" "${PROJECT_DIR}" "${EVALUATION_WORKER_CMD}" "${LOG_DIR}/evaluation_worker.log"
 
   send_window "backend" "${PROJECT_DIR}" \
     "export UVICORN_HOST='${BACKEND_HOST}' UVICORN_PORT='${BACKEND_PORT}' && ${BACKEND_CMD}" \

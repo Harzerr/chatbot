@@ -2,7 +2,7 @@ from uuid import uuid4
 
 from redis import Redis
 from redis.exceptions import RedisError
-from rq import Queue
+from rq import Queue, Retry
 from rq.job import Job
 
 from app.core.config import settings
@@ -81,6 +81,19 @@ def get_conversation_summary_queue() -> Queue:
         raise QueueUnavailable("Conversation summary queue is unavailable") from exc
 
 
+def get_career_evidence_index_queue() -> Queue:
+    try:
+        connection = get_redis_connection()
+        connection.ping()
+        return Queue(
+            name=settings.CAREER_EVIDENCE_INDEX_QUEUE_NAME,
+            connection=connection,
+            default_timeout=settings.CAREER_EVIDENCE_INDEX_QUEUE_TIMEOUT,
+        )
+    except RedisError as exc:
+        raise QueueUnavailable("Career evidence index queue is unavailable") from exc
+
+
 def enqueue_resume_parse_job(job_id: int):
     try:
         queue = get_resume_queue()
@@ -138,6 +151,7 @@ def enqueue_evaluation_job(payload: dict):
             job_id=f"interview-evaluation-{uuid4().hex}",
             result_ttl=86400,
             failure_ttl=604800,
+            retry=Retry(max=2, interval=[5, 15]),
         )
     except (RedisError, OSError) as exc:
         raise QueueUnavailable("Interview evaluation queue is unavailable") from exc
@@ -155,6 +169,20 @@ def enqueue_conversation_summary_job(payload: dict):
         )
     except (RedisError, OSError) as exc:
         raise QueueUnavailable("Conversation summary queue is unavailable") from exc
+
+
+def enqueue_career_evidence_index_job(payload: dict):
+    try:
+        queue = get_career_evidence_index_queue()
+        return queue.enqueue(
+            "app.services.career_evidence_jobs.run_career_evidence_index_job",
+            payload,
+            job_id=f"career-evidence-index-{payload['document_id']}-{uuid4().hex}",
+            result_ttl=86400,
+            failure_ttl=604800,
+        )
+    except (RedisError, OSError) as exc:
+        raise QueueUnavailable("Career evidence index queue is unavailable") from exc
 
 
 def get_code_job(job_id: str) -> Job:

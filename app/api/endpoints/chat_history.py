@@ -1,6 +1,7 @@
+import asyncio
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,13 +16,18 @@ from app.schemas.chat import (
 from app.db.session import get_db
 from app.models.interview_session import InterviewSession
 from app.services.interview_report import InterviewReportBuilder
+from app.services.interview_report_pdf import InterviewReportPdfBuilder, InterviewReportPdfError
+from app.services.interview_evaluator import InterviewEvaluator
 from app.services.vector_store import MultiTenantVectorStore
+from app.schemas.evaluation import EvidenceFeedbackRequest, EvaluationRequest
+from app.services.task_queue import QueueUnavailable, enqueue_evaluation_job
 from app.api.deps import get_current_user, get_vector_store
 from app.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 router = APIRouter()
 report_builder = InterviewReportBuilder()
+report_pdf_builder = InterviewReportPdfBuilder()
 
 
 def _session_payload(session: InterviewSession | None) -> dict:
@@ -210,6 +216,7 @@ async def delete_chat(
 @router.get("/chats/{chat_id}/report", response_model=InterviewReportResponse)
 async def get_chat_report(
     chat_id: str,
+    partial: bool = Query(False),
     current_user=Depends(get_current_user),
     vector_store: MultiTenantVectorStore = Depends(get_vector_store),
 ):
@@ -222,10 +229,250 @@ async def get_chat_report(
             offset=0,
         )
 
-        return report_builder.build(chat_id=chat_id, chat_messages=chat_messages)
+        return report_builder.build(
+            chat_id=chat_id,
+            chat_messages=chat_messages,
+            include_reference_answers=not partial,
+        )
     except Exception as e:
         logger.error(f"Error generating chat report: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to generate chat report")
+
+
+@router.get("/chats/{chat_id}/report/pdf")
+async def download_chat_report_pdf(
+    chat_id: str,
+    current_user=Depends(get_current_user),
+    vector_store: MultiTenantVectorStore = Depends(get_vector_store),
+):
+    """Generate a selectable-text A4 report on the server with XeLaTeX."""
+    try:
+        chat_messages = vector_store.get_chat_by_id(
+            chat_id=chat_id,
+            user_id=current_user.id,
+            tenant_id=current_user.tenant_id,
+            limit=200,
+            offset=0,
+        )
+        if not chat_messages:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Interview record not found")
+
+        report = report_builder.build(
+            chat_id=chat_id,
+            chat_messages=chat_messages,
+            include_reference_answers=False,
+        )
+        generated_at = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M")
+        pdf_bytes = await asyncio.to_thread(report_pdf_builder.build, report, generated_at)
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="interview-report-{chat_id}.pdf"'},
+        )
+    except HTTPException:
+        raise
+    except InterviewReportPdfError as exc:
+        logger.error("Failed to compile interview report PDF for %s: %s", chat_id, exc)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error("Error generating interview report PDF for %s: %s", chat_id, exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to generate interview report PDF") from exc
+
+
+@router.post("/chats/{chat_id}/messages/{point_id}/evaluation/retry")
+async def retry_chat_evaluation(
+    chat_id: str,
+    point_id: str,
+    current_user=Depends(get_current_user),
+    vector_store: MultiTenantVectorStore = Depends(get_vector_store),
+):
+    """Requeue one failed or fallback evaluation using the original stored interview turn."""
+    messages = await _get_owned_chat_or_404(chat_id, current_user, vector_store)
+    target_index = next((index for index, item in enumerate(messages) if str(item.get("id")) == str(point_id)), None)
+    if target_index is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evaluation point not found")
+
+    target = messages[target_index]
+    evaluation = target.get("evaluation") or {}
+    # Allow an explicit re-evaluation even when the previous run completed.
+    # This is useful after changing prompts, evidence extraction, or scoring
+    # code; the original turn is always used as the source of truth.
+
+    previous_question = ""
+    for message in messages[:target_index]:
+        if message.get("assistant_message"):
+            previous_question = str(message["assistant_message"])
+    if not previous_question or not target.get("user_message"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="缺少原始面试问题或回答，无法重试")
+
+    request = EvaluationRequest(
+        previous_question=previous_question,
+        user_answer=str(target.get("user_message") or ""),
+        interview_role=target.get("interview_role"),
+        interview_level=target.get("interview_level"),
+        interview_type=target.get("interview_type"),
+        target_company=target.get("target_company"),
+        jd_content=target.get("jd_content"),
+        resume_content=target.get("resume_content"),
+        code_execution=target.get("code_execution"),
+        knowledge_context=target.get("knowledge_context"),
+        evidence_feedback=target.get("evidence_feedback") or [],
+    )
+    payload = {
+        "point_id": str(point_id),
+        "tenant_id": str(current_user.tenant_id),
+        "user_id": str(current_user.id),
+        "chat_id": str(chat_id),
+        "request": request.model_dump(mode="json"),
+    }
+
+    vector_store.update_conversation_evaluation(
+        point_id=str(point_id),
+        tenant_id=current_user.tenant_id,
+        user_id=current_user.id,
+        chat_id=chat_id,
+        status="queued",
+        error_message="",
+    )
+    try:
+        job = await asyncio.to_thread(enqueue_evaluation_job, payload)
+        await asyncio.to_thread(
+            vector_store.set_conversation_evaluation_job_id,
+            point_id=str(point_id),
+            tenant_id=current_user.tenant_id,
+            user_id=current_user.id,
+            chat_id=chat_id,
+            job_id=job.id,
+        )
+        return {"point_id": str(point_id), "job_id": job.id, "status": "queued"}
+    except QueueUnavailable as exc:
+        vector_store.update_conversation_evaluation(
+            point_id=str(point_id),
+            tenant_id=current_user.tenant_id,
+            user_id=current_user.id,
+            chat_id=chat_id,
+            status="failed",
+            error_message=str(exc),
+        )
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+
+
+@router.post("/chats/{chat_id}/messages/{point_id}/evaluation/evidence-feedback")
+async def submit_evidence_feedback(
+    chat_id: str,
+    point_id: str,
+    request: EvidenceFeedbackRequest,
+    current_user=Depends(get_current_user),
+    vector_store: MultiTenantVectorStore = Depends(get_vector_store),
+):
+    """Persist user evidence verification and force a fresh evaluation."""
+    messages = await _get_owned_chat_or_404(chat_id, current_user, vector_store)
+    target = next((item for item in messages if str(item.get("id")) == str(point_id)), None)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Evaluation point not found")
+
+    stored_evidence_items = (target.get("evaluation") or {}).get("knowledge_evidence_items") or []
+    _, _, derived_evidence_items = InterviewEvaluator.extract_knowledge_evidence(
+        target.get("knowledge_context")
+    )
+    evidence_items = stored_evidence_items or [
+        item.model_dump(mode="json") for item in derived_evidence_items
+    ]
+    known_ids = {
+        str(item.get("evidence_id"))
+        for item in evidence_items
+        if item.get("evidence_id")
+    }
+    unknown_ids = [item.evidence_id for item in request.feedback if item.evidence_id not in known_ids]
+    if unknown_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"存在不属于本题的证据：{', '.join(unknown_ids[:3])}",
+        )
+
+    previous_question = ""
+    target_index = messages.index(target)
+    for message in messages[:target_index]:
+        if message.get("assistant_message"):
+            previous_question = str(message["assistant_message"])
+    if not previous_question or not target.get("user_message"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="缺少原始面试问题或回答，无法重新评估")
+
+    feedback = [item.model_dump(mode="json") for item in request.feedback]
+
+    # Backfill legacy interview turns before requeueing so the report can render
+    # the exact same evidence IDs that the feedback endpoint validates.
+    if derived_evidence_items and not stored_evidence_items:
+        derived_evidence, derived_ids, _ = InterviewEvaluator.extract_knowledge_evidence(
+            target.get("knowledge_context")
+        )
+        legacy_evaluation = dict(target.get("evaluation") or {})
+        legacy_evaluation["knowledge_evidence"] = derived_evidence
+        legacy_evaluation["knowledge_evidence_ids"] = derived_ids
+        legacy_evaluation["knowledge_evidence_items"] = evidence_items
+        legacy_evaluation["knowledge_evidence_source"] = "career_rag"
+        vector_store.update_conversation_evaluation(
+            point_id=str(point_id),
+            tenant_id=current_user.tenant_id,
+            user_id=current_user.id,
+            chat_id=chat_id,
+            status="queued",
+            evaluation=legacy_evaluation,
+        )
+
+    evaluation_request = EvaluationRequest(
+        previous_question=previous_question,
+        user_answer=str(target.get("user_message") or ""),
+        interview_role=target.get("interview_role"),
+        interview_level=target.get("interview_level"),
+        interview_type=target.get("interview_type"),
+        target_company=target.get("target_company"),
+        jd_content=target.get("jd_content"),
+        resume_content=target.get("resume_content"),
+        code_execution=target.get("code_execution"),
+        knowledge_context=target.get("knowledge_context"),
+        evidence_feedback=feedback,
+    )
+    payload = {
+        "point_id": str(point_id),
+        "tenant_id": str(current_user.tenant_id),
+        "user_id": str(current_user.id),
+        "chat_id": str(chat_id),
+        "request": evaluation_request.model_dump(mode="json"),
+        "force_refresh": True,
+    }
+
+    vector_store.update_conversation_evaluation(
+        point_id=str(point_id),
+        tenant_id=current_user.tenant_id,
+        user_id=current_user.id,
+        chat_id=chat_id,
+        status="queued",
+        evidence_feedback=feedback,
+        error_message="",
+    )
+    try:
+        job = await asyncio.to_thread(enqueue_evaluation_job, payload)
+        await asyncio.to_thread(
+            vector_store.set_conversation_evaluation_job_id,
+            point_id=str(point_id),
+            tenant_id=current_user.tenant_id,
+            user_id=current_user.id,
+            chat_id=chat_id,
+            job_id=job.id,
+        )
+        return {"point_id": str(point_id), "job_id": job.id, "status": "queued", "feedback": feedback}
+    except QueueUnavailable as exc:
+        vector_store.update_conversation_evaluation(
+            point_id=str(point_id),
+            tenant_id=current_user.tenant_id,
+            user_id=current_user.id,
+            chat_id=chat_id,
+            status="failed",
+            evidence_feedback=feedback,
+            error_message=str(exc),
+        )
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
 
 
 @router.post("/voice/report", response_model=InterviewReportResponse)

@@ -1,6 +1,7 @@
 import json
 import operator
 import re
+import uuid
 from typing import Annotated, TypedDict, Literal, Sequence, List, Optional, Dict
 
 try:
@@ -20,6 +21,7 @@ from pydantic import BaseModel
 from app.core.config import settings
 from app.mcp_client.client import get_mcp_client
 from app.services.skill_registry import SkillRegistry, create_default_skill_registry
+from app.services.tool_call_metrics import ToolCallMetricsCollector, record_tool_call_metrics
 from app.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -113,10 +115,15 @@ class AgentState(TypedDict):
     resume_content: Optional[str]
     code_execution: Optional[dict]
     knowledge_context: Optional[str]
+    knowledge_context_cache_hit: bool
     evaluation: Optional[dict]
     evaluation_request: Optional[dict]
     is_finished: bool
     answer_counted: bool
+    user_id: Optional[str]
+    tenant_id: Optional[str]
+    chat_id: Optional[str]
+    model_usage: Optional[dict]
 
 
 class RouteResponse(BaseModel):
@@ -157,7 +164,15 @@ async def agent_node(state, agent, name):
     try:
         logger.info(f"Invoking {name} agent with state: {state.get('messages', [])[-1].content if state.get('messages') else 'No messages'}")
 
-        result = await agent.ainvoke(state)
+        collector = ToolCallMetricsCollector()
+        result = await agent.ainvoke(state, config={"callbacks": [collector]})
+        await record_tool_call_metrics(
+            collector.observations(),
+            trace_id=str(uuid.uuid4()),
+            agent_name=name,
+            user_id=int(state["user_id"]) if state.get("user_id") else None,
+            tenant_id=state.get("tenant_id"),
+        )
         logger.info(f"Agent {name} result: {result}")
 
         iterations = state.get("iterations", 0) + 1
@@ -383,7 +398,9 @@ async def create_graph():
         - Be specific about what information you need
         - For weather queries, always specify the location and time period (today, tomorrow, etc.)
         - ALWAYS use your web_search tool when asked about weather, current events, or factual information
-        - Make multiple search queries if needed to get comprehensive information""")
+        - Make multiple search queries if needed to get comprehensive information
+        - If a tool reports a parameter or validation error, correct the arguments and retry at most once
+        - Do not repeat the same invalid tool call; if the retry fails, explain the failure safely""")
 
     researcher_tools = filter_mcp_tools(_mcp_tools, "Researcher")
     researcher_agent = create_react_agent(
@@ -417,7 +434,9 @@ async def create_graph():
         - Provide detailed extracted content
         - Structure the information clearly
         - Highlight key findings from the scraped data
-        - Mention the source URL and extraction timestamp""")
+        - Mention the source URL and extraction timestamp
+        - If a tool reports a parameter or validation error, correct the arguments and retry at most once
+        - Do not repeat the same invalid tool call; if the retry fails, explain the failure safely""")
 
     scrapper_tools = filter_mcp_tools(_mcp_tools, "Scrapper")
     scrapper_agent = create_react_agent(
@@ -436,6 +455,7 @@ async def create_graph():
         timeout=settings.INTERVIEW_LLM_TIMEOUT,
         api_key=settings.OPENROUTER_API_KEY,
         base_url=settings.OPENROUTER_API_BASE,
+        stream_usage=True,
     )
     _skill_registry = create_default_skill_registry(skill_llm)
 
@@ -456,6 +476,7 @@ async def create_graph():
                 "evaluation_request": result.evaluation_request,
                 "is_finished": result.is_finished,
                 "answer_counted": result.answer_counted,
+                "model_usage": result.model_usage,
                 "task_completed": True,
                 "active_skill": skill_definition.name,
             }
@@ -519,10 +540,14 @@ def create_initial_state(messages: List[BaseMessage], max_iterations: int, **kwa
         "resume_content": kwargs.get("resume_content"),
         "code_execution": kwargs.get("code_execution"),
         "knowledge_context": kwargs.get("knowledge_context"),
+        "knowledge_context_cache_hit": kwargs.get("knowledge_context_cache_hit", False),
         "evaluation": kwargs.get("evaluation"),
         "evaluation_request": kwargs.get("evaluation_request"),
         "is_finished": kwargs.get("is_finished", False),
         "answer_counted": kwargs.get("answer_counted", False),
+        "user_id": kwargs.get("user_id"),
+        "tenant_id": kwargs.get("tenant_id"),
+        "chat_id": kwargs.get("chat_id"),
     }
 
 

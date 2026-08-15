@@ -33,7 +33,12 @@ from app.schemas.career import (
     TailoredResumeRequest,
 )
 from app.services.career_studio import CareerStudioService
-from app.services.task_queue import QueueUnavailable, enqueue_career_fact_job, get_career_fact_job
+from app.services.task_queue import (
+    QueueUnavailable,
+    enqueue_career_evidence_index_job,
+    enqueue_career_fact_job,
+    get_career_fact_job,
+)
 from app.utils.logger import setup_logger
 from app.services.resume_tex_renderer import build_tex_bundle, compile_resume_pdf
 from app.services.career_knowledge import edited_source_hash, parse_document
@@ -41,6 +46,25 @@ from app.services.career_knowledge import edited_source_hash, parse_document
 router = APIRouter()
 career_studio = CareerStudioService()
 logger = setup_logger(__name__)
+
+
+async def _enqueue_career_evidence_index(document_id: int, user: User) -> None:
+    from app.core.config import settings
+
+    if not getattr(settings, "CAREER_EVIDENCE_VECTOR_ENABLED", False):
+        return
+    try:
+        job = await asyncio.to_thread(
+            enqueue_career_evidence_index_job,
+            {
+                "document_id": document_id,
+                "user_id": user.id,
+                "tenant_id": user.tenant_id,
+            },
+        )
+        logger.info("Career evidence index queued: document_id=%s job_id=%s", document_id, job.id)
+    except QueueUnavailable as exc:
+        logger.warning("Career evidence index queue unavailable; lexical retrieval remains active: %s", exc)
 
 
 def _json_load(value: str, fallback: Any) -> Any:
@@ -419,6 +443,7 @@ async def upload_knowledge_document(
     db.add(document)
     await db.commit()
     await db.refresh(document)
+    await _enqueue_career_evidence_index(document.id, current_user)
     return _knowledge_document_response(document)
 
 
@@ -451,6 +476,7 @@ async def update_knowledge_document(
         document.is_archived = updates["is_archived"]
     await db.commit()
     await db.refresh(document)
+    await _enqueue_career_evidence_index(document.id, current_user)
     return _knowledge_document_response(document)
 
 
@@ -464,6 +490,7 @@ async def archive_knowledge_document(
     document.is_archived = True
     await db.commit()
     await db.refresh(document)
+    await _enqueue_career_evidence_index(document.id, current_user)
     return _knowledge_document_response(document)
 
 

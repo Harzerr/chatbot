@@ -27,6 +27,11 @@ class EvaluationAgent:
             evaluator_model=settings.EVALUATION_LLM_MODEL,
             evaluation_run_id=uuid4().hex,
             latency_ms=round((perf_counter() - started_at) * 1000),
+            model_latency_ms=result.evaluation_model_latency_ms,
+            prompt_tokens=result.evaluation_prompt_tokens,
+            completion_tokens=result.evaluation_completion_tokens,
+            total_tokens=result.evaluation_total_tokens,
+            attempts=result.evaluation_attempts,
         )
         result.evaluator_name = metadata.evaluator_name
         result.evaluator_model = metadata.evaluator_model
@@ -49,6 +54,7 @@ class EvaluationAgent:
         resume_content: str | None = None,
         code_execution: dict | None = None,
         knowledge_context: str | None = None,
+        knowledge_context_cache_hit: bool = False,
     ) -> AnswerEvaluation:
         request = EvaluationRequest(
             previous_question=previous_question,
@@ -61,13 +67,14 @@ class EvaluationAgent:
             resume_content=resume_content,
             code_execution=code_execution,
             knowledge_context=knowledge_context,
+            knowledge_context_cache_hit=knowledge_context_cache_hit,
         )
         return await self.evaluate(request)
 
     @classmethod
     def _validate_evidence(cls, result: AnswerEvaluation, request: EvaluationRequest) -> None:
         answer_sources = [request.user_answer]
-        warnings: list[str] = []
+        warnings: list[str] = list(result.evidence_warnings or [])
 
         for rubric_score in result.rubric_scores:
             rubric_score.evidence, invalid = cls._ground_evidence(rubric_score.evidence, answer_sources)

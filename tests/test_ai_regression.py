@@ -1,13 +1,23 @@
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
-from app.agent.chat_agent import _tenant_user_scope
+from app.agent.chat_agent import AISupport, _tenant_user_scope
 from app.agent.langgraph_agent import create_initial_state
 from app.services.role_question_bank_loader import load_role_question_bank
 from app.services.vector_store import MultiTenantVectorStore
+from app.services.interview_skill import InterviewSkill
 
 
 class IsolationRegressionTests(unittest.TestCase):
+    def test_ai_support_singleton_does_not_reinitialize_memory(self):
+        support = AISupport.__new__(AISupport, Mock())
+        support._initialized = True
+
+        with patch("app.agent.chat_agent.Memory.from_config") as memory_factory:
+            support.__init__(Mock())
+
+        memory_factory.assert_not_called()
+
     def test_tenant_user_memory_scope_is_unique(self):
         self.assertNotEqual(_tenant_user_scope("tenant-a", "7"), _tenant_user_scope("tenant-b", "7"))
         self.assertNotEqual(_tenant_user_scope("tenant-a", "7"), _tenant_user_scope("tenant-a", "8"))
@@ -26,6 +36,28 @@ class IsolationRegressionTests(unittest.TestCase):
 
 
 class RagAndRouteRegressionTests(unittest.TestCase):
+    def test_coding_round_marker_is_not_lost_when_prompt_is_not_countable(self):
+        skill = InterviewSkill.__new__(InterviewSkill)
+        documents = [
+            {
+                "assistant_message": "我们切一道手撕代码题，请实现二叉树右视图。",
+                "answer_counted": False,
+            },
+            {
+                "assistant_message": "请继续说明时间复杂度。",
+                "answer_counted": True,
+            },
+        ]
+
+        self.assertFalse(skill._should_switch_to_coding_round(documents, "一面"))
+        context = skill._build_coding_round_context(
+            interview_role="Python算法工程师",
+            interview_type="一面",
+            relevant_docs=documents,
+            question="空间复杂度是 O(n)，可以使用 visited 数组。",
+        )
+        self.assertIn("不要重新生成或切换到另一道代码题", context)
+
     def test_role_question_bank_has_java_cache_baseline(self):
         questions = load_role_question_bank()
         self.assertTrue(any(item["role"] == "Java后端工程师" and "Redis" in item["question"] for item in questions))

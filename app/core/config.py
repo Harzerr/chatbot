@@ -60,7 +60,10 @@ class Settings(BaseSettings):
     INTERVIEW_LLM_TIMEOUT: float = 30.0
     EVALUATION_LLM_MODEL: str = "deepseek/deepseek-v4-flash"
     EVALUATION_LLM_MAX_TOKENS: int = 1536
-    EVALUATION_LLM_TIMEOUT: float = 30.0
+    EVALUATION_REASONING_EFFORT: str = "none"
+    EVALUATION_LLM_TIMEOUT: float = 40.0
+    EVALUATION_COMPACT_LLM_MAX_TOKENS: int = 768
+    EVALUATION_COMPACT_LLM_TIMEOUT: float = 12.0
     # Keep memory extraction independent from the general-chat model's regional availability.
     MEMORY_LLM_MODEL: str = "deepseek/deepseek-v4-flash"
     PDFTOTEXT_PATH: str = ""
@@ -78,7 +81,7 @@ class Settings(BaseSettings):
     CODE_QUEUE_NAME: str = "code_execution"
     CODE_QUEUE_TIMEOUT: int = 90
     EVALUATION_QUEUE_NAME: str = "interview_evaluation"
-    EVALUATION_QUEUE_TIMEOUT: int = 120
+    EVALUATION_QUEUE_TIMEOUT: int = 180
     CONVERSATION_SUMMARY_QUEUE_NAME: str = "conversation_summary"
     CONVERSATION_SUMMARY_QUEUE_TIMEOUT: int = 180
     CONVERSATION_SUMMARY_TRIGGER_TURNS: int = 8
@@ -90,6 +93,28 @@ class Settings(BaseSettings):
     CONVERSATION_SUMMARY_TIMEOUT: float = 45.0
     CONVERSATION_SUMMARY_LLM_MAX_TOKENS: int = 800
     CAREER_JOB_CACHE_TTL_SECONDS: int = 1800
+    EVIDENCE_CACHE_TTL_SECONDS: int = 900
+    EVIDENCE_CONTEXT_MAX_CHARS: int = 3200
+    EVIDENCE_MAX_CHUNKS: int = 4
+    EVIDENCE_CHUNK_MAX_CHARS: int = 900
+    EVIDENCE_CHUNK_OVERLAP_CHARS: int = 120
+    EVIDENCE_MAX_CHUNKS_PER_DOCUMENT: int = 2
+    EVIDENCE_MIN_RETRIEVAL_SCORE: float = 0.05
+    EVIDENCE_RETRIEVER_VERSION: str = "evidence-v3"
+    CAREER_EVIDENCE_VECTOR_ENABLED: bool = False
+    CAREER_EVIDENCE_VECTOR_COLLECTION: str = "career_evidence"
+    CAREER_EVIDENCE_VECTOR_TOP_K: int = 8
+    CAREER_EVIDENCE_VECTOR_TIMEOUT: float = 10.0
+    CAREER_EVIDENCE_HYBRID_LEXICAL_WEIGHT: float = 0.55
+    CAREER_EVIDENCE_HYBRID_SEMANTIC_WEIGHT: float = 0.45
+    CAREER_EVIDENCE_SEMANTIC_MIN_SCORE: float = 0.2
+    CAREER_EVIDENCE_INDEX_QUEUE_NAME: str = "career_evidence_index"
+    CAREER_EVIDENCE_INDEX_QUEUE_TIMEOUT: int = 180
+    EVALUATION_CACHE_TTL_SECONDS: int = 86400
+    EVALUATION_LOCK_TTL_SECONDS: int = 60
+    EVALUATION_CACHE_VERSION: str = "evaluation-v1"
+    OPENROUTER_RESPONSE_CACHE_ENABLED: bool = False
+    OPENROUTER_RESPONSE_CACHE_TTL_SECONDS: int = 86400
 
     STT_API_URL: str = "http://127.0.0.1:8000/v1/"
     LLM_API_URL: str = "http://127.0.0.1:11434/v1/"

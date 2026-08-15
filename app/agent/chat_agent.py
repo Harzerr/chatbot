@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import time
 from time import perf_counter
 from datetime import datetime
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
@@ -18,6 +19,8 @@ from app.services.conversation_summary import get_conversation_summary
 from app.services.vector_store import MultiTenantVectorStore
 from app.utils.logger import setup_logger
 from app.services.metrics import record_ai_metric
+from app.services.llm_usage import extract_token_usage
+from app.services.career_knowledge import evidence_context_stats
 from app.services.task_queue import (
     QueueUnavailable,
     enqueue_conversation_summary_job,
@@ -47,8 +50,8 @@ class AISupport:
         """
         Initialize the AI Support with Memory Configuration and Langchain OpenAI Chat Model.
         """
-        if not hasattr(self, '_initialized') or not self._initialized:
-            self._initialized = True
+        if getattr(self, "_initialized", False):
+            return
 
         custom_prompt = """
                 Please extract relevant entities containing user information, preferences, context, and important facts that would help personalize future interactions. 
@@ -134,6 +137,7 @@ class AISupport:
         self.__app_id = "AI-general-chatbot"
         self.__vector_store = vector_store
         self.__graph: CompiledStateGraph = get_graph()
+        self._initialized = True
 
     def __build_conversation_history_messages(self, history_context_docs: list[dict]) -> list:
         history_messages = []
@@ -173,6 +177,7 @@ class AISupport:
         resume_content: str | None = None,
         code_execution: dict | None = None,
         knowledge_context: str | None = None,
+        knowledge_context_cache_hit: bool = False,
     ) -> dict:
         """Process a user question and return an AI response.
         
@@ -288,6 +293,7 @@ class AISupport:
         response_message = None
         evaluation: AnswerEvaluation | None = None
         evaluation_request: dict | None = None
+        model_usage: dict | None = None
         answer_counted = False
         if use_skill_mode:
             logger.info("Using graph-dispatched skill mode skill=%s chat_id=%s", active_skill, chat_id)
@@ -311,6 +317,10 @@ class AISupport:
                 resume_content=resume_content,
                 code_execution=code_execution,
                 knowledge_context=knowledge_context,
+                knowledge_context_cache_hit=knowledge_context_cache_hit,
+                user_id=str(user_id),
+                tenant_id=str(tenant_id),
+                chat_id=str(chat_id),
             )
             graph_started_at = perf_counter()
             response_state = await self.__graph.ainvoke(initial_state, config=config)
@@ -327,6 +337,7 @@ class AISupport:
             if response_state.get("evaluation"):
                 evaluation = AnswerEvaluation.model_validate(response_state["evaluation"])
             evaluation_request = response_state.get("evaluation_request")
+            model_usage = response_state.get("model_usage")
             answer_counted = bool(response_state.get("answer_counted", False))
         else:
             history_messages = self.__build_conversation_history_messages(history_context_docs)
@@ -342,7 +353,13 @@ class AISupport:
                 HumanMessage(content=question)
             ]
 
-            initial_state = create_initial_state(messages, max_iterations=1)
+            initial_state = create_initial_state(
+                messages,
+                max_iterations=1,
+                user_id=str(user_id),
+                tenant_id=str(tenant_id),
+                chat_id=str(chat_id),
+            )
             response_state = await self.__graph.ainvoke(initial_state, config=config)
 
             if "direct_response" in response_state:
@@ -358,11 +375,30 @@ class AISupport:
 
         final_response = response_content
 
-        usage = getattr(response_message, "usage_metadata", None) or getattr(response_message, "response_metadata", {}).get("token_usage", {}) if response_message else {}
-        prompt_tokens = int(usage.get("input_tokens") or usage.get("prompt_tokens") or 0)
-        completion_tokens = int(usage.get("output_tokens") or usage.get("completion_tokens") or 0)
+        usage = model_usage or extract_token_usage(response_message)
+        prompt_tokens = int(usage.get("prompt_tokens") or 0)
+        completion_tokens = int(usage.get("completion_tokens") or 0)
+        total_tokens = int(usage.get("total_tokens") or prompt_tokens + completion_tokens)
         estimated_cost = (prompt_tokens * settings.LLM_INPUT_USD_PER_1M + completion_tokens * settings.LLM_OUTPUT_USD_PER_1M) / 1_000_000
-        await record_ai_metric(user_id=int(user_id), tenant_id=tenant_id, operation="interview" if use_interview_mode else "chat", model=settings.INTERVIEW_LLM_MODEL if use_interview_mode else settings.LLM_MODEL, success=1, latency_ms=(perf_counter() - started_at) * 1000, retrieval_count=retrieval_count, prompt_tokens=prompt_tokens, completion_tokens=completion_tokens, estimated_cost_usd=estimated_cost)
+        evidence_stats = evidence_context_stats(knowledge_context)
+        await record_ai_metric(
+            user_id=int(user_id),
+            tenant_id=tenant_id,
+            operation="interview_question" if use_interview_mode else "chat",
+            model=settings.INTERVIEW_LLM_MODEL if use_interview_mode else settings.LLM_MODEL,
+            success=1,
+            latency_ms=(perf_counter() - started_at) * 1000,
+            model_latency_ms=float(usage.get("model_latency_ms") or 0),
+            retrieval_count=retrieval_count,
+            evidence_retrieval_count=evidence_stats["retrieval_count"],
+            evidence_context_chars=evidence_stats["context_chars"],
+            evidence_cache_hit=int(knowledge_context_cache_hit),
+            evidence_retrieval_method=evidence_stats["retrieval_method"],
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            estimated_cost_usd=estimated_cost,
+        )
 
         asyncio.create_task(
             self.__persist_turn(
@@ -381,6 +417,7 @@ class AISupport:
                 resume_content=resume_content,
                 code_execution=code_execution,
                 knowledge_context=knowledge_context,
+                knowledge_context_cache_hit=knowledge_context_cache_hit,
                 evaluation=evaluation,
                 evaluation_request=evaluation_request,
                 answer_counted=answer_counted,
@@ -414,6 +451,7 @@ class AISupport:
         resume_content: str | None,
         code_execution: dict | None,
         knowledge_context: str | None,
+        knowledge_context_cache_hit: bool,
         evaluation: AnswerEvaluation | None,
         evaluation_request: dict | None,
         answer_counted: bool,
@@ -443,6 +481,7 @@ class AISupport:
                 "resume_content": resume_content,
                 "code_execution": code_execution,
                 "knowledge_context": knowledge_context,
+                "knowledge_context_cache_hit": knowledge_context_cache_hit,
                 "evaluation": evaluation.model_dump() if evaluation else None,
                 "evaluation_status": "completed" if evaluation else ("queued" if evaluation_request else None),
                 "answer_counted": answer_counted,
@@ -466,6 +505,7 @@ class AISupport:
                 "user_id": str(user_id),
                 "chat_id": str(chat_id),
                 "request": evaluation_request,
+                "queued_at": time.time(),
             }
             try:
                 job = await asyncio.to_thread(enqueue_evaluation_job, job_payload)

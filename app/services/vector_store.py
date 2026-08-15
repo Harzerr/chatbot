@@ -296,6 +296,7 @@ class MultiTenantVectorStore:
         evaluation: Optional[Dict[str, Any]] = None,
         job_id: str | None = None,
         error_message: str | None = None,
+        evidence_feedback: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
         """Update evaluation metadata for an owned conversation point."""
         def update_payload() -> None:
@@ -317,15 +318,21 @@ class MultiTenantVectorStore:
             updates: Dict[str, Any] = {"evaluation_status": status}
             if evaluation is not None:
                 updates["evaluation"] = evaluation
+            if evidence_feedback is not None:
+                updates["evidence_feedback"] = evidence_feedback
             if job_id:
                 updates["evaluation_job_id"] = job_id
+            if status in {"queued", "processing", "completed"}:
+                metadata.pop("evaluation_error", None)
             if error_message:
-                updates["evaluation_error"] = error_message[:1000]
-            self.client.set_payload(
+                metadata["evaluation_error"] = error_message[:1000]
+            metadata.update(updates)
+            payload = dict(records[0].payload or {})
+            payload["metadata"] = metadata
+            self.client.overwrite_payload(
                 collection_name=self.collection_name,
-                payload=updates,
+                payload=payload,
                 points=[point_id],
-                key="metadata",
                 wait=True,
             )
 

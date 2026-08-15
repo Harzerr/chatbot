@@ -12,6 +12,7 @@ import Profile from './pages/Profile';
 import CareerStudio from './pages/CareerStudio';
 import TrainingCamp from './pages/TrainingCamp';
 import ResumeOptimizer from './pages/ResumeOptimizer';
+import InterviewEvaluation from './pages/InterviewEvaluation';
 
 const interviewTheme = createTheme({
   palette: {
@@ -113,6 +114,7 @@ const App = () => {
             <Route path="/register" element={<Register />} />
             <Route element={<ProtectedRoute />}>
               <Route path="/chat" element={<Chat />} />
+              <Route path="/chat/:chatId/evaluation" element={<InterviewEvaluation />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/career" element={<CareerStudio />} />
               <Route path="/resume-optimizer" element={<ResumeOptimizer />} />

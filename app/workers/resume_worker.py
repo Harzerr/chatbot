@@ -12,8 +12,8 @@ def main() -> None:
             Queue(name=settings.RESUME_QUEUE_NAME, connection=connection),
             Queue(name=settings.CAREER_FACT_QUEUE_NAME, connection=connection),
             Queue(name=settings.CODE_QUEUE_NAME, connection=connection),
-            Queue(name=settings.EVALUATION_QUEUE_NAME, connection=connection),
             Queue(name=settings.CONVERSATION_SUMMARY_QUEUE_NAME, connection=connection),
+            Queue(name=settings.CAREER_EVIDENCE_INDEX_QUEUE_NAME, connection=connection),
         ],
         connection=connection,
     )

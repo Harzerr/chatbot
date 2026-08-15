@@ -14,7 +14,8 @@ from app.models.user import User as DBUser
 from app.schemas.api import LLMRequest
 from app.services.streaming import StreamingService
 from app.services.vector_store import MultiTenantVectorStore
-from app.services.career_knowledge import build_knowledge_context
+from app.services.career_knowledge import build_cached_knowledge_context
+from app.services.interview_assessment import should_use_career_evidence
 from app.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -91,18 +92,48 @@ async def chat_completions(
 
     effective_resume_content = build_profile_resume_context(current_user) if (current_user.resume_text or "").strip() else request.resume_content
     knowledge_context = request.knowledge_context
+    evidence_cache_hit = False
+    previous_question = ""
+    if use_interview_mode and existing_messages:
+        previous_question = str(existing_messages[-1].get("assistant_message") or "")
     if use_interview_mode:
-        documents = (await db.scalars(
-            select(CareerKnowledgeDocument).where(
-                CareerKnowledgeDocument.user_id == current_user.id,
-                CareerKnowledgeDocument.is_archived.is_(False),
-            ).order_by(CareerKnowledgeDocument.updated_at.desc())
-        )).all()
-        knowledge_context = build_knowledge_context(
-            documents,
-            query=f"{request.user_message}\n{request.jd_content or ''}",
+        use_career_evidence = should_use_career_evidence(
+            f"{previous_question}\n{request.user_message}"
         )
-    request = request.model_copy(update={"resume_content": effective_resume_content, "knowledge_context": knowledge_context})
+        if use_career_evidence:
+            documents = (await db.scalars(
+                select(CareerKnowledgeDocument).where(
+                    CareerKnowledgeDocument.user_id == current_user.id,
+                    CareerKnowledgeDocument.is_archived.is_(False),
+                ).order_by(CareerKnowledgeDocument.updated_at.desc())
+            )).all()
+            knowledge_context, evidence_cache_hit = await asyncio.to_thread(
+                build_cached_knowledge_context,
+                documents,
+                f"{previous_question}\n{request.user_message}\n{request.jd_content or ''}",
+                tenant_id=current_user.tenant_id,
+                user_id=str(current_user.id),
+                fact_id=request.knowledge_fact_id,
+            )
+            logger.info(
+                "Interview evidence pack ready: chat_id=%s fact_id=%s cache_hit=%s chars=%s",
+                request.chat_id,
+                request.knowledge_fact_id,
+                evidence_cache_hit,
+                len(knowledge_context or ""),
+            )
+        else:
+            knowledge_context = None
+            logger.info(
+                "Interview career evidence skipped: chat_id=%s question_type=non-project previous_question_len=%s",
+                request.chat_id,
+                len(previous_question),
+            )
+    request = request.model_copy(update={
+        "resume_content": effective_resume_content,
+        "knowledge_context": knowledge_context,
+        "knowledge_context_cache_hit": evidence_cache_hit,
+    })
     logger.info(
         "Received chat completions request: chat_id=%s skill=%s interview_role=%s interview_level=%s interview_type=%s user_message_len=%s resume_len=%s",
         request.chat_id,

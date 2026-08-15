@@ -30,6 +30,12 @@ def search(query: str) -> dict[str, str]:
     Returns:
         Dictionary containing search results
     """
+    query = (query or "").strip()
+    if not query:
+        raise ValueError("business validation: query cannot be empty")
+    if len(query) > 500:
+        raise ValueError("business validation: query is too long")
+
     logger.info(f"Fetched news for {query}")
 
     tavily_client = TavilyClient(api_key=settings.TAVILY_API_KEY)

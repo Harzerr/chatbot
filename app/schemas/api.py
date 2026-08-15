@@ -26,6 +26,8 @@ class LLMRequest(BaseModel):
     resume_content: Optional[str] = Field(default=None, description="Resume content or summary")
     code_execution: Optional[CodeExecutionEvidence] = Field(default=None, description="Latest Judge0 result for a coding interview answer")
     knowledge_context: Optional[str] = Field(default=None, description="User-uploaded technical evidence context")
+    knowledge_context_cache_hit: bool = Field(default=False, description="Whether the bounded career evidence pack came from Redis")
+    knowledge_fact_id: Optional[int] = Field(default=None, description="Optional career fact used to scope technical evidence retrieval")
 
 
 class CodeRunRequest(BaseModel):

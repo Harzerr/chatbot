@@ -26,6 +26,7 @@ const streamingService = {
       jd_content: interviewConfig.jdContent,
       resume_content: interviewConfig.resumeContent,
       code_execution: interviewConfig.codeExecution || null,
+      knowledge_fact_id: interviewConfig.knowledgeFactId || null,
     });
 
     const token = localStorage.getItem('token');

@@ -37,14 +37,35 @@ const chatService = {
     }
   },
 
-  getInterviewReport: async (chatId) => {
+  getInterviewReport: async (chatId, { partial = false } = {}) => {
     try {
-      const response = await axios.get(`/api/v1/history/chats/${chatId}/report`);
+      const suffix = partial ? '?partial=true' : '';
+      const response = await axios.get(`/api/v1/history/chats/${chatId}/report${suffix}`);
       return response.data;
     } catch (error) {
       console.error(`Error fetching report for chat ${chatId}:`, error);
       throw error;
     }
+  },
+
+  downloadInterviewReportPdf: async (chatId) => {
+    const response = await axios.get(`/api/v1/history/chats/${chatId}/report/pdf`, {
+      responseType: 'blob',
+    });
+    return response.data;
+  },
+
+  retryEvaluation: async (chatId, pointId) => {
+    const response = await axios.post(`/api/v1/history/chats/${chatId}/messages/${pointId}/evaluation/retry`);
+    return response.data;
+  },
+
+  submitEvidenceFeedback: async (chatId, pointId, feedback) => {
+    const response = await axios.post(
+      `/api/v1/history/chats/${chatId}/messages/${pointId}/evaluation/evidence-feedback`,
+      { feedback },
+    );
+    return response.data;
   },
 
   pauseInterview: async (chatId) => {

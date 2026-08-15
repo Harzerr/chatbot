@@ -12,7 +12,12 @@ from fastapi.staticfiles import StaticFiles
 from app.agent.langgraph_agent import initialize_graph, close_graph
 from app.api.api import api_router
 from app.core.config import settings
-from app.db.bootstrap import ensure_career_knowledge_columns, ensure_training_columns, ensure_user_profile_columns
+from app.db.bootstrap import (
+    ensure_ai_metric_columns,
+    ensure_career_knowledge_columns,
+    ensure_training_columns,
+    ensure_user_profile_columns,
+)
 from app.db.base import Base
 from app.db.session import async_engine
 from app.services.role_knowledge_store import QdrantRoleKnowledgeStore
@@ -45,6 +50,7 @@ async def lifespan(app: FastAPI):
     await ensure_user_profile_columns(async_engine)
     await ensure_training_columns(async_engine)
     await ensure_career_knowledge_columns(async_engine)
+    await ensure_ai_metric_columns(async_engine)
     resume_recovery_task = asyncio.create_task(recover_pending_resume_parse_jobs())
 
     logger.info(f"LANGCHAIN_TRACING_V2: {os.getenv('LANGCHAIN_TRACING_V2')}")

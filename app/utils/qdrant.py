@@ -37,11 +37,14 @@ def format_chat_results(points) -> List[Dict[str, Any]]:
             "target_company": metadata.get("target_company"),
             "jd_content": metadata.get("jd_content"),
             "resume_content": metadata.get("resume_content"),
+            "code_execution": metadata.get("code_execution"),
+            "knowledge_context": metadata.get("knowledge_context"),
             "evaluation": metadata.get("evaluation"),
             "evaluation_status": metadata.get("evaluation_status"),
             "evaluation_job_id": metadata.get("evaluation_job_id"),
             "evaluation_error": metadata.get("evaluation_error"),
             "answer_counted": metadata.get("answer_counted"),
+            "evidence_feedback": metadata.get("evidence_feedback") or [],
         }
         if getattr(point, "score", None) is not None:
             chat_msg["_score"] = float(point.score)

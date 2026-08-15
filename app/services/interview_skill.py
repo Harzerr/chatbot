@@ -21,6 +21,7 @@ from app.services.interview_assessment import (
 )
 from app.services.role_knowledge_store import QdrantRoleKnowledgeStore
 from app.services.stream_context import current_stream_callback
+from app.services.llm_usage import extract_token_usage, merge_token_usage
 from app.schemas.evaluation import EvaluationRequest
 from app.utils.logger import setup_logger
 
@@ -403,6 +404,14 @@ INTERVIEW SKILL INSTRUCTIONS:
 - 如果代码思路明显有问题，要自然指出关键漏洞，并要求候选人修正，不要直接给标准答案
 """
 
+        if self._has_started_coding_round(relevant_docs):
+            return """
+当前已经进入代码题跟进阶段：
+- 上一轮已经给出代码题，不要重新生成或切换到另一道代码题
+- 围绕上一道题继续追问候选人的复杂度、边界条件、错误修正、测试用例或工程取舍
+- 如果候选人刚刚回答了追问，请根据回答继续深挖，必要时结束代码题并回到常规技术面试
+"""
+
         if not self._should_switch_to_coding_round(relevant_docs, interview_type):
             return ""
 
@@ -650,6 +659,7 @@ JD 分析：
         resume_content: str | None = None,
         code_execution: dict | None = None,
         knowledge_context: str | None = None,
+        knowledge_context_cache_hit: bool = False,
     ) -> dict:
         question_limit = get_interview_question_limit(interview_type)
         normalized_question = (question or "").strip()
@@ -658,9 +668,9 @@ JD 分析：
             doc
             for doc in relevant_docs
             if (
-                bool(doc.get("answer_counted"))
-                if doc.get("answer_counted") is not None
-                else is_countable_answer(doc.get("user_message"))
+                is_countable_answer(doc.get("user_message"))
+                if doc.get("answer_counted") is None
+                else bool(doc.get("answer_counted")) and is_countable_answer(doc.get("user_message"))
             )
         ]
         current_answer_counted = is_countable_answer(
@@ -712,7 +722,7 @@ JD 分析：
         coding_round_context = self._build_coding_round_context(
             interview_role=normalized_role,
             interview_type=interview_type,
-            relevant_docs=effective_relevant_docs,
+            relevant_docs=relevant_docs,
             question=question,
         )
 
@@ -725,7 +735,7 @@ JD 分析：
 - 请换一道同岗位、同面试阶段、难度相近但考察点不同的问题
 """
 
-        if self._should_switch_to_coding_round(effective_relevant_docs, interview_type) and not self._looks_like_code_submission(question):
+        if self._should_switch_to_coding_round(relevant_docs, interview_type) and not self._looks_like_code_submission(question):
             coding_question = self._pick_coding_question(
                 interview_role=normalized_role,
                 interview_type=interview_type,
@@ -763,53 +773,66 @@ JD 分析：
             interview_type=interview_type,
         )
 
-        llm_started_at = perf_counter()
         evaluation_enabled = self._evaluator.should_evaluate(question, previous_interviewer_question)
         stream_callback = current_stream_callback.get()
 
-        async def invoke_question_model():
-            if stream_callback is None:
-                return await self._llm.ainvoke(messages)
-
-            assembled = ""
-            async for chunk in self._llm.astream(messages):
-                content = getattr(chunk, "content", "")
-                if isinstance(content, list):
-                    content = "".join(
-                        part.get("text", "") if isinstance(part, dict) else str(part)
-                        for part in content
-                    )
-                content = str(content or "")
-                if not content:
-                    continue
-
-                if content.startswith(assembled):
-                    delta = content[len(assembled):]
-                elif assembled.endswith(content):
-                    delta = ""
-                else:
-                    delta = content
-                if delta:
-                    assembled += delta
-                    await stream_callback(delta)
-
-            return assembled
-
-        response = await invoke_question_model()
-        logger.info("Interview question model completed in %.0fms", (perf_counter() - llm_started_at) * 1000)
-        response_text = response if isinstance(response, str) else (
-            response.content if hasattr(response, "content") else str(response)
-        )
-
         finish_after_answer = current_answer_counted and completed_questions + 1 >= question_limit
         if finish_after_answer:
+            # Do not invoke or stream another interviewer question after the
+            # last valid answer. The final answer is still sent to evaluation.
             response_text = (
                 f"本场面试已结束。你已完成 {question_limit}/{question_limit} 题。"
                 "系统已记录本次作答数据，请查看右侧综合报告。"
             )
+            model_usage = {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "model_latency_ms": 0,
+            }
+        else:
+            llm_started_at = perf_counter()
+
+            async def invoke_question_model():
+                if stream_callback is None:
+                    response = await self._llm.ainvoke(messages)
+                    return response, extract_token_usage(response)
+
+                assembled = ""
+                usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+                async for chunk in self._llm.astream(messages):
+                    usage = merge_token_usage(usage, extract_token_usage(chunk))
+                    content = getattr(chunk, "content", "")
+                    if isinstance(content, list):
+                        content = "".join(
+                            part.get("text", "") if isinstance(part, dict) else str(part)
+                            for part in content
+                        )
+                    content = str(content or "")
+                    if not content:
+                        continue
+
+                    if content.startswith(assembled):
+                        delta = content[len(assembled):]
+                    elif assembled.endswith(content):
+                        delta = ""
+                    else:
+                        delta = content
+                    if delta:
+                        assembled += delta
+                        await stream_callback(delta)
+
+                return assembled, usage
+
+            response, model_usage = await invoke_question_model()
+            logger.info("Interview question model completed in %.0fms", (perf_counter() - llm_started_at) * 1000)
+            response_text = response if isinstance(response, str) else (
+                response.content if hasattr(response, "content") else str(response)
+            )
+            model_usage["model_latency_ms"] = round((perf_counter() - llm_started_at) * 1000)
 
         evaluation_request = None
-        if evaluation_enabled:
+        if evaluation_enabled and current_answer_counted:
             evaluation_request = EvaluationRequest(
                 previous_question=previous_interviewer_question,
                 user_answer=question,
@@ -821,6 +844,7 @@ JD 分析：
                 resume_content=resume_content,
                 code_execution=code_execution,
                 knowledge_context=knowledge_context,
+                knowledge_context_cache_hit=knowledge_context_cache_hit,
             ).model_dump()
 
         return {
@@ -829,4 +853,5 @@ JD 分析：
             "evaluation_request": evaluation_request,
             "is_finished": finish_after_answer,
             "answer_counted": current_answer_counted,
+            "model_usage": model_usage,
         }

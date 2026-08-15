@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { jsPDF } from 'jspdf';
 import {
   Box,
+  Alert,
   Drawer,
   List,
   ListItem,
@@ -112,14 +112,14 @@ const includesInterviewEndMarker = (content = '') => {
 };
 
 const nonAnswerMarkers = [
-  '不知道', '不清楚', '不了解', '没接触过', '没有接触过', '没做过', '没有做过',
+  '不知道', '不清楚', '不太清楚', '不了解', '不太知道', '没接触过', '没有接触过', '没做过', '没有做过',
   '不熟悉', '不太会', '不会', '答不上来', '无法回答', '不记得', '想不起来',
   '没有相关经验', '无相关经验',
 ];
 
 const isCountedInterviewAnswer = (message = {}) => {
-  if (typeof message.answer_counted === 'boolean') return message.answer_counted;
   const content = normalizeText(message.user_message || '');
+  if (message.answer_counted === false) return false;
   if (!content || isManualFinishCommand(content) || ['开始面试', '开始', '继续', '开始吧', '可以开始了', '继续面试'].includes(content)) {
     return false;
   }
@@ -255,781 +255,52 @@ const buildInterviewTimeCopy = (meta = {}, now = Date.now()) => {
     };
 };
 
-const escapeHtml = (content = '') => String(content)
-  .replaceAll('&', '&amp;')
-  .replaceAll('<', '&lt;')
-  .replaceAll('>', '&gt;')
-  .replaceAll('"', '&quot;')
-  .replaceAll("'", '&#39;');
-
-const renderListHtml = (items = [], emptyText = '暂无内容') => {
-  if (!items.length) {
-    return `<p class="empty-state">${escapeHtml(emptyText)}</p>`;
-  }
-
-  return `
-    <ul class="report-list">
-      ${items.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}
-    </ul>
-  `;
-};
-
-const renderResourcesHtml = (resources = []) => {
-  if (!resources.length) {
-    return '<p class="empty-state">暂无推荐资源</p>';
-  }
-
-  return resources.map((resource) => `
-    <div class="resource-card">
-      <h4>${escapeHtml(resource.title)}</h4>
-      <p>${escapeHtml(resource.category)} · ${escapeHtml(resource.reason)}</p>
-    </div>
-  `).join('');
-};
-
-const renderInterviewQuestionsHtml = (questions = []) => {
-  if (!questions.length) {
-    return '<p class="empty-state">暂无可展示的面试问答记录。</p>';
-  }
-
-  return questions.map((item, index) => `
-    <div class="qa-item">
-      <p class="qa-label">第 ${index + 1} 题 · 面试官问题</p>
-      <p class="qa-content">${escapeHtml(item.question || '未记录问题')}</p>
-      <p class="qa-label">候选人回答</p>
-      <p class="qa-content">${escapeHtml(item.candidate_answer || '未记录回答')}</p>
-      <p class="qa-label">参考答案</p>
-      <p class="qa-content">${escapeHtml(item.reference_answer || '暂无参考答案')}</p>
-    </div>
-  `).join('');
-};
+const hasPendingEvaluations = (reportData = {}) => (
+  (reportData.interview_questions || []).some((item) => (
+    item.answer_counted !== false
+      && String(item.candidate_answer || '').trim()
+      && (
+        item.evaluation_status === 'queued'
+        || item.evaluation_status === 'processing'
+        || (!item.evaluation && item.evaluation_status !== 'failed')
+      )
+  ))
+);
 
 const getEffectiveAnswerCount = (reportData = {}) => {
   const scoredCount = Number(reportData?.total_answers || 0);
   const qaCount = Array.isArray(reportData?.interview_questions)
-    ? reportData.interview_questions.filter((item) => String(item?.candidate_answer || '').trim()).length
+    ? reportData.interview_questions.filter((item) => (
+      item?.answer_counted !== false && String(item?.candidate_answer || '').trim()
+    )).length
     : 0;
   return Math.max(scoredCount, qaCount);
 };
 
-const formatReportTime = (dateInput = new Date()) => new Intl.DateTimeFormat('zh-CN', {
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  hour12: false,
-}).format(dateInput);
-
-const toSafeFileNamePart = (value = '') => value.replace(/[\\/:*?"<>|]/g, '-').trim();
-
-const buildReportFileName = (chatMeta, reportData) => {
-  const role = toSafeFileNamePart(reportData?.interview_role || chatMeta?.role || '通用软件工程师');
-  const interviewType = toSafeFileNamePart(reportData?.interview_type || chatMeta?.interviewType || '一面');
-  const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+$/, '');
-  return `${role}-${interviewType}-面试报告-${timestamp}.pdf`;
-};
-
-const PDF_CN_FONT_NAME = 'SimHeiCN';
-let pdfCnFontPromise = null;
-
-const blobToBase64 = (blob) => new Promise((resolve, reject) => {
-  const reader = new FileReader();
-  reader.onload = () => {
-    const result = typeof reader.result === 'string' ? reader.result : '';
-    const base64 = result.includes(',') ? result.split(',')[1] : result;
-    resolve(base64);
-  };
-  reader.onerror = reject;
-  reader.readAsDataURL(blob);
-});
-
-const loadPdfChineseFontData = async () => {
-  if (!pdfCnFontPromise) {
-    pdfCnFontPromise = (async () => {
-      const candidates = ['/fonts/simhei.ttf', '/fonts/NotoSansSC-VF.ttf'];
-      for (const url of candidates) {
-        try {
-          const response = await fetch(url);
-          if (!response.ok) continue;
-          const blob = await response.blob();
-          const base64 = await blobToBase64(blob);
-          const fileName = url.split('/').pop() || 'simhei.ttf';
-          if (!base64) continue;
-          return { fileName, base64 };
-        } catch (error) {
-          // try next candidate
-        }
-      }
-      return null;
-    })();
-  }
-  return pdfCnFontPromise;
-};
-
-const buildReportPrintHtml = (chatMeta, reportData) => {
-  const fileName = buildReportFileName(chatMeta, reportData);
-  const scoreCards = [
-    { label: '综合得分', value: reportData.overall_score, tone: '#0ea5e9' },
-    { label: '技术准确性', value: reportData.technical_accuracy, tone: '#64748b' },
-    { label: '知识深度', value: reportData.knowledge_depth, tone: '#f59e0b' },
-    { label: '表达清晰度', value: reportData.communication_clarity, tone: '#22c55e' },
-    { label: '逻辑结构', value: reportData.logical_structure, tone: '#8b5cf6' },
-    { label: '问题解决', value: reportData.problem_solving, tone: '#ec4899' },
-    { label: '岗位匹配度', value: reportData.job_match_score, tone: '#14b8a6' },
-  ];
-
-  return `
-    <!DOCTYPE html>
-    <html lang="zh-CN">
-      <head>
-        <meta charset="utf-8" />
-        <title>${escapeHtml(fileName)}</title>
-        <style>
-          @page {
-            size: A4;
-            margin: 14mm;
-          }
-
-          * {
-            box-sizing: border-box;
-          }
-
-          body {
-            margin: 0;
-            font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
-            color: #0f172a;
-            background: #f8fafc;
-            overflow-wrap: anywhere;
-            word-break: break-word;
-          }
-
-          .page {
-            padding: 24px;
-            overflow-wrap: anywhere;
-          }
-
-          .hero {
-            padding: 28px;
-            border-radius: 18px;
-            color: #e2e8f0;
-            background: linear-gradient(135deg, #082f49 0%, #0f172a 100%);
-          }
-
-          .hero h1 {
-            margin: 0 0 12px;
-            font-size: 28px;
-          }
-
-          .hero p {
-            margin: 0;
-            color: rgba(226, 232, 240, 0.82);
-            line-height: 1.7;
-            font-size: 14px;
-          }
-
-          .meta-grid,
-          .score-grid,
-          .section-grid {
-            display: grid;
-            gap: 14px;
-          }
-
-          .meta-grid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            margin-top: 18px;
-          }
-
-          .score-grid {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            margin: 22px 0;
-          }
-
-          .section-grid {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-          }
-
-          .card {
-            border-radius: 16px;
-            background: #ffffff;
-            border: 1px solid #dbe4f0;
-            padding: 18px;
-            break-inside: avoid;
-          }
-
-          .meta-item span,
-          .card-label {
-            display: block;
-            font-size: 12px;
-            letter-spacing: 0.04em;
-            color: #64748b;
-            margin-bottom: 8px;
-          }
-
-          .meta-item strong,
-          .score-value {
-            font-size: 18px;
-            color: #0f172a;
-          }
-
-          .score-card {
-            border-radius: 16px;
-            padding: 18px;
-            color: #ffffff;
-          }
-
-          .score-value {
-            display: block;
-            margin-top: 12px;
-            font-size: 30px;
-            font-weight: 700;
-            color: #ffffff;
-          }
-
-          .section-title {
-            margin: 0 0 12px;
-            font-size: 18px;
-            color: #0f172a;
-          }
-
-          .summary {
-            margin: 0;
-            line-height: 1.9;
-            font-size: 14px;
-            color: #1e293b;
-            white-space: pre-wrap;
-            overflow-wrap: anywhere;
-            word-break: break-word;
-          }
-
-          .report-list {
-            margin: 0;
-            padding-left: 20px;
-          }
-
-          .report-list li {
-            margin: 0 0 10px;
-            color: #334155;
-            line-height: 1.8;
-            font-size: 14px;
-            overflow-wrap: anywhere;
-            word-break: break-word;
-          }
-
-          .resource-card {
-            border-radius: 14px;
-            padding: 14px 16px;
-            background: #f8fafc;
-            border: 1px solid #dbe4f0;
-            margin-bottom: 12px;
-          }
-
-          .resource-card h4 {
-            margin: 0 0 8px;
-            font-size: 15px;
-            color: #0f172a;
-            overflow-wrap: anywhere;
-            word-break: break-word;
-          }
-
-          .resource-card p,
-          .empty-state {
-            margin: 0;
-            line-height: 1.8;
-            font-size: 14px;
-            color: #475569;
-            overflow-wrap: anywhere;
-            word-break: break-word;
-          }
-
-          .qa-item {
-            border-radius: 14px;
-            padding: 14px 16px;
-            background: #f8fafc;
-            border: 1px solid #dbe4f0;
-            margin-bottom: 12px;
-          }
-
-          .qa-label {
-            margin: 0 0 8px;
-            color: #475569;
-            font-size: 12px;
-            letter-spacing: 0.04em;
-          }
-
-          .qa-content {
-            margin: 0 0 14px;
-            color: #0f172a;
-            line-height: 1.85;
-            font-size: 14px;
-            white-space: pre-wrap;
-            overflow-wrap: anywhere;
-            word-break: break-word;
-          }
-
-          .qa-item .qa-content:last-child {
-            margin-bottom: 0;
-          }
-
-          .footer {
-            margin-top: 22px;
-            font-size: 12px;
-            color: #64748b;
-            text-align: right;
-          }
-
-          @media print {
-            body {
-              background: #ffffff;
-            }
-
-            .page {
-              padding: 0;
-            }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="page">
-          <section class="hero">
-            <h1>${escapeHtml(reportData.interview_role || chatMeta?.role || '通用软件工程师')} 面试报告</h1>
-            <p>${escapeHtml(reportData.summary || '当前有效回答样本不足，暂时无法生成完整评估报告。')}</p>
-          </section>
-
-          <section class="meta-grid">
-            <div class="card meta-item">
-              <span>面试级别</span>
-              <strong>${escapeHtml(reportData.interview_level || chatMeta?.level || '中级')}</strong>
-            </div>
-            <div class="card meta-item">
-              <span>面试类型</span>
-              <strong>${escapeHtml(reportData.interview_type || chatMeta?.interviewType || '一面')}</strong>
-            </div>
-            <div class="card meta-item">
-              <span>目标公司</span>
-              <strong>${escapeHtml(reportData.target_company || chatMeta?.targetCompany || '未设置')}</strong>
-            </div>
-            <div class="card meta-item">
-              <span>有效作答轮次</span>
-              <strong>${escapeHtml(String(getEffectiveAnswerCount(reportData)))}</strong>
-            </div>
-          </section>
-
-          <section class="score-grid">
-            ${scoreCards.map((item) => `
-              <div class="score-card" style="background: linear-gradient(135deg, ${item.tone} 0%, #0f172a 180%);">
-                <span class="card-label">${escapeHtml(item.label)}</span>
-                <strong class="score-value">${escapeHtml(String(item.value ?? 0))}</strong>
-              </div>
-            `).join('')}
-          </section>
-
-          <section class="card" style="margin-bottom: 14px;">
-            <h2 class="section-title">综合总结</h2>
-            <p class="summary">${escapeHtml(reportData.summary || '暂无总结。')}</p>
-          </section>
-
-          <section class="card" style="margin-bottom: 14px;">
-            <h2 class="section-title">内容分析</h2>
-            <p class="summary">${escapeHtml(reportData.content_analysis || '暂无内容分析。')}</p>
-          </section>
-
-          <section class="card" style="margin-bottom: 14px;">
-            <h2 class="section-title">面试问答记录与参考答案</h2>
-            ${renderInterviewQuestionsHtml(reportData.interview_questions)}
-          </section>
-
-          <section class="section-grid">
-            <div class="card">
-              <h2 class="section-title">优势亮点</h2>
-              ${renderListHtml(reportData.strengths, '暂无明显优势项')}
-            </div>
-            <div class="card">
-              <h2 class="section-title">待提升项</h2>
-              ${renderListHtml(reportData.improvement_areas, '暂无明显短板')}
-            </div>
-            <div class="card">
-              <h2 class="section-title">后续建议</h2>
-              ${renderListHtml(reportData.recommendations, '暂无建议')}
-            </div>
-            <div class="card">
-              <h2 class="section-title">推荐资源</h2>
-              ${renderResourcesHtml(reportData.recommended_resources)}
-            </div>
-          </section>
-
-          <p class="footer">导出时间：${escapeHtml(formatReportTime(new Date()))}</p>
-        </div>
-      </body>
-    </html>
-  `;
-};
-
-const downloadReportPdf = async (chatMeta, reportData) => {
-  const fileName = buildReportFileName(chatMeta, reportData);
-  void buildReportPrintHtml(chatMeta, reportData);
-  const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
-  const pageWidth = pdf.internal.pageSize.getWidth();
-  const pageHeight = pdf.internal.pageSize.getHeight();
-  const marginX = 40;
-  const marginY = 40;
-  const contentWidth = pageWidth - marginX * 2;
-  const contentBottom = pageHeight - marginY;
-  const bodyLineHeight = 14.5;
-  const qaLineHeight = 13.5;
-
-  let currentY = marginY;
-  let pageNumber = 1;
-  let chineseFontReady = false;
-
-  try {
-    const fontData = await loadPdfChineseFontData();
-    if (fontData) {
-      const fontList = pdf.getFontList?.() || {};
-      if (!fontList[PDF_CN_FONT_NAME]) {
-        const alreadyInVfs = typeof pdf.existsFileInVFS === 'function'
-          ? pdf.existsFileInVFS(fontData.fileName)
-          : false;
-        if (!alreadyInVfs) {
-          pdf.addFileToVFS(fontData.fileName, fontData.base64);
-        }
-        pdf.addFont(fontData.fileName, PDF_CN_FONT_NAME, 'normal');
-        pdf.addFont(fontData.fileName, PDF_CN_FONT_NAME, 'bold');
-      }
-      chineseFontReady = true;
-    }
-  } catch (error) {
-    console.warn('Failed to load Chinese PDF font, fallback to default font:', error);
-  }
-
-  const setPdfFont = (style = 'normal') => {
-    if (chineseFontReady) {
-      pdf.setFont(PDF_CN_FONT_NAME, style);
-    } else {
-      pdf.setFont('helvetica', style);
-    }
-  };
-
-  const toText = (value, fallback = '') => {
-    const normalized = String(value ?? '').trim();
-    return normalized || fallback;
-  };
-
-  const splitLines = (text, width) => pdf.splitTextToSize(toText(text), width);
-
-  const drawPageFooter = () => {
-    setPdfFont('normal');
-    pdf.setFontSize(9);
-    pdf.setTextColor(148, 163, 184);
-    pdf.text(`第 ${pageNumber} 页`, pageWidth - marginX, pageHeight - 20, { align: 'right' });
-  };
-
-  const nextPage = () => {
-    drawPageFooter();
-    pdf.addPage();
-    pageNumber += 1;
-    currentY = marginY;
-  };
-
-  const ensureSpace = (heightNeeded) => {
-    if (currentY + heightNeeded > contentBottom) {
-      nextPage();
-    }
-  };
-
-  const drawHeading = (title) => {
-    ensureSpace(24);
-    setPdfFont('bold');
-    pdf.setFontSize(16);
-    pdf.setTextColor(15, 23, 42);
-    pdf.text(title, marginX, currentY);
-    currentY += 22;
-  };
-
-  const drawParagraph = (text, options = {}) => {
-    const {
-      fontSize = 11,
-      textColor = [51, 65, 85],
-      lineHeight = bodyLineHeight,
-      maxLines = null,
-      spacingAfter = 10,
-    } = options;
-    const lines = splitLines(text, contentWidth);
-    const displayLines = maxLines && lines.length > maxLines
-      ? [...lines.slice(0, maxLines - 1), `${lines[maxLines - 1]} ...`]
-      : lines;
-
-    ensureSpace(displayLines.length * lineHeight + spacingAfter);
-    setPdfFont('normal');
-    pdf.setFontSize(fontSize);
-    pdf.setTextColor(...textColor);
-    displayLines.forEach((line) => {
-      pdf.text(line, marginX, currentY);
-      currentY += lineHeight;
-    });
-    currentY += spacingAfter;
-  };
-
-  const drawMetaLine = (label, value) => {
-    const lines = splitLines(`${label}：${toText(value, '未设置')}`, contentWidth);
-    ensureSpace(lines.length * bodyLineHeight + 4);
-    setPdfFont('normal');
-    pdf.setFontSize(11);
-    pdf.setTextColor(51, 65, 85);
-    lines.forEach((line) => {
-      pdf.text(line, marginX, currentY);
-      currentY += bodyLineHeight;
-    });
-    currentY += 4;
-  };
-
-  const drawBulletList = (title, items = [], fallbackText = '暂无', options = {}) => {
-    const {
-      maxItems = Number.MAX_SAFE_INTEGER,
-      maxLinesPerItem = Number.MAX_SAFE_INTEGER,
-    } = options;
-
-    drawHeading(title);
-    const displayItems = (items.length ? items : [fallbackText]).slice(0, maxItems);
-    displayItems.forEach((item, index) => {
-      const bulletPrefix = `${index + 1}. `;
-      const lines = splitLines(toText(item, fallbackText), contentWidth - 18);
-      const clippedLines = lines.length > maxLinesPerItem
-        ? [...lines.slice(0, maxLinesPerItem - 1), `${lines[maxLinesPerItem - 1]} ...`]
-        : lines;
-      const blockHeight = clippedLines.length * bodyLineHeight + 4;
-      ensureSpace(blockHeight);
-
-      setPdfFont('normal');
-      pdf.setFontSize(11);
-      pdf.setTextColor(51, 65, 85);
-      pdf.text(bulletPrefix, marginX, currentY);
-      clippedLines.forEach((line, lineIndex) => {
-        pdf.text(line, marginX + 16, currentY + lineIndex * bodyLineHeight);
-      });
-      currentY += clippedLines.length * bodyLineHeight + 4;
-    });
-    currentY += 6;
-  };
-
-  const drawResourceList = (resources = []) => {
-    drawHeading('推荐资源');
-    if (!resources.length) {
-      drawParagraph('暂无推荐资源。', { spacingAfter: 6 });
-      return;
-    }
-
-    resources.slice(0, 3).forEach((resource, index) => {
-      const title = toText(resource?.title, `资源 ${index + 1}`);
-      const detail = `${toText(resource?.category, '类别未设置')}：${toText(resource?.reason, '暂无推荐理由')}`;
-
-      setPdfFont('bold');
-      pdf.setFontSize(11);
-      pdf.setTextColor(15, 23, 42);
-      const titleLines = splitLines(`${index + 1}. ${title}`, contentWidth);
-      ensureSpace(titleLines.length * bodyLineHeight + 4);
-      titleLines.forEach((line) => {
-        pdf.text(line, marginX, currentY);
-        currentY += bodyLineHeight;
-      });
-
-      drawParagraph(detail, {
-        fontSize: 10.5,
-        textColor: [71, 85, 105],
-        maxLines: 2,
-        spacingAfter: 6,
-      });
-    });
-  };
-
-  const fitQaBlockLines = (questionLines, answerLines, referenceLines) => {
-    const maxBlockHeight = contentBottom - marginY;
-    const blockPadding = 12;
-    const sectionGap = 8;
-    const sectionLabelHeight = 14;
-    const sectionHeight = (lines) => sectionLabelHeight + lines.length * qaLineHeight;
-
-    const calculateHeight = () => (
-      blockPadding * 2
-      + sectionHeight(questionLines)
-      + sectionGap
-      + sectionHeight(answerLines)
-      + sectionGap
-      + sectionHeight(referenceLines)
-    );
-
-    let blockHeight = calculateHeight();
-    const truncated = {
-      question: false,
-      answer: false,
-      reference: false,
-    };
-
-    while (blockHeight > maxBlockHeight) {
-      const candidates = [
-        { key: 'answer', length: answerLines.length },
-        { key: 'reference', length: referenceLines.length },
-        { key: 'question', length: questionLines.length },
-      ].sort((a, b) => b.length - a.length);
-
-      let reduced = false;
-      for (const candidate of candidates) {
-        if (candidate.key === 'answer' && answerLines.length > 2) {
-          answerLines = answerLines.slice(0, -1);
-          truncated.answer = true;
-          reduced = true;
-          break;
-        }
-        if (candidate.key === 'reference' && referenceLines.length > 2) {
-          referenceLines = referenceLines.slice(0, -1);
-          truncated.reference = true;
-          reduced = true;
-          break;
-        }
-        if (candidate.key === 'question' && questionLines.length > 2) {
-          questionLines = questionLines.slice(0, -1);
-          truncated.question = true;
-          reduced = true;
-          break;
-        }
-      }
-
-      if (!reduced) break;
-      blockHeight = calculateHeight();
-    }
-
-    if (truncated.question && questionLines.length) {
-      questionLines[questionLines.length - 1] = `${questionLines[questionLines.length - 1]} ...`;
-    }
-    if (truncated.answer && answerLines.length) {
-      answerLines[answerLines.length - 1] = `${answerLines[answerLines.length - 1]} ...`;
-    }
-    if (truncated.reference && referenceLines.length) {
-      referenceLines[referenceLines.length - 1] = `${referenceLines[referenceLines.length - 1]} ...`;
-    }
-
-    return {
-      questionLines,
-      answerLines,
-      referenceLines,
-      blockHeight,
-    };
-  };
-
-  const drawQaBlock = (item, index) => {
-    const blockPadding = 12;
-    const sectionGap = 8;
-    const innerX = marginX + blockPadding;
-    const innerWidth = contentWidth - blockPadding * 2;
-    const titleLineHeight = 14;
-
-    const rawQuestionLines = splitLines(toText(item.question, '未记录问题'), innerWidth);
-    const rawAnswerLines = splitLines(toText(item.candidate_answer, '未记录回答'), innerWidth);
-    const rawReferenceLines = splitLines(toText(item.reference_answer, '暂无参考答案'), innerWidth);
-
-    const {
-      questionLines,
-      answerLines,
-      referenceLines,
-      blockHeight,
-    } = fitQaBlockLines(rawQuestionLines, rawAnswerLines, rawReferenceLines);
-
-    ensureSpace(blockHeight + 10);
-    pdf.setFillColor(248, 250, 252);
-    pdf.setDrawColor(203, 213, 225);
-    pdf.roundedRect(marginX, currentY, contentWidth, blockHeight, 7, 7, 'FD');
-
-    let cursorY = currentY + blockPadding;
-
-    const drawQaSection = (label, lines) => {
-      setPdfFont('bold');
-      pdf.setFontSize(10);
-      pdf.setTextColor(71, 85, 105);
-      pdf.text(label, innerX, cursorY + 10);
-      cursorY += titleLineHeight;
-
-      setPdfFont('normal');
-      pdf.setFontSize(10.5);
-      pdf.setTextColor(15, 23, 42);
-      lines.forEach((line) => {
-        pdf.text(line, innerX, cursorY + 10);
-        cursorY += qaLineHeight;
-      });
-    };
-
-    drawQaSection(`第 ${index + 1} 题 · 面试官问题`, questionLines);
-    cursorY += sectionGap;
-    drawQaSection('候选人回答', answerLines);
-    cursorY += sectionGap;
-    drawQaSection('参考答案', referenceLines);
-
-    currentY += blockHeight + 10;
-  };
-
-  const role = toText(reportData.interview_role || chatMeta?.role, '通用软件工程师');
-  const level = toText(reportData.interview_level || chatMeta?.level, '中级');
-  const interviewType = toText(reportData.interview_type || chatMeta?.interviewType, '一面');
-  const company = toText(reportData.target_company || chatMeta?.targetCompany, '未设置');
-
-  drawHeading(`${role} 面试报告`);
-  drawMetaLine('导出时间', formatReportTime(new Date()));
-  drawMetaLine('面试级别', level);
-  drawMetaLine('面试类型', interviewType);
-  drawMetaLine('目标公司', company);
-  drawMetaLine('有效作答轮次', String(getEffectiveAnswerCount(reportData)));
-
-  drawHeading('面试评价');
-  drawMetaLine('综合得分', String(reportData.overall_score ?? 0));
-  drawMetaLine('技术准确性', String(reportData.technical_accuracy ?? 0));
-  drawMetaLine('知识深度', String(reportData.knowledge_depth ?? 0));
-  drawMetaLine('表达清晰度', String(reportData.communication_clarity ?? 0));
-  drawMetaLine('逻辑结构', String(reportData.logical_structure ?? 0));
-  drawMetaLine('问题解决', String(reportData.problem_solving ?? 0));
-  drawMetaLine('岗位匹配度', String(reportData.job_match_score ?? 0));
-
-  drawHeading('综合总结');
-  drawParagraph(toText(reportData.summary, '暂无总结。'), { maxLines: 6 });
-
-  drawHeading('内容分析');
-  drawParagraph(toText(reportData.content_analysis, '暂无内容分析。'), { maxLines: 6 });
-
-  drawBulletList('优势亮点', reportData.strengths || [], '暂无明显优势项', {
-    maxItems: 3,
-    maxLinesPerItem: 2,
+const REPORT_SCORE_FIELDS = [
+  { key: 'technical_accuracy', label: '技术准确性', icon: AssignmentTurnedInRoundedIcon },
+  { key: 'knowledge_depth', label: '知识深度', icon: AutoGraphRoundedIcon },
+  { key: 'communication_clarity', label: '表达清晰度', icon: TipsAndUpdatesRoundedIcon },
+  { key: 'logical_structure', label: '逻辑结构', icon: AssignmentTurnedInRoundedIcon },
+  { key: 'problem_solving', label: '问题解决能力', icon: AutoGraphRoundedIcon },
+  { key: 'job_match_score', label: '岗位匹配度', icon: TrackChangesRoundedIcon },
+];
+
+const getAvailableReportScores = (evaluation = {}) => {
+  const overallScore = Number(evaluation.overall_score);
+  const dimensionValues = REPORT_SCORE_FIELDS.map(({ key }) => Number(evaluation[key]));
+  const legacyDefaultBlock = Number.isFinite(overallScore)
+    && overallScore > 0
+    && dimensionValues.every((value) => value === 0);
+
+  return REPORT_SCORE_FIELDS.filter(({ key }) => {
+    const value = evaluation[key];
+    return value !== null
+      && value !== undefined
+      && value !== ''
+      && Number.isFinite(Number(value))
+      && !legacyDefaultBlock;
   });
-  drawBulletList('待提升项', reportData.improvement_areas || [], '暂无明显短板', {
-    maxItems: 3,
-    maxLinesPerItem: 2,
-  });
-  drawBulletList('后续建议', reportData.recommendations || [], '暂无建议', {
-    maxItems: 3,
-    maxLinesPerItem: 2,
-  });
-  drawResourceList(reportData.recommended_resources || []);
-
-  // 强制问答记录从第二页开始
-  nextPage();
-
-  drawHeading('面试问答记录与参考答案');
-  const interviewQuestions = Array.isArray(reportData.interview_questions)
-    ? reportData.interview_questions
-    : [];
-
-  if (!interviewQuestions.length) {
-    drawParagraph('暂无可展示的面试问答记录。', {
-      fontSize: 11,
-      textColor: [71, 85, 105],
-      spacingAfter: 0,
-    });
-  } else {
-    interviewQuestions.forEach((item, index) => {
-      drawQaBlock(item, index);
-    });
-  }
-
-  drawPageFooter();
-  pdf.save(fileName);
 };
 
 const getLatestEvaluation = (messages = []) => (
@@ -1141,6 +412,8 @@ const Chat = () => {
   const [interviewJobs, setInterviewJobs] = useState([]);
   const [interviewJobsLoading, setInterviewJobsLoading] = useState(false);
   const [interviewJobsError, setInterviewJobsError] = useState('');
+  const [retryingEvaluationId, setRetryingEvaluationId] = useState(null);
+  const [evaluationExportNotice, setEvaluationExportNotice] = useState('');
 
   const isInterviewFinished = (messageList = messages) => {
     return hasInterviewEnded(messageList);
@@ -1150,6 +423,7 @@ const Chat = () => {
   const currentChatIdRef = useRef(null);
   const messageRequestIdRef = useRef(0);
   const reportRequestIdRef = useRef(0);
+  const reportInFlightRef = useRef(false);
   const { logout, currentUser } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -1167,10 +441,10 @@ const Chat = () => {
     ));
     if (!chatId || isStreaming || !pendingEvaluation) return undefined;
 
-    const timer = window.setTimeout(async () => {
-      await fetchMessages(chatId, { silent: true });
-    }, 2000);
-    return () => window.clearTimeout(timer);
+    const timer = window.setInterval(async () => {
+      await fetchMessages(chatId, { silent: true, loadReport: true });
+    }, 1500);
+    return () => window.clearInterval(timer);
   }, [currentChat?.id, currentChat?.messages, isStreaming]);
 
   useEffect(() => {
@@ -1243,20 +517,25 @@ const Chat = () => {
     reportRequestIdRef.current += 1;
     setReportLoading(false);
     setReport(null);
+    setEvaluationExportNotice('');
   };
 
   const fetchInterviewReport = async (chatId, options = {}) => {
-    const { rethrow = false } = options;
+    const { rethrow = false, partial = false, silent = false } = options;
+    if (silent && reportInFlightRef.current) return null;
     const requestId = reportRequestIdRef.current + 1;
     reportRequestIdRef.current = requestId;
-    setReportLoading(true);
+    reportInFlightRef.current = true;
+    if (!silent) setReportLoading(true);
     try {
-      const response = await chatService.getInterviewReport(chatId);
+      const response = await chatService.getInterviewReport(chatId, { partial });
       if (requestId !== reportRequestIdRef.current) {
         return null;
       }
       if (!currentChatIdRef.current || currentChatIdRef.current === chatId) {
         setReport(response);
+        const pending = hasPendingEvaluations(response);
+        setEvaluationExportNotice(pending ? '本场评估仍在处理中，请完成后再导出 PDF。' : '');
       }
       return response;
     } catch (reportError) {
@@ -1269,9 +548,10 @@ const Chat = () => {
       }
       return null;
     } finally {
-      if (requestId === reportRequestIdRef.current) {
+      if (requestId === reportRequestIdRef.current && !silent) {
         setReportLoading(false);
       }
+      reportInFlightRef.current = false;
     }
   };
 
@@ -1345,6 +625,7 @@ const Chat = () => {
           timestamp: msg.timestamp,
               evaluation: msg.evaluation,
               evaluationStatus: msg.evaluation_status,
+              evaluationError: msg.evaluation_error,
               answerCounted: msg.answer_counted,
         });
       }
@@ -1359,7 +640,13 @@ const Chat = () => {
       }
 
       return formattedThread;
-    });
+    })
+    .filter((message, index, all) => (
+      message.role !== 'assistant'
+      || index === 0
+      || all[index - 1].role !== 'assistant'
+      || all[index - 1].content !== message.content
+    ));
 
   const fetchMessages = async (chatId, options = {}) => {
     const { silent = false, loadReport = !silent } = options;
@@ -1383,14 +670,31 @@ const Chat = () => {
         const updatedChat = { ...prev, messages: response.messages };
         return { ...updatedChat, ...deriveInterviewMeta(updatedChat) };
       });
-      if (loadReport && formattedMessages.some((message) => message.role === 'assistant' && includesInterviewEndMarker(message.content))) {
-        fetchInterviewReport(chatId);
+      if (loadReport) {
+        const finished = formattedMessages.some(
+          (message) => message.role === 'assistant' && includesInterviewEndMarker(message.content),
+        );
+        fetchInterviewReport(chatId, { partial: !finished, silent });
       }
     } catch (err) {
       console.error(`Error fetching messages for chat ${chatId}:`, err);
       if (!silent) setError('加载面试记录失败，请稍后重试。');
     } finally {
       if (!silent) setChatLoading(false);
+    }
+  };
+
+  const handleRetryEvaluation = async (pointId) => {
+    if (!currentChat?.id || !pointId || retryingEvaluationId) return;
+    setRetryingEvaluationId(pointId);
+    try {
+      await chatService.retryEvaluation(currentChat.id, pointId);
+      await fetchMessages(currentChat.id, { silent: true, loadReport: true });
+    } catch (err) {
+      console.error('Retry interview evaluation failed:', err);
+      setError(err.response?.data?.detail || '重新评估失败，请稍后重试。');
+    } finally {
+      setRetryingEvaluationId(null);
     }
   };
 
@@ -1626,30 +930,9 @@ const Chat = () => {
     }
   };
 
-  const handleExportReport = async () => {
-    if (!currentChat?.id || isStreaming || finishExportLoading) return;
-
-    setFinishExportLoading(true);
-    setError(null);
-
-    try {
-      const latestReport = report || await fetchInterviewReport(currentChat.id, { rethrow: true });
-      if (!latestReport) {
-        throw new Error('生成面试报告失败，请稍后重试。');
-      }
-
-      await downloadReportPdf(currentChat, latestReport);
-    } catch (exportError) {
-      console.error('Error exporting interview report:', exportError);
-      setError(exportError.message || '导出报告失败，请稍后重试。');
-    } finally {
-      setFinishExportLoading(false);
-    }
-  };
-
   const handleReportAction = () => {
     if (isInterviewFinished()) {
-      handleExportReport();
+      navigate(`/chat/${currentChat.id}/evaluation`);
       return;
     }
 
@@ -2466,7 +1749,11 @@ const Chat = () => {
             ) : (
               <>
                 {messages.map((message) => (
-                  <MessageBubble key={message.id} content={message.content} role={message.role} />
+                  <MessageBubble
+                    key={message.id}
+                    content={message.content}
+                    role={message.role}
+                  />
                 ))}
 
                 {isStreaming && (
@@ -2477,6 +1764,14 @@ const Chat = () => {
               </>
             )}
           </Box>
+
+          {(currentChat || messages.length > 0) && (
+            currentInterviewFinished && !isStreaming ? (
+              <Alert severity="success" sx={{ mt: 1.5, mb: 1.5 }}>
+                本场面试已结束。问答记录已保留，请点击右侧“进行评估”查看评估结果。
+              </Alert>
+            ) : null
+          )}
 
           {(currentChat || messages.length > 0) && !currentInterviewFinished && (
             <ChatInput
@@ -2547,7 +1842,7 @@ const Chat = () => {
                   {finishExportLoading || reportLoading
                     ? '处理中...'
                     : isInterviewFinished()
-                      ? '导出报告PDF'
+                      ? '进行评估'
                       : '结束面试'}
                 </Button>
                
@@ -2649,6 +1944,11 @@ const Chat = () => {
                   </Typography>
                 ) : report ? (
                   <>
+                    {evaluationExportNotice && (
+                      <Alert severity="info" sx={{ mt: 1, mb: 1, py: 0.25 }}>
+                        {evaluationExportNotice}
+                      </Alert>
+                    )}
                     <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
                       {report.summary}
                     </Typography>
@@ -2660,6 +1960,11 @@ const Chat = () => {
                   <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
                     面试过程中不再逐轮展示评分。完成作答后，可在这里统一查看本场面试报告。
                   </Typography>
+                )}
+                {!report && evaluationExportNotice && (
+                  <Alert severity="info" sx={{ mt: 1, py: 0.25 }}>
+                    {evaluationExportNotice}
+                  </Alert>
                 )}
               </Box>
             </Paper>
@@ -2706,6 +2011,98 @@ const Chat = () => {
                         {item.candidate_answer || '未记录回答'}
                       </Typography>
 
+                      <Box
+                        sx={{
+                          mb: 1.1,
+                          p: 1,
+                          borderRadius: 1.5,
+                          bgcolor: item.evaluation_status === 'failed' ? '#fef2f2' : '#eff6ff',
+                          border: item.evaluation_status === 'failed'
+                            ? '1px solid rgba(239,68,68,0.24)'
+                            : '1px solid rgba(147,197,253,0.32)',
+                        }}
+                      >
+                        <Typography variant="caption" sx={{ color: '#2563eb', display: 'block', mb: 0.55 }}>
+                          本题评估
+                        </Typography>
+                        {item.evaluation_status === 'queued' || item.evaluation_status === 'processing' ? (
+                          <Stack direction="row" spacing={0.8} alignItems="center">
+                            <CircularProgress size={14} />
+                            <Typography variant="body2" sx={{ color: '#475569' }}>
+                              {item.evaluation_status === 'queued' ? '已进入评估队列，等待处理…' : '正在评估本题…'}
+                            </Typography>
+                          </Stack>
+                        ) : item.evaluation_status === 'failed' ? (
+                          <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
+                            <Typography variant="body2" sx={{ color: '#b91c1c', lineHeight: 1.55 }}>
+                              评估失败：{item.evaluation_error || '评估服务暂时不可用，请稍后重试。'}
+                            </Typography>
+                            {item.point_id && (
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                onClick={() => handleRetryEvaluation(item.point_id)}
+                                disabled={retryingEvaluationId === item.point_id}
+                              >
+                                {retryingEvaluationId === item.point_id ? '重试中…' : '重新评估'}
+                              </Button>
+                            )}
+                          </Stack>
+                          ) : item.evaluation ? (
+                            <Stack direction="row" spacing={0.7} useFlexGap flexWrap="wrap" alignItems="center">
+                              <Chip size="small" label={`综合 ${item.evaluation.overall_score ?? 0} 分`} color="primary" />
+                              <Chip size="small" label={item.evaluation.verdict || '已完成'} variant="outlined" />
+                            {item.evaluation.evaluation_mode === 'fallback' && (
+                              <Chip size="small" label="规则降级" color="warning" variant="outlined" />
+                            )}
+                              {item.evaluation.confidence_level && (
+                                <Chip size="small" label={`${item.evaluation.confidence_level}置信度`} variant="outlined" />
+                              )}
+                              {item.evaluation.evaluation_mode === 'fallback' && item.point_id && (
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  onClick={() => handleRetryEvaluation(item.point_id)}
+                                  disabled={retryingEvaluationId === item.point_id}
+                                >
+                                  {retryingEvaluationId === item.point_id ? '重新评估中…' : '重新评估'}
+                                </Button>
+                              )}
+                            {item.evaluation.summary && (
+                              <Typography variant="body2" sx={{ width: '100%', color: '#475569', lineHeight: 1.55 }}>
+                                {item.evaluation.summary}
+                              </Typography>
+                            )}
+                            {item.evaluation.evaluation_mode === 'fallback' && item.evaluation.evaluation_basis?.length > 0 && (
+                              <Box
+                                sx={{
+                                  width: '100%',
+                                  mt: 0.8,
+                                  px: 1,
+                                  py: 0.8,
+                                  bgcolor: 'rgba(245,158,11,0.08)',
+                                  border: '1px solid rgba(245,158,11,0.22)',
+                                  borderRadius: 1,
+                                }}
+                              >
+                                <Typography variant="caption" sx={{ display: 'block', color: '#92400e', fontWeight: 700, mb: 0.35 }}>
+                                  降级评分依据
+                                </Typography>
+                                {item.evaluation.evaluation_basis.map((basis, basisIndex) => (
+                                  <Typography key={`${item.point_id || item.question}-basis-${basisIndex}`} variant="caption" sx={{ display: 'block', color: '#78350f', lineHeight: 1.55 }}>
+                                    {basisIndex + 1}. {basis}
+                                  </Typography>
+                                ))}
+                              </Box>
+                            )}
+                          </Stack>
+                        ) : (
+                          <Typography variant="body2" sx={{ color: '#64748b' }}>
+                            当前暂无评估结果。
+                          </Typography>
+                        )}
+                      </Box>
+
                       <Typography variant="caption" sx={{ color: '#2563eb', display: 'block', mb: 0.55 }}>
                         参考答案
                       </Typography>
@@ -2745,13 +2142,25 @@ const Chat = () => {
               </Typography>
               {evaluationDisplay ? (
                 <Stack spacing={1}>
-                  <Chip icon={<AssignmentTurnedInRoundedIcon />} label={`技术准确性：${evaluationDisplay.technical_accuracy}`} sx={{ justifyContent: 'flex-start', bgcolor: 'rgba(148,163,184,0.08)', color: '#475569' }} />
-                  <Chip icon={<AutoGraphRoundedIcon />} label={`知识深度：${evaluationDisplay.knowledge_depth}`} sx={{ justifyContent: 'flex-start', bgcolor: 'rgba(148,163,184,0.08)', color: '#475569' }} />
-                  <Chip icon={<TipsAndUpdatesRoundedIcon />} label={`表达清晰度：${evaluationDisplay.communication_clarity}`} sx={{ justifyContent: 'flex-start', bgcolor: 'rgba(148,163,184,0.08)', color: '#475569' }} />
-                  <Chip icon={<AssignmentTurnedInRoundedIcon />} label={`逻辑结构：${evaluationDisplay.logical_structure}`} sx={{ justifyContent: 'flex-start', bgcolor: 'rgba(148,163,184,0.08)', color: '#475569' }} />
-                  <Chip icon={<AutoGraphRoundedIcon />} label={`问题解决：${evaluationDisplay.problem_solving}`} sx={{ justifyContent: 'flex-start', bgcolor: 'rgba(148,163,184,0.08)', color: '#475569' }} />
-                  <Chip icon={<TrackChangesRoundedIcon />} label={`岗位匹配度：${evaluationDisplay.job_match_score ?? 0}`} sx={{ justifyContent: 'flex-start', bgcolor: 'rgba(148,163,184,0.08)', color: '#475569' }} />
-                  <Chip icon={<TipsAndUpdatesRoundedIcon />} label={`综合得分：${evaluationDisplay.overall_score}`} sx={{ justifyContent: 'flex-start', bgcolor: 'rgba(125,211,252,0.12)', color: '#0284c7' }} />
+                  {getAvailableReportScores(evaluationDisplay).map((item) => {
+                    const ScoreIcon = item.icon;
+                    return (
+                      <Chip
+                        key={item.key}
+                        icon={<ScoreIcon />}
+                        label={`${item.label}：${evaluationDisplay[item.key]}`}
+                        sx={{ justifyContent: 'flex-start', bgcolor: 'rgba(148,163,184,0.08)', color: '#475569' }}
+                      />
+                    );
+                  })}
+                  {evaluationDisplay.overall_score !== null && evaluationDisplay.overall_score !== undefined && (
+                    <Chip icon={<TipsAndUpdatesRoundedIcon />} label={`综合得分：${evaluationDisplay.overall_score}`} sx={{ justifyContent: 'flex-start', bgcolor: 'rgba(125,211,252,0.12)', color: '#0284c7' }} />
+                  )}
+                  {getAvailableReportScores(evaluationDisplay).length === 0 && (
+                    <Typography variant="body2" sx={{ color: '#64748b' }}>
+                      当前暂无有效能力维度数据，已隐藏缺失字段。
+                    </Typography>
+                  )}
                   {evaluationDisplay.assessment_version === 'rubric-v2' && (
                     <Typography variant="caption" sx={{ color: '#475569', mt: 0.3 }}>
                       本场综合分按题型 Rubric 加权；能力结论会随覆盖题数更新。
