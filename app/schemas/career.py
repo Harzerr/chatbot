@@ -61,6 +61,7 @@ class FactExtractionResponse(BaseModel):
 class MarkdownFactExtractionResponse(BaseModel):
     job_id: str | None = None
     fact: CareerFactCreate | None = None
+    facts: list[CareerFactCreate] = Field(default_factory=list)
     source_document: dict[str, Any] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
     quality: dict[str, Any] = Field(default_factory=dict)

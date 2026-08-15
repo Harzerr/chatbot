@@ -94,11 +94,18 @@ async def chat_completions(
     knowledge_context = request.knowledge_context
     evidence_cache_hit = False
     previous_question = ""
+    previous_knowledge_context = ""
     if use_interview_mode and existing_messages:
         previous_question = str(existing_messages[-1].get("assistant_message") or "")
+        previous_knowledge_context = str(existing_messages[-1].get("knowledge_context") or "")
     if use_interview_mode:
-        use_career_evidence = should_use_career_evidence(
-            f"{previous_question}\n{request.user_message}"
+        # A follow-up often omits the project name. Once a prior turn has an
+        # evidence pack, inherit its project scope for the rest of the thread.
+        current_turn_text = f"{previous_question}\n{request.user_message}"
+        code_markers = ("代码题", "手撕代码", "实现一个", "时间复杂度", "空间复杂度", "```", "#include", "def ", "class ")
+        is_code_turn = any(marker in current_turn_text.lower() for marker in code_markers)
+        use_career_evidence = (not is_code_turn) and (
+            bool(previous_knowledge_context) or should_use_career_evidence(current_turn_text)
         )
         if use_career_evidence:
             documents = (await db.scalars(
@@ -110,7 +117,7 @@ async def chat_completions(
             knowledge_context, evidence_cache_hit = await asyncio.to_thread(
                 build_cached_knowledge_context,
                 documents,
-                f"{previous_question}\n{request.user_message}\n{request.jd_content or ''}",
+                f"{previous_question}\n{request.user_message}\n{request.jd_content or ''}\n{previous_knowledge_context[:1200]}",
                 tenant_id=current_user.tenant_id,
                 user_id=str(current_user.id),
                 fact_id=request.knowledge_fact_id,

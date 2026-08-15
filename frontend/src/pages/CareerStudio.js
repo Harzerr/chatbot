@@ -266,18 +266,25 @@ const CareerStudio = () => {
         if (response.status === 'processing' || response.status === 'queued') {
           throw new Error('事实提炼仍在后台执行，请稍后在事实库刷新页面。');
         }
-        if (response.status === 'failed' || !response.fact) {
+        if (response.status === 'failed' || (!(response.facts?.length) && !response.fact)) {
           throw new Error(response.message || 'Markdown 事实提炼失败，请重试。');
         }
       }
-      const extracted = response.fact || {};
-      setFactEditor({
-        ...factToEditor(extracted),
+      const extractedFacts = response.facts?.length ? response.facts : (response.fact ? [response.fact] : []);
+      const preparedFacts = extractedFacts.map((fact) => ({
+        ...fact,
+        fact_type: fact.fact_type || 'project',
         is_verified: false,
         source_file: file,
         source_document: response.source_document || {},
         quality: response.quality || {},
-      });
+      }));
+      setDraftFacts((items) => [...items, ...preparedFacts]);
+      // 保留原有编辑器体验：首条结果直接回填到表单，多条结果同时进入待确认列表。
+      if (preparedFacts[0]) {
+        setFactEditor({ ...factToEditor(preparedFacts[0]), draftIndex: preparedFacts.length > 1 ? 0 : undefined, is_verified: false, source_file: file, source_document: response.source_document || {}, quality: response.quality || {} });
+      }
+      setNotice(`已识别 ${extractedFacts.length} 个项目/模块事实，请逐条确认后保存。`);
     }, '已从 Markdown 提取项目事实草稿，请核对后保存。');
   };
 
@@ -318,7 +325,11 @@ const CareerStudio = () => {
   }, '技术资料已归档，不会继续进入面试评估。');
 
 const saveDraftFact = (fact) => run(async () => {
-    const saved = await careerService.createFact({ ...fact, is_verified: true });
+    const { source_file: sourceFile, source_document: _sourceDocument, quality: _quality, ...factPayload } = fact;
+    const saved = await careerService.createFact({ ...factPayload, is_verified: true });
+    if (sourceFile && saved.fact_type === 'project') {
+      await careerService.uploadKnowledgeDocument({ file: sourceFile, factId: saved.id });
+    }
     setFacts((items) => [saved, ...items]);
     setDraftFacts((items) => items.filter((item) => item !== fact));
   }, '事实已确认并保存。');

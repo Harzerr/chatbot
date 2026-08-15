@@ -143,21 +143,21 @@ RESUME:
             len(markdown_text),
             len(self._resume_optimizer_skill),
         )
-        prompt = f"""从下面的 Markdown 技术文档中提炼一条适合写入优秀技术简历的项目事实，返回 JSON，不要输出 Markdown 代码块。
+        prompt = f"""从下面的 Markdown 技术文档中提炼一个或多个适合写入优秀技术简历的项目/模块事实，返回 JSON，不要输出 Markdown 代码块。
 返回格式必须是：
-{{"fact_type":"project","title":"中文项目标题","content":{{"summary":"一句话项目摘要，包含目标、场景和本人角色","role":"原文明确写出的角色，没有则为空","tech_stack":["原文明确使用的技术"],"highlights":["动作 + 技术方法 + 解决对象 + 结果/影响的简历要点"],"evidence_map":[]}},"tags":["中文标签"],"evidence":"可在原文核查的关键证据摘录","is_verified":false}}
+{{"facts":[{{"fact_type":"project","title":"中文项目/模块标题","content":{{"summary":"一句话项目摘要，包含目标、场景和本人角色","role":"原文明确写出的角色，没有则为空","tech_stack":["原文明确使用的技术"],"highlights":["动作 + 技术方法 + 解决对象 + 结果/影响的简历要点"],"evidence_map":[]}},"tags":["中文标签"],"evidence":"可在原文核查的关键证据摘录","is_verified":false}}]}}
 
 简历优化 Skill：
 {self._resume_optimizer_skill}
 
 额外规则：
-1. fact_type 必须为 project；一个文档只生成一条事实，不要把项目标题、角色和技术内容拆成多条。
-2. summary 控制在 60-120 个中文字符；highlights 输出 4-6 条，每条 45-130 个中文字符。每条按“动作—技术方法—解决对象—结果/验证”组织，优先保留技术链路、数据流、异常处理、测试和可验证产出，不要把多项技术压缩成技术名词列表。
+1. fact_type 必须为 project。若文档属于实习总结或工作总结，按 Markdown 标题、模块边界和职责边界拆分 1-6 个项目事实；每个事实只对应一个模块、系统、平台、服务或链路。title 优先使用原文正式名称（尤其是包含“模块/系统/平台/服务/链路/引擎/工具”的名称），没有正式名时使用“业务对象 + 技术功能”，不得使用“项目一”、公司名或纯技术名代替项目名。
+2. summary 控制在 60-120 个中文字符；highlights 输出 4-6 条完整的简历句子，每条 45-130 个中文字符。必须以明确动词开头（如“设计、实现、重构、接入、排查、建设、编写、优化”），按“动作—技术方法—解决对象—结果/验证”组织，至少写清前三项；原文有结果时必须写出结果，每条以句号结尾。禁止输出“接口开发”“负责系统建设”“FastAPI、Redis”等名词短语、残句或技术栈罗列；没有量化结果时写清实现范围或测试验证，不得补造结果。
 3. 不要把“技术栈：FastAPI、Redis”单独作为成果；技术栈只填入 tech_stack。不要重复 summary，不要使用“提升了系统性能”“保证稳定性”等无证据结论。
 4. 只允许使用文档明确写出的项目、职责、技术、结果和指标，不得补写或推测；没有量化结果就不要强行补数字。
 5. title、summary、role、highlights、tags 使用中文；技术名词、产品名和代码标识保留原文。
 6. evidence 必须引用原文中能核查事实的内容。evidence_map 由后端根据输入原文自动对齐，你只需返回空数组，不要生成长证据引用，以免截断 JSON。
-7. 只输出一个 JSON 对象，不要输出解释、前言、Markdown 标记或 JSON 之外的文本。
+7. 只输出一个包含 facts 数组的 JSON 对象，不要输出解释、前言、Markdown 标记或 JSON 之外的文本。内容不足以拆分时 facts 只放一个对象。
 
 文件名：{file_name}
 MARKDOWN：
@@ -171,6 +171,43 @@ MARKDOWN：
             payload = self._fallback_markdown_fact(markdown_text, file_name)
             warnings.append("AI 提炼暂时不可用，已使用 Markdown 规则生成草稿，请人工核对。")
             used_fallback = True
+        if isinstance(payload.get("facts"), list) and payload.get("facts"):
+            normalized_facts = []
+            for candidate in payload["facts"]:
+                if not isinstance(candidate, dict):
+                    continue
+                content = candidate.get("content") if isinstance(candidate.get("content"), dict) else {}
+                title = str(candidate.get("title") or "").strip()
+                if not title:
+                    continue
+                highlights = content.get("highlights") if isinstance(content.get("highlights"), list) else []
+                cleaned_highlights = []
+                for item in highlights:
+                    text = re.sub(r"^(?:[-*•]\s*|\d+[.)]\s*)", "", str(item)).strip()
+                    if not text:
+                        continue
+                    # 模型偶尔返回“接口开发/异常处理”式短语；至少转换为可直接阅读的简历句子。
+                    if not re.match(r"^(设计|实现|重构|接入|排查|建设|编写|优化|完成|负责|通过|基于|采用|搭建|开发|维护)", text):
+                        text = "完成" + text
+                    if text[-1] not in "。；！？.!?":
+                        text += "。"
+                    cleaned_highlights.append(text)
+                normalized_facts.append({
+                    "fact_type": "project",
+                    "title": title[:255],
+                    "content": {
+                        "summary": str(content.get("summary") or "").strip(),
+                        "role": str(content.get("role") or "").strip(),
+                        "tech_stack": [str(item).strip() for item in content.get("tech_stack", []) if str(item).strip()],
+                        "highlights": cleaned_highlights,
+                        "evidence_map": [],
+                    },
+                    "tags": [str(item).strip() for item in candidate.get("tags", []) if str(item).strip()],
+                    "evidence": str(candidate.get("evidence") or markdown_text[:10000]).strip()[:10000],
+                    "is_verified": False,
+                })
+            if normalized_facts:
+                return {"facts": normalized_facts, "_warnings": [], "_quality": {"fact_count": len(normalized_facts)}}
         candidate = payload.get("fact") if isinstance(payload.get("fact"), dict) else payload
         if not isinstance(candidate, dict):
             raise ValueError("AI 未返回有效的项目事实")

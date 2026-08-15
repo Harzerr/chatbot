@@ -13,9 +13,11 @@ async def process_career_fact_job(payload: dict[str, Any]) -> dict[str, Any]:
     )
     warnings = fact_payload.pop("_warnings", []) if isinstance(fact_payload, dict) else []
     quality = fact_payload.pop("_quality", {}) if isinstance(fact_payload, dict) else {}
-    fact = CareerFactCreate.model_validate(fact_payload)
+    raw_facts = fact_payload.pop("facts", None) if isinstance(fact_payload, dict) else None
+    facts = [CareerFactCreate.model_validate(item) for item in raw_facts] if isinstance(raw_facts, list) else [CareerFactCreate.model_validate(fact_payload)]
     return {
-        "fact": fact.model_dump(mode="json"),
+        "fact": facts[0].model_dump(mode="json") if len(facts) == 1 else None,
+        "facts": [item.model_dump(mode="json") for item in facts],
         "source_document": payload.get("source_document") or {},
         "warnings": warnings,
         "quality": quality,

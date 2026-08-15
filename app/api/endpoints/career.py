@@ -681,9 +681,12 @@ async def read_markdown_fact_job(
         return MarkdownFactExtractionResponse(job_id=job.id, status="processing", message="AI 正在提炼项目事实，请稍候。")
     try:
         result = job.result
+        raw_facts = result.get("facts") or ([] if not result.get("fact") else [result.get("fact")])
+        facts = [CareerFactCreate.model_validate(item) for item in raw_facts]
         return MarkdownFactExtractionResponse(
             job_id=job.id,
-            fact=CareerFactCreate.model_validate(result.get("fact")),
+            fact=facts[0] if len(facts) == 1 else None,
+            facts=facts,
             source_document=result.get("source_document") or {},
             warnings=result.get("warnings") or [],
             quality=result.get("quality") or {},

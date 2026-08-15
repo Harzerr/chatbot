@@ -99,6 +99,40 @@ def _document_value(document: Any, field: str, default: Any = "") -> Any:
     return getattr(document, field, default)
 
 
+def _scope_documents_to_query(documents: list[Any], query: str) -> list[Any]:
+    """Prefer the explicitly named project/internship document.
+
+    A user can have many technical documents. When the question contains a
+    document/project title, unrelated documents must not compete in RAG. If no
+    title is mentioned we keep the full candidate set and let lexical scoring
+    decide; callers can enforce an exact fact with ``fact_id``.
+    """
+    normalized_query = re.sub(r"[\s_\-—:：/]+", "", (query or "").lower())
+    if not normalized_query:
+        return documents
+    stopwords = {"技术文档", "项目经历", "实习经历", "项目", "实习", "文档", "说明", "报告", "技术", "ai"}
+    scored: list[tuple[int, Any]] = []
+    for document in documents:
+        title = str(_document_value(document, "title", "") or "")
+        file_name = Path(str(_document_value(document, "file_name", "") or "")).stem
+        raw_candidates = [part for value in (title, file_name) for part in re.split(r"[\s_\-—:：/|]+", value) if part]
+        candidates = [
+            re.sub(r"[^a-z0-9\u4e00-\u9fff+#.]+", "", value.lower())
+            for value in raw_candidates
+            if value.lower() not in stopwords and not value.isdigit()
+        ]
+        score = sum(1 for candidate in candidates if len(candidate) >= 2 and candidate in normalized_query)
+        if score:
+            scored.append((score, document))
+    if not scored:
+        return documents
+    best_score = max(score for score, _ in scored)
+    # Keep all documents tied for the best explicit project name. This handles
+    # multiple versions/files belonging to the same project without admitting
+    # unrelated projects.
+    return [document for score, document in scored if score == best_score]
+
+
 def split_knowledge_document(
     document: Any,
     max_chunk_chars: int = DEFAULT_EVIDENCE_CHUNK_CHARS,
@@ -169,6 +203,7 @@ def retrieve_knowledge_chunks(
     user_id: str | None = None,
 ) -> list[dict[str, Any]]:
     """Retrieve compact evidence with lexical ranking and source provenance."""
+    documents = _scope_documents_to_query(list(documents), query)
     query_terms = set(_search_terms(query))
     if not query_terms:
         return []
