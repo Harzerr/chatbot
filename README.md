@@ -9,6 +9,8 @@
 A scalable AI chatbot platform built with FastAPI and LangGraph, featuring multi-agent orchestration, multi-tenant vector storage, cross-chat memory, and voice call capabilities through LiveKit integration.
 
 ## Demo
+test url: http://101.43.51.64/chat
+username:11  , password:11
 
 
 
