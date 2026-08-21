@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     CAREER_LLM_TIMEOUT: float = 30.0
     CAREER_RESUME_MAX_TOKENS: int = 5000
     CAREER_RESUME_TIMEOUT: float = 60.0
+    # Keep model work below the RQ hard timeout so deterministic fallback can run.
+    CAREER_FACT_AI_TIMEOUT: float = 90.0
+    # The extractor reads larger windows while persisted RAG chunks stay granular.
+    CAREER_EXTRACTION_WINDOW_CHARS: int = 2400
     # Interview traffic uses a model available in the server's OpenRouter region.
     INTERVIEW_LLM_MODEL: str = "deepseek/deepseek-v4-flash"
     INTERVIEW_LLM_MAX_TOKENS: int = 1024

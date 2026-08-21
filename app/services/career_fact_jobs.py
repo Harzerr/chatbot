@@ -57,7 +57,7 @@ async def process_career_fact_job(payload: dict[str, Any]) -> dict[str, Any]:
         str(payload.get("file_name") or "uploaded-document.md"),
         single_project=True,
         project_metadata=payload.get("project_metadata") or payload.get("source_document", {}).get("project_metadata") or {},
-        allow_fallback=False,
+        allow_fallback=True,
     )
     warnings = fact_payload.pop("_warnings", []) if isinstance(fact_payload, dict) else []
     quality = fact_payload.pop("_quality", {}) if isinstance(fact_payload, dict) else {}

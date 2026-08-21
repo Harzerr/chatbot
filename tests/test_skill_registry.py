@@ -50,8 +50,8 @@ def test_career_studio_uses_registry_for_markdown_json_invocation():
         def __init__(self) -> None:
             self.calls: list[tuple[str, dict]] = []
 
-        async def run(self, name, state):
-            self.calls.append((name, state))
+        async def run(self, name, state, **options):
+            self.calls.append((name, state, options))
             return SkillResult(response='{"facts": []}', agent_name="ResumeOptimizer")
 
     service = CareerStudioService.__new__(CareerStudioService)
@@ -64,5 +64,5 @@ def test_career_studio_uses_registry_for_markdown_json_invocation():
 
     assert result == {"facts": []}
     assert service._skill_registry.calls == [
-        ("resume-project-extractor", {"prompt": "提炼项目内容"})
+        ("resume-project-extractor", {"prompt": "提炼项目内容"}, {})
     ]

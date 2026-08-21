@@ -87,6 +87,11 @@ Each point should answer an interviewable question and, when supported, follow:
 
 `Action + technical mechanism + difficult constraint/design reason + result or validation`
 
+For `single_project`, return only the 3-5 strongest, materially different points for the uploaded
+project. Do not exhaustively convert every document section into a point. Prefer architecture,
+core implementation, difficult boundary handling, verification, and a supported result over
+background or technology-inventory points.
+
 ### 4. Write industrial resume bullets
 
 `resume_bullet` must be a complete Chinese resume sentence, not a topic label. Prefer 3-5 distinct
@@ -119,6 +124,11 @@ Every key point must contain 1-6 `evidence_chunks`. For every evidence item:
 - Use multiple evidence chunks when the action, mechanism, constraint, and result are distributed.
 - Lower confidence and add notes for ambiguity or conflicting source statements.
 
+Keep output evidence compact: use one evidence item per point by default and at most two when the
+claim genuinely spans chunks. Keep `quote` to the smallest useful span (normally no more than 120
+Chinese characters) and `support` to one short phrase. Do not list every source chunk at project
+level; the point-level evidence graph is authoritative.
+
 Never strengthen “参与” into “负责”, “了解” into “实现”, or a design description into personal
 ownership. Preserve source metrics exactly and omit unsupported numbers.
 
@@ -140,6 +150,11 @@ unassigned_chunks[], warnings[]
 `project_name`, `time_range`, and `role` may be returned for traceability, but user form metadata
 wins. `project_id` and `point_id` are trace identifiers; the application derives stable
 `project_key` and `claim_id` before persistence.
+
+For runtime extraction, omit optional fields that add no supported resume value. In particular,
+`industrial_roles`, `source_chunk_ids`, `unassigned_chunks`, and empty nullable fields may be
+omitted; the application derives internal role hypotheses separately. Limit `warnings` to two
+short, actionable items.
 
 ## Quality Gates
 

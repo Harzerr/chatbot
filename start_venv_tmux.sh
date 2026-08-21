@@ -5,6 +5,7 @@ SESSION_NAME="${SESSION_NAME:-chatbot_stack}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="${PROJECT_DIR:-${SCRIPT_DIR}}"
 VENV_DIR="${VENV_DIR:-${PROJECT_DIR}/.venv}"
+CONDA_ENV_NAME="${CONDA_ENV_NAME:-chatbot313}"
 FRONTEND_DIR="${FRONTEND_DIR:-${PROJECT_DIR}/frontend}"
 LOG_DIR="${LOG_DIR:-${PROJECT_DIR}/logs/tmux}"
 
@@ -20,6 +21,7 @@ EVALUATION_WORKER_CMD="${EVALUATION_WORKER_CMD:-python -m app.workers.evaluation
 FRONTEND_CMD="${FRONTEND_CMD:-npm start}"
 
 LOCAL_NO_PROXY="${LOCAL_NO_PROXY:-localhost,127.0.0.1,::1}"
+ENV_ACTIVATE_CMD=""
 
 log() {
   echo "[start_venv_tmux] $*"
@@ -31,9 +33,19 @@ ensure_ready() {
     exit 1
   }
 
-  [[ -x "${VENV_DIR}/bin/python" ]] || {
-    echo "找不到 Python 虚拟环境: ${VENV_DIR}"
-    echo "如需创建，请执行: python3 -m venv ${VENV_DIR} && source ${VENV_DIR}/bin/activate && pip install -r ${PROJECT_DIR}/requirements.txt"
+  if [[ -x "${VENV_DIR}/bin/python" ]]; then
+    ENV_ACTIVATE_CMD="source '${VENV_DIR}/bin/activate'"
+  elif command -v conda >/dev/null 2>&1; then
+    local conda_base
+    conda_base="$(conda info --base)"
+    if conda env list | awk '{print $1}' | grep -Fxq "${CONDA_ENV_NAME}"; then
+      ENV_ACTIVATE_CMD="source '${conda_base}/etc/profile.d/conda.sh' && conda activate '${CONDA_ENV_NAME}'"
+    fi
+  fi
+
+  [[ -n "${ENV_ACTIVATE_CMD}" ]] || {
+    echo "找不到 Python 环境: ${VENV_DIR} 或 Conda 环境 ${CONDA_ENV_NAME}"
+    echo "可通过 VENV_DIR 或 CONDA_ENV_NAME 指定运行环境。"
     exit 1
   }
 
@@ -59,7 +71,7 @@ send_window() {
   tmux send-keys -t "${SESSION_NAME}:${window_name}" \
     "unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY && \
 export NO_PROXY='${LOCAL_NO_PROXY}' no_proxy='${LOCAL_NO_PROXY}' && \
-source '${VENV_DIR}/bin/activate' && \
+${ENV_ACTIVATE_CMD} && \
 cd '${workdir}' && \
 echo '[${window_name}] logging to ${logfile}' && \
 (${command}) 2>&1 | tee -a '${logfile}'" C-m

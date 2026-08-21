@@ -1030,7 +1030,7 @@ async def read_markdown_fact_job(
     if status_value in {"queued", "started", "deferred", "scheduled"}:
         return MarkdownFactExtractionResponse(job_id=job.id, status="processing", message="AI 正在提炼项目事实，请稍候。")
     if status_value == "failed":
-        return MarkdownFactExtractionResponse(job_id=job.id, status="failed", message="Resume Project Extractor 未生成有效项目要点，本次未使用规则兜底；请检查文档后重试。")
+        return MarkdownFactExtractionResponse(job_id=job.id, status="failed", message="项目提炼任务异常终止，请稍后重试；若持续失败请联系管理员查看任务日志。")
     if status_value != "finished" or not isinstance(job.result, dict):
         return MarkdownFactExtractionResponse(job_id=job.id, status="processing", message="AI 正在提炼项目事实，请稍候。")
     try:

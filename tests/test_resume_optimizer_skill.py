@@ -104,6 +104,107 @@ def test_project_extractor_contract_rejects_unknown_or_inexact_evidence():
         CareerStudioService._adapt_project_extraction_payload(payload, extractor_input)
 
 
+def test_extraction_windows_remap_evidence_to_canonical_chunks():
+    markdown = "\n\n".join(
+        f"## 模块 {index}\n针对边界 {index}，使用处理器 {index} 完成状态校验和结果保存。"
+        for index in range(30)
+    )
+    extractor_input = CareerStudioService._build_project_extractor_input(
+        markdown,
+        "platform.md",
+        True,
+    )
+    canonical_chunks = extractor_input["_canonical_chunks"]
+    target_chunk = canonical_chunks[5]
+    quote = f"针对边界 5，使用处理器 5 完成状态校验和结果保存。"
+    window = next(item for item in extractor_input["chunks"] if quote in item["text"])
+    payload = {
+        "projects": [{
+            "project_id": "p1",
+            "project_name": "平台项目",
+            "key_points": [{
+                "point_id": "p1-k1",
+                "category": "implementation",
+                "title": "边界处理",
+                "normalized_fact": quote,
+                "resume_bullet": "针对边界状态不一致问题，通过处理器完成校验并保存结果。",
+                "confidence": "high",
+                "evidence_chunks": [{
+                    "chunk_id": window["chunk_id"],
+                    "quote": quote,
+                    "support": "证明校验与保存机制。",
+                }],
+            }],
+        }],
+    }
+
+    adapted, _ = CareerStudioService._adapt_project_extraction_payload(payload, extractor_input)
+    evidence = adapted["facts"][0]["content"]["evidence_map"][0]
+
+    assert len(extractor_input["chunks"]) < len(canonical_chunks)
+    assert evidence["source_chunk_ids"] == [target_chunk["chunk_id"]]
+
+
+def test_extraction_uses_exact_quote_when_model_selects_wrong_window():
+    markdown = "\n\n".join(
+        f"## 模块 {index}\n针对边界 {index}，使用处理器 {index} 完成状态校验和结果保存。"
+        for index in range(120)
+    )
+    extractor_input = CareerStudioService._build_project_extractor_input(markdown, "platform.md", True)
+    quote = "针对边界 119，使用处理器 119 完成状态校验和结果保存。"
+    correct_window = next(item for item in extractor_input["chunks"] if quote in item["text"])
+    wrong_window = next(item for item in extractor_input["chunks"] if item["chunk_id"] != correct_window["chunk_id"])
+    payload = {
+        "projects": [{
+            "project_id": "p1",
+            "project_name": "平台项目",
+            "key_points": [{
+                "resume_bullet": "针对状态边界问题，使用处理器完成校验并保存结果。",
+                "confidence": "high",
+                "evidence_chunks": [{
+                    "chunk_id": wrong_window["chunk_id"],
+                    "quote": quote,
+                    "support": "证明边界处理机制。",
+                }],
+            }],
+        }],
+    }
+
+    adapted, warnings = CareerStudioService._adapt_project_extraction_payload(payload, extractor_input)
+    evidence = adapted["facts"][0]["content"]["evidence_map"][0]
+
+    assert not warnings
+    assert evidence["source_chunk_ids"] == [extractor_input["_canonical_chunks"][-1]["chunk_id"]]
+
+
+def test_extraction_recovers_paraphrased_quote_with_lower_confidence():
+    markdown = "## 任务链路\n针对压缩包目录层级不固定的问题，递归查找 DLT 日志并提取收敛状态。"
+    extractor_input = CareerStudioService._build_project_extractor_input(markdown, "calibration.md", True)
+    window = extractor_input["chunks"][0]
+    payload = {
+        "projects": [{
+            "project_id": "p1",
+            "project_name": "标定平台",
+            "key_points": [{
+                "resume_bullet": "针对 DLT 压缩包层级不固定的问题，设计递归检索链路并解析收敛状态。",
+                "confidence": "high",
+                "evidence_chunks": [{
+                    "chunk_id": window["chunk_id"],
+                    "quote": "递归处理不同目录中的日志并解析标定结果。",
+                    "support": "说明日志解析机制。",
+                }],
+            }],
+        }],
+    }
+
+    adapted, warnings = CareerStudioService._adapt_project_extraction_payload(payload, extractor_input)
+    evidence = adapted["facts"][0]["content"]["evidence_map"][0]
+
+    assert evidence["source_quote"] == "针对压缩包目录层级不固定的问题，递归查找 DLT 日志并提取收敛状态。"
+    assert evidence["confidence"] == 0.65
+    assert warnings == ["1 条要点已回对到最相关的原文证据，请重点核对。"]
+
+
 def test_markdown_extraction_uses_registry_and_preserves_skill_bullets(monkeypatch):
     markdown = "# 路径记录模块\n\n按定位结果计算并保存路径点。"
     extractor_input = CareerStudioService._build_project_extractor_input(
@@ -118,8 +219,8 @@ def test_markdown_extraction_uses_registry_and_preserves_skill_bullets(monkeypat
         def __init__(self) -> None:
             self.calls: list[tuple[str, dict]] = []
 
-        async def run(self, name, state):
-            self.calls.append((name, state))
+        async def run(self, name, state, **options):
+            self.calls.append((name, state, options))
             return type("Result", (), {
                 "response": json.dumps({
                     "document_id": extractor_input["document_id"],
@@ -148,7 +249,8 @@ def test_markdown_extraction_uses_registry_and_preserves_skill_bullets(monkeypat
     service._skill_registry = RecordingSkillRegistry()
     service._llm = None
     service._model = "test-model"
-    service._resume_llm = None
+    resume_llm = object()
+    service._resume_llm = resume_llm
     monkeypatch.setattr(
         "app.services.career_studio.build_role_variants",
         lambda *_args: [{"role": "后端 / 平台工程师", "summary": "岗位摘要", "highlights": ["岗位改写。"], "evidence_map": []}],
@@ -164,13 +266,17 @@ def test_markdown_extraction_uses_registry_and_preserves_skill_bullets(monkeypat
 
     assert service._skill_registry.calls[0][0] == "resume-project-extractor"
     prompt = service._skill_registry.calls[0][1]["prompt"]
+    assert service._skill_registry.calls[0][2]["llm_override"] is resume_llm
     assert '"project_mode": "single_project"' in prompt
     assert f'"chunk_id": "{chunk["chunk_id"]}"' in prompt
+    assert '"_canonical_chunks"' not in prompt
     fact = result["facts"][0]
     assert fact["content"]["highlights"]
     assert fact["content"]["highlights"] == ["针对路径点需要连续记录的问题，按定位结果计算并保存路径点，完成路径数据链路。"]
     assert fact["content"]["role_variants"][0]["highlights"] == ["岗位改写。"]
-    assert fact["content"]["evidence_map"][0]["source_chunk_ids"] == [chunk["chunk_id"]]
+    assert fact["content"]["evidence_map"][0]["source_chunk_ids"] == [
+        extractor_input["_canonical_chunks"][0]["chunk_id"]
+    ]
 
 
 def test_markdown_upload_rejects_non_skill_payload_without_fallback():
@@ -187,6 +293,30 @@ def test_markdown_upload_rejects_non_skill_payload_without_fallback():
 
     with pytest.raises(ValueError, match="未生成可用的项目要点"):
         asyncio.run(service.extract_fact_from_markdown("# 项目\n\n实现接口。", "project.md", allow_fallback=False))
+
+
+def test_markdown_upload_returns_reviewable_fallback_when_skill_times_out():
+    service = CareerStudioService.__new__(CareerStudioService)
+    service._skill_registry = None
+    service._llm = None
+    service._model = "test-model"
+    service._resume_llm = None
+
+    async def timed_out_invoke(*_args, **_kwargs):
+        raise TimeoutError("model deadline exceeded")
+
+    service._invoke_json = timed_out_invoke
+    result = asyncio.run(
+        service.extract_fact_from_markdown(
+            "# 任务平台\n\n## 核心实现\n\n- 使用任务队列执行后台作业并保存状态。",
+            "task-platform.md",
+            allow_fallback=True,
+        )
+    )
+
+    assert result["facts"][0]["content"]["highlights"]
+    assert result["_quality"]["used_fallback"] is True
+    assert result["_quality"]["requires_review"] is True
 
 
 def test_role_variant_builder_preserves_evidence_wording_without_technology_rewrites():
