@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 MAX_TRACKED_FILE_BYTES="${MAX_TRACKED_FILE_BYTES:-10485760}"
-FORBIDDEN_PATH_PATTERN='(^|/)(node_modules|build|dist|__pycache__)(/|$)|^(delete|qdrant_storage([^/]*|/.*)|\.qdrant[^/]*(/.*)?|\.local_redis(/.*)?|docs(/.*)?|reports(/.*)?|logs(/.*)?|tools(/.*)?|uploads(/.*)?|assets(/.*)?|venv_py37_backup(/.*)?|api_test_smith(/.*)?|\.tmp_.*)$|\.(db|sqlite|sqlite3|log|zip|tar|tar\.gz|tgz|pdf)$'
+FORBIDDEN_PATH_PATTERN='(^|/)(node_modules|build|dist|__pycache__)(/|$)|(^|/)\.env($|\.)|^(delete|qdrant_storage([^/]*|/.*)|\.qdrant[^/]*(/.*)?|\.local_redis(/.*)?|docs(/.*)?|reports(/.*)?|logs(/.*)?|tools(/.*)?|uploads(/.*)?|assets(/.*)?|venv_py37_backup(/.*)?|api_test_smith(/.*)?|\.tmp_.*)$|\.(db|sqlite|sqlite3|log|zip|tar|tar\.gz|tgz|pdf)$'
 
 forbidden_files="$(git ls-files | grep -E "${FORBIDDEN_PATH_PATTERN}" || true)"
 if [[ -n "${forbidden_files}" ]]; then
