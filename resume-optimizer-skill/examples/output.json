@@ -1,0 +1,115 @@
+{
+  "document_id": "resume_demo_001",
+  "projects": [
+    {
+      "project_id": "project_001",
+      "project_name": "AI Agent 技术面试平台",
+      "time_range": null,
+      "role": "AI Agent 后端与 Harness 工程化",
+      "summary": "面向技术岗位面试训练的 Agent 后端与执行评估平台。",
+      "source_chunk_ids": [
+        "c01",
+        "c02",
+        "c03",
+        "c04",
+        "c05"
+      ],
+      "key_points": [
+        {
+          "point_id": "p001",
+          "category": "agent_workflow",
+          "title": "端到端面试 Agent 工作流",
+          "normalized_fact": "基于 FastAPI 和 LangGraph 串联岗位理解、简历深挖、动态追问、在线编程、能力评估，并衔接异步评分、证据复核和报告生成。",
+          "resume_bullet": "基于 FastAPI 和 LangGraph 串联岗位理解、简历深挖、动态追问、在线编程与能力评估，并衔接异步评分、证据复核和报告生成，形成端到端面试执行链路。",
+          "confidence": "high",
+          "notes": null,
+          "evidence_chunks": [
+            {
+              "chunk_id": "c02",
+              "quote": "基于 FastAPI + LangGraph 串联岗位理解、简历深挖、动态追问、在线编程和能力评估。",
+              "support": "直接描述主要 Agent 工作流。",
+              "page": 1,
+              "char_start": null,
+              "char_end": null
+            },
+            {
+              "chunk_id": "c03",
+              "quote": "实现从面试执行、异步评分到证据复核和报告生成的完整链路。",
+              "support": "补充工作流后半段，与 c02 共同构成端到端链路。",
+              "page": 1,
+              "char_start": null,
+              "char_end": null
+            }
+          ]
+        },
+        {
+          "point_id": "p002",
+          "category": "architecture",
+          "title": "结构化 Agent 状态管理",
+          "normalized_fact": "使用结构化 AgentState 统一管理岗位、简历、历史问答、代码执行结果和结束状态。",
+          "resume_bullet": "针对面试流程状态分散的问题，设计结构化 AgentState 统一承载岗位、简历、历史问答、代码执行结果和结束状态，降低多节点间状态传递的不一致风险。",
+          "confidence": "high",
+          "notes": null,
+          "evidence_chunks": [
+            {
+              "chunk_id": "c04",
+              "quote": "设计结构化 AgentState，统一承载岗位、简历、历史问答、代码执行结果和结束状态。",
+              "support": "直接说明状态模型及其承载信息。",
+              "page": 1,
+              "char_start": null,
+              "char_end": null
+            }
+          ]
+        },
+        {
+          "point_id": "p003",
+          "category": "evaluation",
+          "title": "结构化评分与执行证据融合",
+          "normalized_fact": "结合 Pydantic Schema、分题型 Rubric 和 Judge0 运行结果完成结构化评分。",
+          "resume_bullet": "针对主观面试回答与在线编程结果需要统一评估的问题，结合 Pydantic Schema、分题型 Rubric 和 Judge0 运行结果完成结构化评分。",
+          "confidence": "high",
+          "notes": null,
+          "evidence_chunks": [
+            {
+              "chunk_id": "c03",
+              "quote": "结合 Qdrant、Mem0、Redis、RQ、Judge0 与 SSE",
+              "support": "证明 Judge0 位于该项目技术链路中。",
+              "page": 1,
+              "char_start": null,
+              "char_end": null
+            },
+            {
+              "chunk_id": "c05",
+              "quote": "结合 Pydantic Schema、分题型 Rubric 和 Judge0 运行结果完成结构化评分",
+              "support": "直接描述结构化评分依据。",
+              "page": 1,
+              "char_start": null,
+              "char_end": null
+            }
+          ]
+        },
+        {
+          "point_id": "p004",
+          "category": "optimization",
+          "title": "失败重试与降级机制",
+          "normalized_fact": "针对模型超时、JSON 异常和任务失败设置重试、规则降级和重新入队机制。",
+          "resume_bullet": "针对模型超时、JSON 异常和异步任务失败等不确定性，设计重试、规则降级和重新入队机制，保障评估链路具备可恢复路径。",
+          "confidence": "high",
+          "notes": null,
+          "evidence_chunks": [
+            {
+              "chunk_id": "c05",
+              "quote": "为模型超时、JSON 异常和任务失败提供重试、规则降级及重新入队机制。",
+              "support": "直接说明可靠性设计。",
+              "page": 1,
+              "char_start": null,
+              "char_end": null
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "unassigned_chunks": [],
+  "warnings": []
+}

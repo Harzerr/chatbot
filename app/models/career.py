@@ -1,6 +1,7 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import relationship
 
 from app.db.base_class import Base
 
@@ -69,3 +70,32 @@ class CareerKnowledgeDocument(Base):
     is_archived = Column(Boolean, nullable=False, default=False, index=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    chunks = relationship(
+        "CareerKnowledgeChunk",
+        back_populates="document",
+        cascade="all, delete-orphan",
+        order_by="CareerKnowledgeChunk.chunk_index",
+    )
+
+
+class CareerKnowledgeChunk(Base):
+    """Canonical derived chunk kept separately from the source document."""
+
+    __tablename__ = "career_knowledge_chunks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(ForeignKey("career_knowledge_documents.id"), nullable=False, index=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    fact_id = Column(Integer, nullable=True, index=True)
+    chunk_index = Column(Integer, nullable=False)
+    chunk_id = Column(String(255), nullable=False, index=True)
+    section = Column(String(255), nullable=False, default="")
+    text = Column(Text, nullable=False)
+    project_key = Column(String(128), nullable=False, default="", index=True)
+    claim_ids_json = Column(Text, nullable=False, default="[]")
+    claim_texts_json = Column(Text, nullable=False, default="[]")
+    source_version = Column(String(64), nullable=True, index=True)
+    chunking_version = Column(String(64), nullable=False, default="career-evidence-v2:900:120")
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    document = relationship("CareerKnowledgeDocument", back_populates="chunks")

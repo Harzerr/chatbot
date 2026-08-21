@@ -74,6 +74,16 @@ async def ensure_career_knowledge_columns(async_engine: AsyncEngine) -> None:
         if existing and "fact_id" not in existing:
             await conn.execute(text("ALTER TABLE career_knowledge_documents ADD COLUMN fact_id INTEGER"))
 
+        result = await conn.execute(text("PRAGMA table_info(career_knowledge_chunks)"))
+        chunk_columns = {row[1] for row in result.fetchall()}
+        for name, ddl in {
+            "project_key": "ALTER TABLE career_knowledge_chunks ADD COLUMN project_key VARCHAR(128) NOT NULL DEFAULT ''",
+            "claim_ids_json": "ALTER TABLE career_knowledge_chunks ADD COLUMN claim_ids_json TEXT NOT NULL DEFAULT '[]'",
+            "claim_texts_json": "ALTER TABLE career_knowledge_chunks ADD COLUMN claim_texts_json TEXT NOT NULL DEFAULT '[]'",
+        }.items():
+            if chunk_columns and name not in chunk_columns:
+                await conn.execute(text(ddl))
+
 
 async def ensure_ai_metric_columns(async_engine: AsyncEngine) -> None:
     async with async_engine.begin() as conn:

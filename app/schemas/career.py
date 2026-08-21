@@ -60,9 +60,11 @@ class FactExtractionResponse(BaseModel):
 
 class MarkdownFactExtractionResponse(BaseModel):
     job_id: str | None = None
+    job_ids: list[str] = Field(default_factory=list)
     fact: CareerFactCreate | None = None
     facts: list[CareerFactCreate] = Field(default_factory=list)
     source_document: dict[str, Any] = Field(default_factory=dict)
+    source_documents: list[dict[str, Any]] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     quality: dict[str, Any] = Field(default_factory=dict)
     status: str = "draft"

@@ -118,21 +118,37 @@ venv.bak/
 # VS Code
 .vscode/
 
-# Project specific
-sentence_index/
-merging_index/
-backups/
-logs/tmux/
-uploads/
-assets/fonts/
-.deploy/
-chatbot_deploy_key*
-frontend/build.previous/
-frontend/build
-frontend/build-a/
-frontend/build-b/
-resume-optimizer-separated-20260802/
-resume-optimizer-separated-20260802.zip
+# Repository boundary: only application code, skills, tests and deployment
+# configuration belong in Git. Runtime state and generated evidence stay local.
+/delete/
+/qdrant_storage/
+/qdrant_storage.backup_*/
+/qdrant_storage.pre_restore_*/
+/.qdrant_import_src/
+/.qdrant_restore_work/
+/qdrant_data*.tar.gz
+/chatbot-migration-data-*.zip
+/.local_redis/
+/sentence_index/
+/merging_index/
+/backups/
+/logs/
+/uploads/
+/reports/
+/docs/
+/assets/
+/tools/
+/api_test_smith/
+/venv_py37_backup/
+/.tmp_*
+/.deploy/
+/chatbot_deploy_key*
+/frontend/build.previous/
+/frontend/build/
+/frontend/build-a/
+/frontend/build-b/
+/resume-optimizer-separated-20260802/
+/resume-optimizer-separated-20260802.zip
 *.pdf
 *.db
 *.sqlite

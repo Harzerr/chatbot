@@ -274,6 +274,38 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
     }));
   };
 
+  const updateNestedProject = (sectionIndex, entryIndex, projectIndex, field, value) => {
+    onChange(updateSection(content, sectionIndex, (section) => {
+      const next = { ...section, entries: [...(section.entries || [])] };
+      const entry = { ...next.entries[entryIndex], projects: [...(next.entries[entryIndex].projects || [])] };
+      entry.projects[projectIndex] = { ...entry.projects[projectIndex], [field]: value };
+      next.entries[entryIndex] = entry;
+      return next;
+    }));
+  };
+
+  const updateNestedProjectItem = (sectionIndex, entryIndex, projectIndex, itemIndex, value) => {
+    onChange(updateSection(content, sectionIndex, (section) => {
+      const next = { ...section, entries: [...(section.entries || [])] };
+      const entry = { ...next.entries[entryIndex], projects: [...(next.entries[entryIndex].projects || [])] };
+      const project = { ...entry.projects[projectIndex], items: [...(entry.projects[projectIndex].items || [])] };
+      project.items[itemIndex] = { ...project.items[itemIndex], label: '', text: value };
+      entry.projects[projectIndex] = project;
+      next.entries[entryIndex] = entry;
+      return next;
+    }));
+  };
+
+  const deleteNestedProject = (sectionIndex, entryIndex, projectIndex) => {
+    onChange(updateSection(content, sectionIndex, (section) => {
+      const next = { ...section, entries: [...(section.entries || [])] };
+      const entry = { ...next.entries[entryIndex], projects: [...(next.entries[entryIndex].projects || [])] };
+      entry.projects.splice(projectIndex, 1);
+      next.entries[entryIndex] = entry;
+      return next;
+    }));
+  };
+
   const deleteEntry = (sectionIndex, entryIndex) => {
     onChange(updateSection(content, sectionIndex, (section) => ({
       ...section,
@@ -306,7 +338,11 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
   const renderEntry = (sectionIndex, heading, entry, entryIndex) => {
     const style = getSectionStyle(sectionKey(heading));
     const isProject = heading === '项目经历';
+    const isExperience = heading === '实习经历';
+    const nestedProjects = Array.isArray(entry.projects) ? entry.projects : [];
     const techStackText = Array.isArray(entry.tech_stack) ? entry.tech_stack.join('、') : (entry.tech_stack || '');
+    const engineeringChallenge = entry.engineering_challenge || '';
+    const designRationale = entry.design_rationale || '';
     const summaryLabel = entry.summary_label || '项目简介：';
     const techStackLabel = entry.tech_stack_label || '技术栈：';
     const showSummaryLabel = isProject || Boolean(entry.summary_label);
@@ -342,8 +378,28 @@ const ResumePaper = ({ content, user, hiddenSections, hiddenProjects, sectionSty
       {(entry.summary || isProject) && (
         <Box sx={{ mt: 0.25, fontSize: '0.92em' }}><RichTextEditor value={showSummaryLabel ? composeLabeledEditorValue(summaryLabel, entry.summary, '项目简介：') : (entry.summary || '')} placeholder="点击输入项目简介" onChange={(value) => showSummaryLabel ? updateLabeledEntry(sectionIndex, entryIndex, 'summary', 'summary_label', '项目简介：', value) : updateEntry(sectionIndex, entryIndex, 'summary', value)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>
       )}
+      {engineeringChallenge && <Box sx={{ mt: 0.2, fontSize: '0.9em', color: '#7c2d12' }}><RichTextEditor value={composeLabeledEditorValue('工程难点：', engineeringChallenge, '工程难点：')} onChange={(value) => updateLabeledEntry(sectionIndex, entryIndex, 'engineering_challenge', 'engineering_challenge_label', '工程难点：', value)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>}
+      {designRationale && <Box sx={{ mt: 0.2, fontSize: '0.9em', color: '#374151' }}><RichTextEditor value={composeLabeledEditorValue('方案原因：', designRationale, '方案原因：')} onChange={(value) => updateLabeledEntry(sectionIndex, entryIndex, 'design_rationale', 'design_rationale_label', '方案原因：', value)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>}
       {(techStackText || isProject) && <Box sx={{ mt: 0.2, color: '#4b5563', fontSize: '0.92em' }}><RichTextEditor value={composeLabeledEditorValue(techStackLabel, techStackText, '技术栈：')} placeholder="点击输入技术栈" onChange={(value) => updateLabeledEntry(sectionIndex, entryIndex, 'tech_stack', 'tech_stack_label', '技术栈：', value)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>}
-      {(entry.items || []).map((item, itemIndex) => (
+      {isExperience && nestedProjects.length > 0 && <Box sx={{ mt: 0.45, ml: 1.4, pl: 1.1, borderLeft: '2px solid #e2e8f0' }}>
+        {nestedProjects.map((project, projectIndex) => {
+          const projectTechStack = Array.isArray(project.tech_stack) ? project.tech_stack.join('、') : (project.tech_stack || '');
+          const projectChallenge = project.engineering_challenge || '';
+          const projectRationale = project.design_rationale || '';
+          return <Box key={`${sectionIndex}-${entryIndex}-project-${projectIndex}`} sx={{ mb: 0.55, breakInside: 'avoid', pageBreakInside: 'avoid' }}>
+            <Stack direction="row" spacing={0.8} alignItems="baseline">
+              <Typography component="span" sx={{ color: '#b21f35', fontWeight: 700, fontSize: '0.96em', flex: 1 }}>项目：<TextField variant="standard" value={project.title || ''} onChange={(event) => updateNestedProject(sectionIndex, entryIndex, projectIndex, 'title', event.target.value)} sx={{ width: 'calc(100% - 3.4em)', '& .MuiInputBase-root': { fontWeight: 700, fontSize: 'inherit', p: 0 } }} /></Typography>
+              {showEditTools && <IconButton size="small" color="error" onClick={() => deleteNestedProject(sectionIndex, entryIndex, projectIndex)} sx={{ p: 0.15 }}><DeleteOutlineRoundedIcon fontSize="inherit" /></IconButton>}
+            </Stack>
+            {project.summary && <Box sx={{ mt: 0.15, fontSize: '0.94em' }}><RichTextEditor value={project.summary} onChange={(value) => updateNestedProject(sectionIndex, entryIndex, projectIndex, 'summary', value)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>}
+            {projectChallenge && <Box sx={{ mt: 0.1, color: '#7c2d12', fontSize: '0.9em' }}><RichTextEditor value={composeLabeledEditorValue('工程难点：', projectChallenge, '工程难点：')} onChange={(value) => updateNestedProject(sectionIndex, entryIndex, projectIndex, 'engineering_challenge', value)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>}
+            {projectRationale && <Box sx={{ mt: 0.1, color: '#374151', fontSize: '0.9em' }}><RichTextEditor value={composeLabeledEditorValue('方案原因：', projectRationale, '方案原因：')} onChange={(value) => updateNestedProject(sectionIndex, entryIndex, projectIndex, 'design_rationale', value)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>}
+            {projectTechStack && <Typography sx={{ mt: 0.1, color: '#4b5563', fontSize: '0.9em' }}>技术栈：{projectTechStack}</Typography>}
+            {(project.items || []).map((item, itemIndex) => <Box key={`${sectionIndex}-${entryIndex}-project-${projectIndex}-item-${itemIndex}`} sx={{ position: 'relative', display: 'flex', alignItems: 'flex-start', width: '100%', mt: 0.1 }}><ResumeBulletMarker editable={showEditTools} onDelete={() => updateNestedProject(sectionIndex, entryIndex, projectIndex, 'items', (project.items || []).filter((_, index) => index !== itemIndex))} /><RichTextEditor value={editorValueForItem(item)} onChange={(value) => updateNestedProjectItem(sectionIndex, entryIndex, projectIndex, itemIndex, value)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} /></Box>)}
+          </Box>;
+        })}
+      </Box>}
+      {(!isExperience || nestedProjects.length === 0) && (entry.items || []).map((item, itemIndex) => (
         <Box key={`${sectionIndex}-${entryIndex}-${itemIndex}`} sx={{ position: 'relative', display: 'flex', alignItems: 'flex-start', width: '100%', mt: 0.2 }}>
           <ResumeBulletMarker editable={showEditTools} onDelete={() => deleteItem(sectionIndex, itemIndex)} />
           <RichTextEditor value={editorValueForItem(item)} onChange={(value) => updateEntry(sectionIndex, entryIndex, 'items', (entry.items || []).map((current, index) => index === itemIndex ? { ...current, label: '', text: value } : current))} onBackspaceAtStart={() => deleteItem(sectionIndex, itemIndex)} activeEditorRef={activeEditorRef} activeSelectionRef={activeSelectionRef} activeEditorChangeRef={activeEditorChangeRef} />

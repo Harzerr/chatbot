@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_streaming_service, get_current_user
 from app.api.deps import get_vector_store
@@ -112,7 +113,9 @@ async def chat_completions(
                 select(CareerKnowledgeDocument).where(
                     CareerKnowledgeDocument.user_id == current_user.id,
                     CareerKnowledgeDocument.is_archived.is_(False),
-                ).order_by(CareerKnowledgeDocument.updated_at.desc())
+                ).options(selectinload(CareerKnowledgeDocument.chunks)).order_by(
+                    CareerKnowledgeDocument.updated_at.desc()
+                )
             )).all()
             knowledge_context, evidence_cache_hit = await asyncio.to_thread(
                 build_cached_knowledge_context,

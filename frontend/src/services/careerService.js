@@ -7,18 +7,21 @@ const careerService = {
   archiveFact: async (id) => (await axios.delete(`/api/v1/career/facts/${id}`)).data,
   deleteFact: async (id) => (await axios.delete(`/api/v1/career/facts/${id}/permanently`)).data,
   extractFacts: async () => (await axios.post('/api/v1/career/facts/extract')).data,
-  extractFactFromMarkdown: async (file) => {
+  extractFactFromMarkdown: async ({ files, file, metadata = [] }) => {
     const formData = new FormData();
-    formData.append('file', file);
+    const selectedFiles = files || (file ? [file] : []);
+    selectedFiles.forEach((item) => formData.append('files', item));
+    formData.append('metadata', JSON.stringify(metadata));
     return (await axios.post('/api/v1/career/facts/extract-from-markdown', formData)).data;
   },
   getMarkdownFactJob: async (jobId) => (await axios.get(`/api/v1/career/facts/extract-from-markdown/jobs/${jobId}`)).data,
   listKnowledgeDocuments: async () => (await axios.get('/api/v1/career/documents')).data,
-  uploadKnowledgeDocument: async ({ file, factId, title }) => {
+  uploadKnowledgeDocument: async ({ file, factId, title, projectKey }) => {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('fact_id', String(factId));
     if (title) formData.append('title', title);
+    if (projectKey) formData.append('project_key', projectKey);
     return (await axios.post('/api/v1/career/documents/upload', formData)).data;
   },
   updateKnowledgeDocument: async (id, payload) => (await axios.put(`/api/v1/career/documents/${id}`, payload)).data,

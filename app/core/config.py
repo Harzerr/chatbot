@@ -100,7 +100,7 @@ class Settings(BaseSettings):
     EVIDENCE_CHUNK_OVERLAP_CHARS: int = 120
     EVIDENCE_MAX_CHUNKS_PER_DOCUMENT: int = 2
     EVIDENCE_MIN_RETRIEVAL_SCORE: float = 0.05
-    EVIDENCE_RETRIEVER_VERSION: str = "evidence-v3"
+    EVIDENCE_RETRIEVER_VERSION: str = "evidence-v4-project-claims"
     CAREER_EVIDENCE_VECTOR_ENABLED: bool = False
     CAREER_EVIDENCE_VECTOR_COLLECTION: str = "career_evidence"
     CAREER_EVIDENCE_VECTOR_TOP_K: int = 8

@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import BaseMessage, HumanMessage
 
 from app.agent.evaluation_agent import EvaluationAgent
 from app.services.interview_skill import InterviewSkill
@@ -14,6 +14,11 @@ from app.utils.logger import setup_logger
 logger = setup_logger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+RESUME_OPTIMIZER_SKILL_NAME = "resume-project-extractor"
+_RESUME_OPTIMIZER_FALLBACK_INSTRUCTIONS = (
+    "仅使用原文明确证据；不得编造数字、技术、角色或结果；"
+    "项目摘要和要点必须适合技术简历。"
+)
 
 
 @dataclass(frozen=True)
@@ -62,6 +67,23 @@ class SkillRegistry:
 
     def list(self) -> list[SkillDefinition]:
         return list(self._skills.values())
+
+    async def run(
+        self,
+        name: str,
+        state: Mapping[str, Any],
+        *,
+        llm_override: Any | None = None,
+    ) -> SkillResult:
+        """Execute a registered skill by name for non-chat workflows."""
+        definition = self.get(name)
+        if definition is None:
+            raise ValueError(f"Skill is not registered: {name}")
+        runner_state = dict(state)
+        if llm_override is not None:
+            runner_state["_llm_override"] = llm_override
+        logger.info("Executing registered skill name=%s", name)
+        return await definition.runner.run(runner_state)
 
     def resolve(self, state: Mapping[str, Any]) -> SkillDefinition | None:
         active_skill = state.get("active_skill")
@@ -145,6 +167,34 @@ class InterviewSkillRunner:
         )
 
 
+class ResumeOptimizerSkillRunner(SkillRunner):
+    """Run the instruction-driven resume optimizer through the registry."""
+
+    def __init__(self, llm, instructions: str) -> None:
+        self._llm = llm
+        self._instructions = instructions
+
+    async def run(self, state: Mapping[str, Any]) -> SkillResult:
+        task_prompt = str(state.get("prompt") or "").strip()
+        if not task_prompt:
+            raise ValueError("Resume optimizer skill requires a task prompt")
+
+        prompt = f"""{task_prompt}
+
+简历优化 Skill 指令：
+{self._instructions}
+"""
+        client = state.get("_llm_override") or self._llm
+        response = await client.ainvoke([HumanMessage(content=prompt)])
+        content = response.content if hasattr(response, "content") else str(response)
+        if isinstance(content, list):
+            content = "".join(
+                part.get("text", "") if isinstance(part, dict) else str(part)
+                for part in content
+            )
+        return SkillResult(response=str(content), agent_name="ResumeOptimizer")
+
+
 RunnerFactory = Callable[[Any, SkillSpec], SkillDefinition]
 
 
@@ -160,19 +210,15 @@ def _load_optional_dependency(name: str, factory: Callable[[], Any]) -> Any | No
         return None
 
 
-def create_default_skill_registry(llm) -> SkillRegistry:
+def create_default_skill_registry(llm, skill_names: set[str] | None = None) -> SkillRegistry:
     registry = SkillRegistry()
     runner_factories = build_runner_factories()
 
     for skill_spec in discover_skill_specs():
+        if skill_names is not None and skill_spec.name not in skill_names:
+            continue
         factory = runner_factories.get(skill_spec.name)
         if factory is None:
-            if skill_spec.name == "resume-optimizer-skill":
-                logger.info(
-                    "Discovered instruction-only skill '%s'; CareerStudioService loads it for Markdown fact extraction",
-                    skill_spec.name,
-                )
-                continue
             logger.warning(
                 "Discovered skill '%s' at %s but no runner factory is registered for it yet",
                 skill_spec.name,
@@ -190,6 +236,7 @@ def create_default_skill_registry(llm) -> SkillRegistry:
 def build_runner_factories() -> dict[str, RunnerFactory]:
     return {
         "interview-skills": _build_interview_skill_definition,
+        RESUME_OPTIMIZER_SKILL_NAME: _build_resume_optimizer_skill_definition,
     }
 
 
@@ -236,6 +283,34 @@ def _build_interview_skill_definition(llm, spec: SkillSpec) -> SkillDefinition:
             "mock interview",
         ),
         runner=InterviewSkillRunner(llm),
+        skill_dir=spec.skill_dir,
+    )
+
+
+def _build_resume_optimizer_skill_definition(llm, spec: SkillSpec) -> SkillDefinition:
+    instructions_path = spec.skill_dir / "SKILL.md"
+    try:
+        instructions = instructions_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        logger.warning(
+            "Resume optimizer skill is unavailable at %s; using conservative fallback instructions: %s",
+            instructions_path,
+            exc,
+        )
+        instructions = _RESUME_OPTIMIZER_FALLBACK_INSTRUCTIONS
+    schema_path = spec.skill_dir / "schemas" / "output_schema.json"
+    try:
+        schema = schema_path.read_text(encoding="utf-8")
+        instructions = f"{instructions}\n\n运行时输出 Schema（必须遵守）：\n{schema}"
+    except OSError:
+        logger.warning("Resume optimizer output schema is unavailable at %s", schema_path)
+
+    return SkillDefinition(
+        name=spec.name,
+        agent_name="ResumeOptimizer",
+        description=spec.description,
+        triggers=spec.triggers,
+        runner=ResumeOptimizerSkillRunner(llm, instructions),
         skill_dir=spec.skill_dir,
     )
 

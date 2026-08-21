@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
 from app.db.session import get_db
-from app.models.career import CareerFact, CareerKnowledgeDocument, JobPosting, ResumeDocument
+from app.models.career import CareerFact, CareerKnowledgeChunk, CareerKnowledgeDocument, JobPosting, ResumeDocument
 from app.models.user import User
 from app.schemas.career import (
     CareerFactCreate,
@@ -32,7 +32,7 @@ from app.schemas.career import (
     ResumeProfileImportResponse,
     TailoredResumeRequest,
 )
-from app.services.career_studio import CareerStudioService
+from app.services.career_studio import CareerStudioService, infer_industrial_roles, sanitize_resume_content, select_role_variant
 from app.services.task_queue import (
     QueueUnavailable,
     enqueue_career_evidence_index_job,
@@ -41,16 +41,39 @@ from app.services.task_queue import (
 )
 from app.utils.logger import setup_logger
 from app.services.resume_tex_renderer import build_tex_bundle, compile_resume_pdf
-from app.services.career_knowledge import edited_source_hash, parse_document
+from app.services.career_knowledge import (
+    CLAIM_LINKING_VERSION,
+    build_knowledge_document_chunks,
+    edited_source_hash,
+    link_claims_to_chunks,
+    normalize_project_claims,
+    parse_document,
+    project_claims_for_document,
+    stable_project_key,
+)
+from app.core.config import settings
 
 router = APIRouter()
 career_studio = CareerStudioService()
 logger = setup_logger(__name__)
 
 
-async def _enqueue_career_evidence_index(document_id: int, user: User) -> None:
-    from app.core.config import settings
+def _normalize_project_upload_metadata(value: Any, file_name: str) -> dict[str, str]:
+    """Keep user-entered project metadata separate from AI-extracted content."""
+    item = value if isinstance(value, dict) else {}
+    fallback_title = Path(file_name).stem[:255] or "未命名项目"
+    fact_type = str(item.get("fact_type") or "project").strip()
+    return {
+        "title": str(item.get("title") or fallback_title).strip()[:255],
+        "period": str(item.get("period") or "").strip()[:128],
+        "company": str(item.get("company") or "").strip()[:255],
+        "role": str(item.get("role") or "").strip()[:128],
+        "fact_type": fact_type if fact_type in {"experience", "project"} else "project",
+        "project_key": stable_project_key(str(item.get("title") or fallback_title).strip()),
+    }
 
+
+async def _enqueue_career_evidence_index(document_id: int, user: User) -> None:
     if not getattr(settings, "CAREER_EVIDENCE_VECTOR_ENABLED", False):
         return
     try:
@@ -65,6 +88,58 @@ async def _enqueue_career_evidence_index(document_id: int, user: User) -> None:
         logger.info("Career evidence index queued: document_id=%s job_id=%s", document_id, job.id)
     except QueueUnavailable as exc:
         logger.warning("Career evidence index queue unavailable; lexical retrieval remains active: %s", exc)
+
+
+async def _replace_knowledge_document_chunks(
+    db: AsyncSession,
+    document: CareerKnowledgeDocument,
+    fact: CareerFact | None = None,
+) -> int:
+    """Persist the exact chunks later used by lexical and vector retrieval."""
+    if fact is None and document.fact_id:
+        fact = await db.scalar(
+            select(CareerFact).where(
+                CareerFact.id == document.fact_id,
+                CareerFact.user_id == document.user_id,
+            )
+        )
+    metadata = _json_load(document.metadata_json, {})
+    project_key = str(metadata.get("project_key") or "").strip()
+    metadata["claim_linking_version"] = CLAIM_LINKING_VERSION
+    document.metadata_json = json.dumps(metadata, ensure_ascii=False)
+    claims = project_claims_for_document(
+        _json_load(fact.content_json, {}) if fact else {},
+        fact.title if fact else document.title,
+        project_key or None,
+    )
+    chunks = link_claims_to_chunks(build_knowledge_document_chunks(
+        document,
+        max_chunk_chars=settings.EVIDENCE_CHUNK_MAX_CHARS,
+        overlap_chars=settings.EVIDENCE_CHUNK_OVERLAP_CHARS,
+    ), claims)
+    await db.execute(
+        delete(CareerKnowledgeChunk).where(CareerKnowledgeChunk.document_id == document.id)
+    )
+    db.add_all(
+        [
+            CareerKnowledgeChunk(
+                document_id=document.id,
+                user_id=document.user_id,
+                fact_id=document.fact_id,
+                chunk_index=chunk["chunk_index"],
+                chunk_id=str(chunk["chunk_id"]),
+                section=str(chunk["section"])[:255],
+                text=str(chunk["text"]),
+                project_key=str(chunk.get("project_key") or project_key)[:128],
+                claim_ids_json=json.dumps(chunk.get("claim_ids", []), ensure_ascii=False),
+                claim_texts_json=json.dumps(chunk.get("claim_texts", []), ensure_ascii=False),
+                source_version=chunk.get("source_version"),
+                chunking_version=str(chunk["chunking_version"]),
+            )
+            for chunk in chunks
+        ]
+    )
+    return len(chunks)
 
 
 def _json_load(value: str, fallback: Any) -> Any:
@@ -84,7 +159,7 @@ def _fact_response(fact: CareerFact) -> CareerFactRead:
         id=fact.id,
         fact_type=fact.fact_type,
         title=fact.title,
-        content=_json_load(fact.content_json, {}),
+        content=sanitize_resume_content(_json_load(fact.content_json, {}), fact.title, fact.fact_type),
         tags=_json_load(fact.tags_json, []),
         evidence=fact.evidence,
         is_verified=fact.is_verified,
@@ -251,7 +326,11 @@ def _imported_fact_payload(root: dict[str, Any]) -> list[dict[str, Any]]:
     return facts
 
 
-def _enrich_entries_from_evidence(generated: dict[str, Any], facts: list[dict[str, Any]]) -> None:
+def _enrich_entries_from_evidence(
+    generated: dict[str, Any],
+    facts: list[dict[str, Any]],
+    job: dict[str, Any] | None = None,
+) -> None:
     """Restore detailed, verified source wording after the model selects and orders facts."""
     sources = {fact["id"]: fact for fact in facts}
     for section in generated.get("sections", []):
@@ -264,6 +343,38 @@ def _enrich_entries_from_evidence(generated: dict[str, Any], facts: list[dict[st
             if len(fact_ids) != 1 or fact_ids[0] not in sources:
                 continue
             fact = sources[fact_ids[0]]
+            content = fact.get("content") if isinstance(fact.get("content"), dict) else {}
+            industrial_roles = content.get("industrial_roles") if isinstance(content.get("industrial_roles"), list) else []
+            if not industrial_roles:
+                industrial_roles = infer_industrial_roles(
+                    str(fact.get("title") or ""),
+                    content,
+                    str(fact.get("evidence") or ""),
+                )
+            if industrial_roles and not entry.get("industrial_roles"):
+                entry["industrial_roles"] = industrial_roles
+            for field in ("engineering_challenge", "design_rationale"):
+                source_value = _compact_evidence(str(content.get(field) or ""))
+                if source_value and not str(entry.get(field) or "").strip():
+                    entry[field] = source_value[:1200]
+            selected_variant = select_role_variant(job, content)
+            if selected_variant:
+                if selected_variant.get("summary"):
+                    entry["summary"] = selected_variant["summary"]
+                if selected_variant.get("engineering_challenge"):
+                    entry["engineering_challenge"] = selected_variant["engineering_challenge"]
+                if selected_variant.get("design_rationale"):
+                    entry["design_rationale"] = selected_variant["design_rationale"]
+                if selected_variant.get("highlights"):
+                    entry["items"] = [
+                        {
+                            "fact_ids": [fact["id"]],
+                            "label": "",
+                            "text": str(item).strip(),
+                        }
+                        for item in selected_variant["highlights"]
+                        if str(item).strip()
+                    ]
             evidence = str(fact.get("evidence") or "")
             if not evidence:
                 continue
@@ -292,6 +403,148 @@ def _enrich_entries_from_evidence(generated: dict[str, Any], facts: list[dict[st
             highlights = _source_highlights(evidence, fact["id"])
             if highlights:
                 entry["items"] = highlights
+
+
+def _project_title_and_stack(value: str) -> tuple[str, list[str]]:
+    text = _compact_evidence(value)
+    match = re.match(r"^(.*?)[（(]([^）)]+)[）)]$", text)
+    if not match:
+        return text, []
+    title = match.group(1).strip(" ：:")
+    stack = [part.strip() for part in re.split(r"[/、,，;；|]", match.group(2)) if part.strip()]
+    return title or text, stack
+
+
+def _experience_projects(
+    fact: dict[str, Any],
+    entry: dict[str, Any],
+    job: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Convert one internship fact into stable nested project entries."""
+    fact_id = fact.get("id")
+    content = fact.get("content") if isinstance(fact.get("content"), dict) else {}
+    explicit_projects = content.get("projects") if isinstance(content.get("projects"), list) else []
+    if explicit_projects:
+        candidates: list[Any] = explicit_projects
+    else:
+        candidates = entry.get("items") if isinstance(entry.get("items"), list) else []
+        candidates = [item for item in candidates if isinstance(item, dict) and str(item.get("label") or "").strip()]
+        if not candidates:
+            candidates = content.get("highlights") if isinstance(content.get("highlights"), list) else []
+
+    projects: list[dict[str, Any]] = []
+    for candidate in candidates:
+        engineering_challenge = ""
+        design_rationale = ""
+        industrial_roles: list[dict[str, Any]] = []
+        role_variants: list[dict[str, Any]] = []
+        selected_variant: dict[str, Any] = {}
+        if isinstance(candidate, dict):
+            raw_title = str(candidate.get("title") or candidate.get("label") or "").strip()
+            summary = _compact_evidence(str(candidate.get("summary") or candidate.get("text") or ""))
+            selected_variant = select_role_variant(job, candidate)
+            if selected_variant:
+                summary = _compact_evidence(str(selected_variant.get("summary") or summary))
+            engineering_challenge = _compact_evidence(str(candidate.get("engineering_challenge") or ""))
+            design_rationale = _compact_evidence(str(candidate.get("design_rationale") or ""))
+            if selected_variant:
+                engineering_challenge = _compact_evidence(str(selected_variant.get("engineering_challenge") or engineering_challenge))
+                design_rationale = _compact_evidence(str(selected_variant.get("design_rationale") or design_rationale))
+            industrial_roles = candidate.get("industrial_roles") if isinstance(candidate.get("industrial_roles"), list) else []
+            role_variants = candidate.get("role_variants") if isinstance(candidate.get("role_variants"), list) else []
+            project_items = candidate.get("items") if isinstance(candidate.get("items"), list) else []
+            variant_highlights = selected_variant.get("highlights") if isinstance(selected_variant.get("highlights"), list) else []
+            candidate_highlights = candidate.get("highlights") if isinstance(candidate.get("highlights"), list) else []
+            if not project_items and (variant_highlights or candidate_highlights):
+                project_items = [
+                    {"text": str(item).strip()}
+                    for item in (variant_highlights or candidate_highlights)
+                    if str(item).strip()
+                ]
+            tech_stack = [str(item).strip() for item in candidate.get("tech_stack", []) if str(item).strip()]
+        else:
+            raw_title = ""
+            summary = _compact_evidence(str(candidate))
+            project_items = []
+            tech_stack = []
+            match = re.match(r"^([^：:]{2,80})[：:](.+)$", summary)
+            if match:
+                raw_title, summary = match.group(1).strip(), match.group(2).strip()
+
+        if not raw_title or not summary:
+            if raw_title and project_items:
+                first_item = project_items[0]
+                if isinstance(first_item, dict):
+                    summary = _compact_evidence(str(first_item.get("text") or first_item.get("summary") or ""))
+                else:
+                    summary = _compact_evidence(str(first_item))
+        if not raw_title or not summary:
+            continue
+        title, parsed_stack = _project_title_and_stack(raw_title)
+        if not industrial_roles:
+            industrial_roles = infer_industrial_roles(
+                title,
+                {
+                    "summary": summary,
+                    "engineering_challenge": engineering_challenge,
+                    "design_rationale": design_rationale,
+                    "tech_stack": tech_stack or parsed_stack,
+                    "highlights": [item.get("text") for item in project_items if isinstance(item, dict)],
+                },
+                str(fact.get("evidence") or ""),
+            )
+        projects.append({
+            "fact_ids": [fact_id] if fact_id is not None else [],
+            "title": title[:255],
+            "summary": summary[:1200],
+            "engineering_challenge": engineering_challenge[:1200],
+            "design_rationale": design_rationale[:1200],
+            "industrial_roles": industrial_roles[:4],
+            "role_variants": role_variants[:3],
+            "tech_stack": (tech_stack or parsed_stack)[:16],
+            "items": [
+                {
+                    "fact_ids": [fact_id] if fact_id is not None else [],
+                    "label": str(item.get("label") or ""),
+                    "text": str(item.get("text") or item.get("summary") or "").strip(),
+                }
+                for item in project_items
+                if isinstance(item, dict) and str(item.get("text") or item.get("summary") or "").strip()
+            ],
+        })
+
+    unique: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for project in projects:
+        key = re.sub(r"\s+", "", project["title"]).lower()
+        if key and key not in seen:
+            seen.add(key)
+            unique.append(project)
+    return unique
+
+
+def _expand_experience_entries(
+    generated: dict[str, Any],
+    facts: list[dict[str, Any]],
+    job: dict[str, Any] | None = None,
+) -> None:
+    """Guarantee that multi-project internships are not flattened into bullets."""
+    sources = {fact["id"]: fact for fact in facts}
+    for section in generated.get("sections", []):
+        if not isinstance(section, dict) or section.get("heading") != "实习经历":
+            continue
+        for entry in section.get("entries", []):
+            if not isinstance(entry, dict):
+                continue
+            fact_ids = entry.get("fact_ids") if isinstance(entry.get("fact_ids"), list) else []
+            if len(fact_ids) != 1 or fact_ids[0] not in sources:
+                continue
+            if isinstance(entry.get("projects"), list) and len(entry["projects"]) >= 2:
+                continue
+            projects = _experience_projects(sources[fact_ids[0]], entry, job)
+            if len(projects) >= 2:
+                entry["projects"] = projects
+                entry["items"] = []
 
 
 def _normalize_generated_sections(generated: dict[str, Any], facts: list[dict[str, Any]]) -> None:
@@ -414,6 +667,7 @@ async def upload_knowledge_document(
     file: UploadFile = File(...),
     fact_id: int = Form(...),
     title: str | None = Form(default=None),
+    project_key: str | None = Form(default=None),
     db: Annotated[AsyncSession, Depends(get_db)] = None,
     current_user: Annotated[User, Depends(get_current_user)] = None,
 ) -> CareerKnowledgeDocumentRead:
@@ -421,26 +675,50 @@ async def upload_knowledge_document(
     if Path(file_name).suffix.lower() != ".md":
         raise HTTPException(status_code=400, detail="技术资料目前只支持 Markdown（.md）文件")
     fact = await _owned_fact(db, current_user.id, fact_id)
-    if fact.fact_type != "project":
-        raise HTTPException(status_code=400, detail="技术文档只能绑定到项目事实")
+    if fact.fact_type not in {"project", "experience"}:
+        raise HTTPException(status_code=400, detail="技术文档只能绑定到项目或实习经历事实")
     data = await file.read(10 * 1024 * 1024 + 1)
     try:
         parsed = parse_document(file_name, file.content_type, data, "technical_doc")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    fact_content = _json_load(fact.content_json, {})
+    fact_projects = fact_content.get("projects") if isinstance(fact_content, dict) else []
+    single_fact_project = fact_projects[0] if isinstance(fact_projects, list) and len(fact_projects) == 1 and isinstance(fact_projects[0], dict) else None
+    requested_title = str(title or "").strip()
+    title_value = (
+        requested_title
+        or (single_fact_project or {}).get("title")
+        or (fact_content.get("title") if isinstance(fact_content, dict) else None)
+        or Path(file_name).stem
+        or "未命名技术资料"
+    ).strip()[:255]
+    resolved_project_key = (
+        str(project_key or "").strip()
+        or (single_fact_project or {}).get("project_key")
+        or (fact_content.get("project_key") if isinstance(fact_content, dict) else None)
+        or stable_project_key(title_value)
+    )
+    metadata = dict(parsed["metadata"])
+    metadata.update({
+        "project_key": str(resolved_project_key),
+        "claim_linking_version": CLAIM_LINKING_VERSION,
+    })
     document = CareerKnowledgeDocument(
         user_id=current_user.id,
         fact_id=fact_id,
-        title=(title or Path(file_name).stem or "未命名技术资料").strip()[:255],
+        title=title_value,
         file_name=file_name,
         document_type=parsed["document_type"],
         content_type=file.content_type or "application/octet-stream",
         content_text=parsed["content_text"],
-        metadata_json=json.dumps(parsed["metadata"], ensure_ascii=False),
+        metadata_json=json.dumps(metadata, ensure_ascii=False),
         source_hash=parsed["source_hash"],
     )
     db.add(document)
+    await db.flush()
+    await _replace_knowledge_document_chunks(db, document, fact)
     await db.commit()
     await db.refresh(document)
     await _enqueue_career_evidence_index(document.id, current_user)
@@ -456,11 +734,18 @@ async def update_knowledge_document(
 ) -> CareerKnowledgeDocumentRead:
     document = await _owned_knowledge_document(db, current_user.id, document_id)
     updates = payload.model_dump(exclude_unset=True)
+    rebuild_chunks = False
     if "title" in updates:
         title = updates["title"].strip()
         if not title:
             raise HTTPException(status_code=400, detail="资料名称不能为空")
         document.title = title
+        metadata = _json_load(document.metadata_json, {})
+        if not metadata.get("project_key"):
+            metadata["project_key"] = stable_project_key(title)
+        metadata["claim_linking_version"] = CLAIM_LINKING_VERSION
+        document.metadata_json = json.dumps(metadata, ensure_ascii=False)
+        rebuild_chunks = True
     if "document_type" in updates:
         document.document_type = updates["document_type"]
     if "content_text" in updates:
@@ -469,11 +754,19 @@ async def update_knowledge_document(
             raise HTTPException(status_code=400, detail="资料正文不能为空")
         document.content_text = content_text
         metadata = _json_load(document.metadata_json, {})
-        metadata.update({"edited_in_ui": True, "character_count": len(document.content_text), "parser": "editor"})
+        metadata.update({
+            "edited_in_ui": True,
+            "character_count": len(document.content_text),
+            "parser": "editor",
+            "claim_linking_version": CLAIM_LINKING_VERSION,
+        })
         document.metadata_json = json.dumps(metadata, ensure_ascii=False)
         document.source_hash = edited_source_hash(document.content_text)
+        rebuild_chunks = True
     if "is_archived" in updates:
         document.is_archived = updates["is_archived"]
+    if rebuild_chunks:
+        await _replace_knowledge_document_chunks(db, document)
     await db.commit()
     await db.refresh(document)
     await _enqueue_career_evidence_index(document.id, current_user)
@@ -513,11 +806,12 @@ async def create_fact(
     db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> CareerFactRead:
+    content = normalize_project_claims(payload.content, payload.title)
     fact = CareerFact(
         user_id=current_user.id,
         fact_type=payload.fact_type,
         title=payload.title,
-        content_json=json.dumps(payload.content, ensure_ascii=False),
+        content_json=json.dumps(content, ensure_ascii=False),
         tags_json=json.dumps(payload.tags, ensure_ascii=False),
         evidence=payload.evidence,
         source_resume_name=current_user.resume_file_name,
@@ -538,14 +832,39 @@ async def update_fact(
 ) -> CareerFactRead:
     fact = await _owned_fact(db, current_user.id, fact_id)
     updates = payload.model_dump(exclude_unset=True)
+    next_title = str(updates.get("title") or fact.title)
+    rebuild_documents = "content" in updates or "title" in updates
     if "content" in updates:
-        fact.content_json = json.dumps(updates.pop("content"), ensure_ascii=False)
+        fact.content_json = json.dumps(
+            normalize_project_claims(updates.pop("content"), next_title),
+            ensure_ascii=False,
+        )
+    elif "title" in updates:
+        fact.content_json = json.dumps(
+            normalize_project_claims(_json_load(fact.content_json, {}), next_title),
+            ensure_ascii=False,
+        )
     if "tags" in updates:
         fact.tags_json = json.dumps(updates.pop("tags"), ensure_ascii=False)
     for field, value in updates.items():
         setattr(fact, field, value)
+    linked_documents: list[CareerKnowledgeDocument] = []
+    if rebuild_documents:
+        linked_documents = (
+            await db.scalars(
+                select(CareerKnowledgeDocument).where(
+                    CareerKnowledgeDocument.user_id == current_user.id,
+                    CareerKnowledgeDocument.fact_id == fact.id,
+                    CareerKnowledgeDocument.is_archived.is_(False),
+                )
+            )
+        ).all()
+        for document in linked_documents:
+            await _replace_knowledge_document_chunks(db, document, fact)
     await db.commit()
     await db.refresh(fact)
+    for document in linked_documents:
+        await _enqueue_career_evidence_index(document.id, current_user)
     return _fact_response(fact)
 
 
@@ -622,27 +941,60 @@ async def extract_resume_facts(
 
 @router.post("/facts/extract-from-markdown", response_model=MarkdownFactExtractionResponse, status_code=status.HTTP_202_ACCEPTED)
 async def extract_fact_from_markdown(
-    file: UploadFile = File(...),
+    files: list[UploadFile] | None = File(default=None),
+    file: UploadFile | None = File(default=None),
+    metadata: str = Form(default="[]"),
     current_user: Annotated[User, Depends(get_current_user)] = None,
 ) -> MarkdownFactExtractionResponse:
-    file_name = Path(file.filename or "uploaded-document").name[:255]
-    if Path(file_name).suffix.lower() != ".md":
-        raise HTTPException(status_code=400, detail="事实提炼目前只支持 Markdown（.md）文件")
-    data = await file.read(10 * 1024 * 1024 + 1)
+    uploads = [item for item in (files or []) if item is not None]
+    if file is not None:
+        uploads.insert(0, file)
+    if not uploads:
+        raise HTTPException(status_code=400, detail="至少上传一个 Markdown 项目文档")
     try:
-        parsed = parse_document(file_name, file.content_type, data, "technical_doc")
-        source_document = {
-            "file_name": file_name,
-            "title": Path(file_name).stem[:255] or "未命名技术资料",
-            "document_type": parsed["document_type"],
-            "content_type": file.content_type or "text/markdown",
-            "character_count": parsed["metadata"].get("character_count", len(parsed["content_text"])),
-            "source_hash": parsed["source_hash"],
-        }
-        queue_job = enqueue_career_fact_job(
-            {"file_name": file_name, "content_text": parsed["content_text"], "source_document": source_document},
-            current_user.id,
-        )
+        raw_metadata = json.loads(metadata or "[]")
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="项目元数据格式无效，请重新选择文件") from exc
+    if raw_metadata and (not isinstance(raw_metadata, list) or len(raw_metadata) != len(uploads)):
+        raise HTTPException(status_code=400, detail="项目元数据数量必须与上传文件数量一致")
+
+    parsed_uploads: list[tuple[str, UploadFile, dict[str, Any], dict[str, str]]] = []
+    try:
+        for index, upload in enumerate(uploads):
+            file_name = Path(upload.filename or "uploaded-document").name[:255]
+            if Path(file_name).suffix.lower() != ".md":
+                raise HTTPException(status_code=400, detail=f"{file_name} 不是 Markdown（.md）文件")
+            data = await upload.read(10 * 1024 * 1024 + 1)
+            parsed = parse_document(file_name, upload.content_type, data, "technical_doc")
+            project_metadata = _normalize_project_upload_metadata(
+                raw_metadata[index] if isinstance(raw_metadata, list) and index < len(raw_metadata) else {},
+                file_name,
+            )
+            source_document = {
+                "file_name": file_name,
+                "title": project_metadata["title"],
+                "project_metadata": project_metadata,
+                "document_type": parsed["document_type"],
+                "content_type": upload.content_type or "text/markdown",
+                "character_count": parsed["metadata"].get("character_count", len(parsed["content_text"])),
+                "source_hash": parsed["source_hash"],
+            }
+            parsed_uploads.append((file_name, upload, parsed, project_metadata | {"source_document": source_document}))
+        job_ids: list[str] = []
+        source_documents: list[dict[str, Any]] = []
+        for file_name, _upload, parsed, project_metadata in parsed_uploads:
+            source_document = project_metadata.pop("source_document")
+            queue_job = enqueue_career_fact_job(
+                {
+                    "file_name": file_name,
+                    "content_text": parsed["content_text"],
+                    "source_document": source_document,
+                    "project_metadata": project_metadata,
+                },
+                current_user.id,
+            )
+            job_ids.append(queue_job.id)
+            source_documents.append(source_document)
     except QueueUnavailable as exc:
         raise HTTPException(status_code=503, detail="事实提炼队列暂时不可用，请稍后重试。") from exc
     except ValueError as exc:
@@ -651,10 +1003,12 @@ async def extract_fact_from_markdown(
         raise HTTPException(status_code=502, detail=f"Markdown 事实任务创建失败：{str(exc).splitlines()[0][:300]}") from exc
 
     return MarkdownFactExtractionResponse(
-        job_id=queue_job.id,
-        source_document=source_document,
+        job_id=job_ids[0],
+        job_ids=job_ids,
+        source_document=source_documents[0],
+        source_documents=source_documents,
         status="queued",
-        message="Markdown 已上传，正在后台提炼项目事实。",
+        message=f"已上传 {len(job_ids)} 个项目文档，正在分别提炼项目事实。",
     )
 
 
@@ -676,7 +1030,7 @@ async def read_markdown_fact_job(
     if status_value in {"queued", "started", "deferred", "scheduled"}:
         return MarkdownFactExtractionResponse(job_id=job.id, status="processing", message="AI 正在提炼项目事实，请稍候。")
     if status_value == "failed":
-        return MarkdownFactExtractionResponse(job_id=job.id, status="failed", message="Markdown 事实提炼失败，请检查文档后重试。")
+        return MarkdownFactExtractionResponse(job_id=job.id, status="failed", message="Resume Project Extractor 未生成有效项目要点，本次未使用规则兜底；请检查文档后重试。")
     if status_value != "finished" or not isinstance(job.result, dict):
         return MarkdownFactExtractionResponse(job_id=job.id, status="processing", message="AI 正在提炼项目事实，请稍候。")
     try:
@@ -685,9 +1039,11 @@ async def read_markdown_fact_job(
         facts = [CareerFactCreate.model_validate(item) for item in raw_facts]
         return MarkdownFactExtractionResponse(
             job_id=job.id,
+            job_ids=[job.id],
             fact=facts[0] if len(facts) == 1 else None,
             facts=facts,
             source_document=result.get("source_document") or {},
+            source_documents=[result.get("source_document") or {}],
             warnings=result.get("warnings") or [],
             quality=result.get("quality") or {},
             status=result.get("status") or "draft",
@@ -1003,7 +1359,7 @@ async def generate_tailored_resume(
             "id": fact.id,
             "fact_type": fact.fact_type,
             "title": fact.title,
-            "content": _json_load(fact.content_json, {}),
+            "content": sanitize_resume_content(_json_load(fact.content_json, {}), fact.title, fact.fact_type),
             "tags": _json_load(fact.tags_json, []),
             "evidence": fact.evidence,
         }
@@ -1025,7 +1381,9 @@ async def generate_tailored_resume(
             section for section in generated.get("sections", [])
             if isinstance(section, dict) and section.get("heading") != "教育背景"
         ]
-    _enrich_entries_from_evidence(generated, fact_payload)
+    job_payload = _json_load(job.normalized_json, {})
+    _enrich_entries_from_evidence(generated, fact_payload, job_payload)
+    _expand_experience_entries(generated, fact_payload, job_payload)
     for section in generated.get("sections", []):
         if isinstance(section, dict) and section.get("heading") == "竞赛与荣誉":
             section["items"] = list(section.get("items", []))[:5]

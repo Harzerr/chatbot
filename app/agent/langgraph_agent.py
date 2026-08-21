@@ -457,7 +457,9 @@ async def create_graph():
         base_url=settings.OPENROUTER_API_BASE,
         stream_usage=True,
     )
-    _skill_registry = create_default_skill_registry(skill_llm)
+    # Keep chat routing limited to conversational skills. Workflow-only skills
+    # such as resume extraction are executed explicitly by their service.
+    _skill_registry = create_default_skill_registry(skill_llm, skill_names={"interview-skills"})
 
     async def skill_node(state: AgentState):
         try:

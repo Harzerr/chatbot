@@ -1,4 +1,6 @@
+import copy
 import io
+import json
 import math
 import re
 from hashlib import sha256
@@ -16,6 +18,8 @@ MAX_EVALUATION_CONTEXT = 3_200
 DEFAULT_EVIDENCE_CHUNK_CHARS = 900
 DEFAULT_EVIDENCE_CHUNKS = 4
 DEFAULT_EVIDENCE_CHUNK_OVERLAP = 120
+EVIDENCE_CHUNKING_VERSION = "career-evidence-v2"
+CLAIM_LINKING_VERSION = "career-claims-v1"
 logger = setup_logger(__name__)
 
 CODE_EXTENSIONS = {
@@ -83,6 +87,191 @@ def edited_source_hash(content_text: str) -> str:
     return sha256(content_text.encode("utf-8")).hexdigest()
 
 
+def stable_project_key(title: str) -> str:
+    """Create a deterministic project boundary without exposing user text in IDs."""
+    normalized = re.sub(r"\s+", " ", str(title or "")).strip().lower()
+    return f"project:{sha256(normalized.encode('utf-8')).hexdigest()[:16]}"
+
+
+def _normalize_claim_map(
+    highlights: Any,
+    evidence_map: Any,
+    project_key: str,
+) -> list[dict[str, Any]]:
+    highlight_list = [str(item).strip() for item in highlights if str(item).strip()] if isinstance(highlights, list) else []
+    evidence_list = evidence_map if isinstance(evidence_map, list) else []
+    normalized: list[dict[str, Any]] = []
+    for index, claim in enumerate(highlight_list):
+        source = evidence_list[index] if index < len(evidence_list) and isinstance(evidence_list[index], dict) else {}
+        try:
+            confidence = float(source.get("confidence") or 0.0)
+        except (TypeError, ValueError):
+            confidence = 0.0
+        evidence_chunks = source.get("evidence_chunks") if isinstance(source.get("evidence_chunks"), list) else []
+        source_quotes: list[str] = []
+        for value in source.get("source_quotes") if isinstance(source.get("source_quotes"), list) else []:
+            quote = re.sub(r"\s+", " ", str(value or "")).strip()[:240]
+            if quote and quote not in source_quotes:
+                source_quotes.append(quote)
+        for item in evidence_chunks:
+            quote = re.sub(r"\s+", " ", str(item.get("quote") or "")).strip()[:240] if isinstance(item, dict) else ""
+            if quote and quote not in source_quotes:
+                source_quotes.append(quote)
+        source_quote = re.sub(r"\s+", " ", str(source.get("source_quote") or "")).strip()[:240]
+        if source_quote and source_quote not in source_quotes:
+            source_quotes.insert(0, source_quote)
+        source_chunk_ids = [
+            str(item).strip()
+            for item in (source.get("source_chunk_ids") or [])
+            if str(item).strip()
+        ]
+        normalized.append({
+            "claim_id": str(source.get("claim_id") or f"{project_key}:claim-{index + 1}"),
+            "claim": claim[:1000],
+            "source_quote": (source_quotes[0] if source_quotes else "")[:240],
+            "source_quotes": source_quotes[:6],
+            "source_chunk_ids": source_chunk_ids[:12],
+            "evidence_chunks": evidence_chunks[:6],
+            "confidence": round(max(0.0, min(1.0, confidence)), 2),
+        })
+    return normalized
+
+
+def normalize_project_claims(content: Any, title: str) -> dict[str, Any]:
+    """Add stable project and claim IDs while preserving the supplied content."""
+    normalized = copy.deepcopy(content) if isinstance(content, dict) else {}
+    projects = normalized.get("projects") if isinstance(normalized.get("projects"), list) else []
+    if projects:
+        normalized_projects: list[dict[str, Any]] = []
+        for project in projects:
+            if not isinstance(project, dict):
+                continue
+            item = project
+            project_title = str(item.get("title") or title or "未命名项目").strip()
+            project_key = str(item.get("project_key") or stable_project_key(project_title))
+            item["project_key"] = project_key
+            item["evidence_map"] = _normalize_claim_map(
+                item.get("highlights"),
+                item.get("evidence_map"),
+                project_key,
+            )
+            normalized_projects.append(item)
+        normalized["projects"] = normalized_projects
+        if len(normalized_projects) == 1:
+            normalized["project_key"] = normalized_projects[0]["project_key"]
+    else:
+        project_key = str(normalized.get("project_key") or stable_project_key(title or "未命名项目"))
+        normalized["project_key"] = project_key
+        normalized["evidence_map"] = _normalize_claim_map(
+            normalized.get("highlights"),
+            normalized.get("evidence_map"),
+            project_key,
+        )
+    normalized["claim_linking_version"] = CLAIM_LINKING_VERSION
+    return normalized
+
+
+def project_claims_for_document(
+    content: Any,
+    title: str,
+    project_key: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return evidence claims belonging to one source document/project."""
+    normalized = normalize_project_claims(content, title)
+    projects = normalized.get("projects") if isinstance(normalized.get("projects"), list) else []
+    candidates = projects or [normalized]
+    claims: list[dict[str, Any]] = []
+    for project in candidates:
+        item_key = str(project.get("project_key") or stable_project_key(str(project.get("title") or title)))
+        if project_key and item_key != str(project_key):
+            continue
+        evidence_map = project.get("evidence_map") if isinstance(project.get("evidence_map"), list) else []
+        for item in evidence_map:
+            if not isinstance(item, dict) or not str(item.get("claim_id") or "").strip():
+                continue
+            claims.append({
+                "project_key": item_key,
+                "claim_id": str(item["claim_id"]),
+                "claim": str(item.get("claim") or "").strip(),
+                "source_quote": str(item.get("source_quote") or "").strip(),
+                "source_quotes": item.get("source_quotes") if isinstance(item.get("source_quotes"), list) else [],
+                "source_chunk_ids": item.get("source_chunk_ids") if isinstance(item.get("source_chunk_ids"), list) else [],
+            })
+    return claims
+
+
+def _claim_tokens(value: str) -> set[str]:
+    return set(_search_terms(value))
+
+
+def link_claims_to_chunks(
+    chunks: list[dict[str, Any]],
+    claims: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Attach every evidence-backed claim to all matching source chunks."""
+    linked_chunks: list[dict[str, Any]] = []
+    for chunk in chunks:
+        item = dict(chunk)
+        chunk_text = re.sub(r"\s+", " ", str(item.get("text") or "")).strip().lower()
+        chunk_tokens = _claim_tokens(chunk_text)
+        matched_ids: list[str] = []
+        matched_texts: list[str] = []
+        project_keys: list[str] = []
+        for claim in claims:
+            claim_id = str(claim.get("claim_id") or "").strip()
+            claim_text = str(claim.get("claim") or "").strip()
+            source_quotes = [
+                re.sub(r"\s+", " ", str(item or "")).strip().lower()
+                for item in (claim.get("source_quotes") or [])
+                if str(item or "").strip()
+            ]
+            source_quote = re.sub(r"\s+", " ", str(claim.get("source_quote") or "")).strip().lower()
+            if source_quote and source_quote not in source_quotes:
+                source_quotes.insert(0, source_quote)
+            if not claim_id or not claim_text:
+                continue
+            exact = any(quote in chunk_text for quote in source_quotes)
+            reference_tokens = _claim_tokens(" ".join(source_quotes) or claim_text)
+            overlap = len(reference_tokens & chunk_tokens)
+            minimum_overlap = max(2, min(8, math.ceil(len(reference_tokens) * 0.25)))
+            if not exact and overlap < minimum_overlap:
+                continue
+            matched_ids.append(claim_id)
+            matched_texts.append(claim_text[:1000])
+            project_key = str(claim.get("project_key") or "").strip()
+            if project_key and project_key not in project_keys:
+                project_keys.append(project_key)
+        item["claim_ids"] = matched_ids
+        item["claim_texts"] = matched_texts
+        if project_keys:
+            item["project_key"] = project_keys[0] if len(project_keys) == 1 else ""
+        linked_chunks.append(item)
+    return linked_chunks
+
+
+def _document_metadata(document: Any) -> dict[str, Any]:
+    metadata = _document_value(document, "metadata", None)
+    if isinstance(metadata, dict):
+        return metadata
+    raw = _document_value(document, "metadata_json", "")
+    try:
+        parsed = json.loads(raw or "{}")
+    except (TypeError, json.JSONDecodeError):
+        parsed = {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _list_value(document: Any, field: str, json_field: str) -> list[str]:
+    value = _document_value(document, field, None)
+    if value is None:
+        raw = _document_value(document, json_field, "[]")
+        try:
+            value = json.loads(raw or "[]")
+        except (TypeError, json.JSONDecodeError):
+            value = []
+    return [str(item).strip() for item in value if str(item).strip()] if isinstance(value, list) else []
+
+
 def _search_terms(value: str) -> list[str]:
     terms: list[str] = []
     for match in re.finditer(r"[a-zA-Z0-9+#.-]{2,}|[\u4e00-\u9fff]{2,}", value or ""):
@@ -133,12 +322,17 @@ def _scope_documents_to_query(documents: list[Any], query: str) -> list[Any]:
     return [document for score, document in scored if score == best_score]
 
 
-def split_knowledge_document(
+def _chunking_version(max_chunk_chars: int, overlap_chars: int) -> str:
+    safe_overlap = min(max(0, overlap_chars), max(0, max_chunk_chars - 1))
+    return f"{EVIDENCE_CHUNKING_VERSION}:{max_chunk_chars}:{safe_overlap}"
+
+
+def build_knowledge_document_chunks(
     document: Any,
     max_chunk_chars: int = DEFAULT_EVIDENCE_CHUNK_CHARS,
     overlap_chars: int = DEFAULT_EVIDENCE_CHUNK_OVERLAP,
 ) -> list[dict[str, Any]]:
-    """Split Markdown into heading-aware evidence chunks without losing source metadata."""
+    """Build the canonical heading-aware chunks for one document version."""
     content = str(_document_value(document, "content_text") or "").strip()
     if not content:
         return []
@@ -147,6 +341,8 @@ def split_knowledge_document(
     fact_id = _document_value(document, "fact_id", None)
     document_id = _document_value(document, "id", None) or _document_value(document, "source_hash", title)
     source_version = str(_document_value(document, "source_hash", "")) or None
+    metadata = _document_metadata(document)
+    project_key = str(metadata.get("project_key") or "")
     sections: list[tuple[str, list[str]]] = []
     heading = title
     lines: list[str] = []
@@ -165,6 +361,7 @@ def split_knowledge_document(
 
     chunks: list[dict[str, Any]] = []
     safe_overlap = min(max(0, overlap_chars), max(0, max_chunk_chars - 1))
+    chunking_version = _chunking_version(max_chunk_chars, overlap_chars)
 
     def split_long_piece(piece: str) -> list[str]:
         if len(piece) <= max_chunk_chars:
@@ -183,13 +380,76 @@ def split_knowledge_document(
             for piece in pieces:
                 candidate = f"{current}\n\n{piece}".strip() if current else piece
                 if current and len(candidate) > max_chunk_chars:
-                    chunks.append({"title": title, "fact_id": fact_id, "document_id": str(document_id), "section": section_name, "text": current, "source_version": source_version})
+                    chunks.append({"title": title, "fact_id": fact_id, "document_id": str(document_id), "section": section_name, "text": current, "source_version": source_version, "project_key": project_key, "claim_ids": [], "claim_texts": []})
                     current = piece
                 else:
                     current = candidate
         if current:
-            chunks.append({"title": title, "fact_id": fact_id, "document_id": str(document_id), "section": section_name, "text": current, "source_version": source_version})
-    return [{**chunk, "chunk_id": f"{chunk['document_id']}:{index}"} for index, chunk in enumerate(chunks)]
+            chunks.append({"title": title, "fact_id": fact_id, "document_id": str(document_id), "section": section_name, "text": current, "source_version": source_version, "project_key": project_key, "claim_ids": [], "claim_texts": []})
+    return [
+        {
+            **chunk,
+            "chunk_index": index,
+            "chunk_id": f"{chunk['document_id']}:{index}",
+            "chunking_version": chunking_version,
+        }
+        for index, chunk in enumerate(chunks)
+    ]
+
+
+def _persisted_knowledge_chunks(
+    document: Any,
+    max_chunk_chars: int,
+    overlap_chars: int,
+) -> list[dict[str, Any]] | None:
+    """Read persisted chunks only when they belong to the current source/version."""
+    persisted = _document_value(document, "chunks", None)
+    if persisted is None:
+        return None
+    if not isinstance(persisted, (list, tuple)):
+        return None
+
+    content = str(_document_value(document, "content_text") or "").strip()
+    if not persisted:
+        return [] if not content else None
+
+    expected_version = _chunking_version(max_chunk_chars, overlap_chars)
+    source_version = str(_document_value(document, "source_hash", "")) or None
+    normalized: list[dict[str, Any]] = []
+    for chunk in persisted:
+        if _document_value(chunk, "chunking_version", "") != expected_version:
+            return None
+        if (str(_document_value(chunk, "source_version", "")) or None) != source_version:
+            return None
+        normalized.append(
+            {
+                "title": str(_document_value(chunk, "title", _document_value(document, "title", "未命名文档"))),
+                "fact_id": _document_value(chunk, "fact_id", _document_value(document, "fact_id", None)),
+                "document_id": str(_document_value(chunk, "document_id", _document_value(document, "id", ""))),
+                "section": str(_document_value(chunk, "section", "")),
+                "text": str(_document_value(chunk, "text", "")),
+                "source_version": _document_value(chunk, "source_version", None),
+                "project_key": str(_document_value(chunk, "project_key", _document_metadata(document).get("project_key", "")) or ""),
+                "claim_ids": _list_value(chunk, "claim_ids", "claim_ids_json"),
+                "claim_texts": _list_value(chunk, "claim_texts", "claim_texts_json"),
+                "chunk_index": int(_document_value(chunk, "chunk_index", len(normalized))),
+                "chunk_id": str(_document_value(chunk, "chunk_id", "")),
+                "chunking_version": expected_version,
+            }
+        )
+    return normalized
+
+
+def split_knowledge_document(
+    document: Any,
+    max_chunk_chars: int = DEFAULT_EVIDENCE_CHUNK_CHARS,
+    overlap_chars: int = DEFAULT_EVIDENCE_CHUNK_OVERLAP,
+) -> list[dict[str, Any]]:
+    """Return persisted canonical chunks, with raw-text fallback for old documents."""
+    persisted = _persisted_knowledge_chunks(document, max_chunk_chars, overlap_chars)
+    if persisted is not None:
+        return persisted
+    return build_knowledge_document_chunks(document, max_chunk_chars, overlap_chars)
 
 
 def retrieve_knowledge_chunks(
@@ -230,7 +490,14 @@ def retrieve_knowledge_chunks(
     document_frequency = {term: 0 for term in query_terms}
     tokenized_chunks: list[list[str]] = []
     for chunk in raw_chunks:
-        searchable = " ".join((chunk["title"], chunk["section"], chunk["text"])).lower()
+        searchable = " ".join(
+            (
+                chunk["title"],
+                chunk["section"],
+                chunk["text"],
+                " ".join(chunk.get("claim_texts", [])),
+            )
+        ).lower()
         tokens = _search_terms(searchable)
         tokenized_chunks.append(tokens)
         for term in query_terms:
@@ -334,6 +601,9 @@ def retrieve_knowledge_chunks(
                 "semantic_score": round(float(semantic_hits.get(chunk["chunk_id"], {}).get("score") or 0), 4),
                 "retrieval_method": method,
                 "evidence_id": f"{chunk['document_id']}:{chunk['chunk_id']}",
+                "project_key": chunk.get("project_key", ""),
+                "claim_ids": chunk.get("claim_ids", []),
+                "claim_texts": chunk.get("claim_texts", []),
             }.items() if not key.startswith("_")
         })
         per_document[document_id] = per_document.get(document_id, 0) + 1
@@ -355,6 +625,8 @@ def _render_knowledge_context(
         block = (
             f"[证据ID：{chunk['evidence_id']}｜职业事实：{fact_label}｜"
             f"文档：{chunk['title']}｜章节：{chunk['section']}｜"
+            f"项目边界：{chunk.get('project_key') or '未标记'}｜"
+            f"对应要点：{'；'.join(chunk.get('claim_texts', []))[:240] or '未标记'}｜"
             f"版本：{(chunk.get('source_version') or '')[:12]}｜"
             f"检索方式：{chunk.get('retrieval_method', 'lexical_bm25_heading_boost')}｜"
             f"检索分数：{chunk.get('score', 0)}]\n{chunk['text'].strip()}"

@@ -3,13 +3,50 @@ from app.services.career_knowledge import (
     build_evidence_pack,
     build_knowledge_context,
     edited_source_hash,
+    link_claims_to_chunks,
+    normalize_project_claims,
     parse_document,
+    project_claims_for_document,
     retrieve_knowledge_chunks,
     split_knowledge_document,
     evidence_context_stats,
 )
 from app.core.config import settings
 from unittest.mock import patch
+
+
+def test_project_claim_is_linked_to_multiple_chunks_and_survives_normalization():
+    content = {
+        "projects": [{
+            "title": "标定回放平台",
+            "highlights": ["递归查找 DLT 压缩包中的日志并提取收敛状态"],
+            "evidence_map": [{
+                "source_quote": "递归查找 DLT 压缩包中的日志并提取收敛状态",
+                "source_quotes": [
+                    "递归查找 DLT 压缩包中的日志并提取收敛状态",
+                    "写入结果库",
+                ],
+                "confidence": 0.9,
+            }],
+        }],
+    }
+
+    normalized = normalize_project_claims(content, "实习经历")
+    project = normalized["projects"][0]
+    claims = project_claims_for_document(normalized, "实习经历", project["project_key"])
+    chunks = link_claims_to_chunks([
+        {"chunk_id": "doc:0", "text": "上传后递归查找 DLT 压缩包中的日志并提取收敛状态。"},
+        {"chunk_id": "doc:1", "text": "递归查找 DLT 压缩包中的日志并提取收敛状态后，写入结果库。"},
+    ], claims)
+
+    assert project["project_key"].startswith("project:")
+    assert len(claims) == 1
+    assert claims[0]["source_quotes"] == [
+        "递归查找 DLT 压缩包中的日志并提取收敛状态",
+        "写入结果库",
+    ]
+    assert all(claims[0]["claim_id"] in chunk["claim_ids"] for chunk in chunks)
+    assert all(chunk["project_key"] == project["project_key"] for chunk in chunks)
 
 
 class FakeCache:
@@ -85,6 +122,34 @@ def test_long_chunk_uses_overlap_to_preserve_boundary_context():
     assert len(chunks) >= 2
     assert all(len(chunk["text"]) <= 40 for chunk in chunks)
     assert any("关键边界条件" in chunk["text"] for chunk in chunks)
+
+
+def test_retrieval_uses_persisted_chunks_when_available():
+    document = {
+        "id": 12,
+        "title": "已索引文档",
+        "source_hash": "version-1",
+        "content_text": "原文不应该在检索阶段重新切片",
+        "chunks": [
+            {
+                "document_id": "12",
+                "chunk_id": "12:0",
+                "chunk_index": 0,
+                "title": "已索引文档",
+                "fact_id": 9,
+                "section": "缓存优化",
+                "text": "Redis 热 key 通过本地缓存和过期策略处理。",
+                "source_version": "version-1",
+                "chunking_version": "career-evidence-v2:900:120",
+            }
+        ],
+    }
+
+    chunks = retrieve_knowledge_chunks([document], query="Redis 热 key")
+
+    assert chunks
+    assert chunks[0]["chunk_id"] == "12:0"
+    assert "Redis 热 key" in chunks[0]["text"]
 
 
 def test_retrieval_can_scope_evidence_to_one_career_fact():

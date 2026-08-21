@@ -75,15 +75,50 @@ const localizeFactTag = (tag) => factTagLabels[String(tag || '').trim().toLowerC
 
 const splitLines = (value) => String(value || '').split('\n').map((item) => item.trim()).filter(Boolean);
 const joinLines = (value) => (Array.isArray(value) ? value : []).join('\n');
+const hasProjectHighlights = (editor) => Boolean(
+  String(editor?.highlights || '').trim()
+  || (Array.isArray(editor?.projects) && editor.projects.some((project) => String(project?.highlights || '').trim()))
+);
+const roleTracksToText = (tracks) => (Array.isArray(tracks) ? tracks : []).map((track) => {
+  const role = String(track?.role || '').trim();
+  const reason = String(track?.fit_reason || '').trim();
+  const evidence = Array.isArray(track?.evidence) ? track.evidence.filter(Boolean).join('、') : '';
+  return [role, reason, evidence].filter(Boolean).join(' | ');
+}).filter(Boolean).join('\n');
+const roleTracksFromText = (value) => splitLines(value).map((line) => {
+  const [role = '', fit_reason = '', evidenceText = ''] = line.split('|').map((item) => item.trim());
+  return { role, fit_reason, evidence: evidenceText ? evidenceText.split(/[、,，]/).map((item) => item.trim()).filter(Boolean) : [], confidence: 0.5 };
+}).filter((track) => track.role);
 
 const factToEditor = (fact) => ({
   id: fact?.id,
   fact_type: fact?.fact_type || 'project',
   title: fact?.title || '',
+  period: fact?.content?.period || '',
   summary: fact?.content?.summary || '',
+  engineering_challenge: fact?.content?.engineering_challenge || '',
+  design_rationale: fact?.content?.design_rationale || '',
+  industrial_roles: roleTracksToText(fact?.content?.industrial_roles),
+  role_variants: Array.isArray(fact?.content?.role_variants) ? fact.content.role_variants : [],
+  company: fact?.content?.company || '',
   role: fact?.content?.role || '',
   tech_stack: Array.isArray(fact?.content?.tech_stack) ? fact.content.tech_stack.join(', ') : fact?.content?.tech_stack || '',
   evidence_map: Array.isArray(fact?.content?.evidence_map) ? fact.content.evidence_map : [],
+  projects: Array.isArray(fact?.content?.projects) ? fact.content.projects.map((project) => ({
+    title: project?.title || '',
+    project_key: project?.project_key || '',
+    summary: project?.summary || '',
+    engineering_challenge: project?.engineering_challenge || '',
+    design_rationale: project?.design_rationale || '',
+    industrial_roles: roleTracksToText(project?.industrial_roles),
+    role_variants: Array.isArray(project?.role_variants) ? project.role_variants : [],
+    role: project?.role || '',
+    tech_stack: Array.isArray(project?.tech_stack) ? project.tech_stack.join(', ') : project?.tech_stack || '',
+    highlights: joinLines(project?.highlights),
+    evidence_map: Array.isArray(project?.evidence_map) ? project.evidence_map : [],
+    tags: Array.isArray(project?.tags) ? project.tags : [],
+    evidence: project?.evidence || '',
+  })) : [],
   highlights: joinLines(fact?.content?.highlights),
   tags: (fact?.tags || []).map(localizeFactTag).join(', '),
   evidence: fact?.evidence || '',
@@ -155,6 +190,23 @@ const JsonPanel = ({ value }) => (
   </Box>
 );
 
+const ProjectFactList = ({ projects }) => {
+  if (!Array.isArray(projects) || projects.length === 0) return null;
+  return (
+    <Box sx={{ mt: 1.25, pl: 1.5, borderLeft: '3px solid', borderColor: 'primary.light' }}>
+      <Typography variant="caption" color="primary.main" fontWeight={700}>项目明细（{projects.length}）</Typography>
+      <Stack spacing={0.8} sx={{ mt: 0.7 }}>
+        {projects.map((project, index) => (
+          <Box key={`${project.title || 'project'}-${index}`}>
+            <Typography variant="body2" fontWeight={700}>{project.title || `项目 ${index + 1}`}</Typography>
+            {(project.highlights || []).map((highlight, highlightIndex) => <Typography key={`${index}-${highlightIndex}`} variant="body2" color="text.secondary" sx={{ mt: 0.2 }}>• {highlight}</Typography>)}
+          </Box>
+        ))}
+      </Stack>
+    </Box>
+  );
+};
+
 const CareerStudio = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -180,8 +232,9 @@ const CareerStudio = () => {
   const [error, setError] = useState('');
   const [factExtractionWarnings, setFactExtractionWarnings] = useState([]);
   const [uploadFactId, setUploadFactId] = useState(null);
+  const [projectUploadDialog, setProjectUploadDialog] = useState(null);
   const documentInputRef = useRef(null);
-  const factMarkdownInputRef = useRef(null);
+  const projectMarkdownInputRef = useRef(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -242,51 +295,83 @@ const CareerStudio = () => {
     setDraftFacts(extractedFacts);
   }, '已从现有简历提取待确认事实。确认后才会进入事实库。');
 
-  const extractFactFromMarkdown = (event) => {
-    const file = event.target.files?.[0];
+  const openProjectUploadDialog = () => projectMarkdownInputRef.current?.click();
+
+  const selectProjectFiles = (event) => {
+    const files = Array.from(event.target.files || []).filter((file) => file.name.toLowerCase().endsWith('.md'));
     event.target.value = '';
-    if (!file) return;
-    if (!file.name.toLowerCase().endsWith('.md')) {
-      setError('事实提炼目前只支持 Markdown（.md）文件。');
+    if (!files.length) {
+      setError('请至少选择一个 Markdown（.md）项目文档。');
       return;
     }
-    return run(async () => {
-      let response = await careerService.extractFactFromMarkdown(file);
-      if (response.status === 'queued' && response.job_id) {
-        setNotice('Markdown 已上传，正在后台提炼项目事实…');
-        for (let attempt = 0; attempt < 90; attempt += 1) {
-          await new Promise((resolve) => setTimeout(resolve, 1500));
-          response = await careerService.getMarkdownFactJob(response.job_id);
-          if (response.status === 'processing') {
-            setNotice(`AI 正在提炼项目事实…（已等待 ${Math.round((attempt + 1) * 1.5)} 秒）`);
-            continue;
-          }
-          break;
-        }
-        if (response.status === 'processing' || response.status === 'queued') {
-          throw new Error('事实提炼仍在后台执行，请稍后在事实库刷新页面。');
-        }
-        if (response.status === 'failed' || (!(response.facts?.length) && !response.fact)) {
-          throw new Error(response.message || 'Markdown 事实提炼失败，请重试。');
-        }
-      }
-      const extractedFacts = response.facts?.length ? response.facts : (response.fact ? [response.fact] : []);
-      const preparedFacts = extractedFacts.map((fact) => ({
-        ...fact,
-        fact_type: fact.fact_type || 'project',
-        is_verified: false,
-        source_file: file,
-        source_document: response.source_document || {},
-        quality: response.quality || {},
-      }));
-      setDraftFacts((items) => [...items, ...preparedFacts]);
-      // 保留原有编辑器体验：首条结果直接回填到表单，多条结果同时进入待确认列表。
-      if (preparedFacts[0]) {
-        setFactEditor({ ...factToEditor(preparedFacts[0]), draftIndex: preparedFacts.length > 1 ? 0 : undefined, is_verified: false, source_file: file, source_document: response.source_document || {}, quality: response.quality || {} });
-      }
-      setNotice(`已识别 ${extractedFacts.length} 个项目/模块事实，请逐条确认后保存。`);
-    }, '已从 Markdown 提取项目事实草稿，请核对后保存。');
+    setProjectUploadDialog({
+      company: '',
+      role: '',
+      fact_type: 'experience',
+      items: files.map((file) => ({ file, title: '', period: '' })),
+    });
   };
+
+  const updateProjectUploadItem = (index, field, value) => {
+    setProjectUploadDialog((current) => current ? {
+      ...current,
+      items: current.items.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item),
+    } : current);
+  };
+
+  const waitForMarkdownFactJob = async (jobId, index, total) => {
+    let response;
+    for (let attempt = 0; attempt < 90; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      response = await careerService.getMarkdownFactJob(jobId);
+      if (response.status === 'processing') {
+        setNotice(`正在提炼第 ${index + 1}/${total} 个项目…（已等待 ${Math.round((attempt + 1) * 1.5)} 秒）`);
+        continue;
+      }
+      break;
+    }
+    if (!response || response.status === 'processing' || response.status === 'queued') {
+      throw new Error(`第 ${index + 1} 个项目仍在后台提炼，请稍后刷新事实库。`);
+    }
+    if (response.status === 'failed' || (!(response.facts?.length) && !response.fact)) {
+      throw new Error(response.message || `第 ${index + 1} 个项目提炼失败，请重试。`);
+    }
+    return response;
+  };
+
+  const submitProjectUploads = () => run(async () => {
+    const upload = projectUploadDialog;
+    if (!upload?.items?.length) throw new Error('请先选择项目文档。');
+    if (upload.items.some((item) => !item.title.trim())) throw new Error('请为每个项目文档填写项目名称。');
+    const files = upload.items.map((item) => item.file);
+    const metadata = upload.items.map((item) => ({
+      title: item.title.trim(),
+      period: item.period.trim(),
+      company: upload.company.trim(),
+      role: upload.role.trim(),
+      fact_type: upload.fact_type,
+    }));
+    const response = await careerService.extractFactFromMarkdown({ files, metadata });
+    const jobIds = response.job_ids?.length ? response.job_ids : (response.job_id ? [response.job_id] : []);
+    const responses = response.status === 'queued'
+      ? await Promise.all(jobIds.map((jobId, index) => waitForMarkdownFactJob(jobId, index, jobIds.length)))
+      : [response];
+    const preparedFacts = responses.flatMap((result, index) => {
+      const extractedFacts = result.facts?.length ? result.facts : (result.fact ? [result.fact] : []);
+      return extractedFacts.map((fact) => ({
+        ...fact,
+        fact_type: fact.fact_type || upload.fact_type || 'project',
+        is_verified: false,
+        source_file: files[index],
+        source_document: result.source_document || response.source_documents?.[index] || {},
+        quality: result.quality || {},
+      }));
+    });
+    if (!preparedFacts.length) throw new Error('没有提炼出有效项目内容，请检查文档后重试。');
+    setDraftFacts((items) => [...items, ...preparedFacts]);
+    setProjectUploadDialog(null);
+    setNotice(`已生成 ${preparedFacts.length} 条项目草稿。项目名称和时间来自你的填写，项目内容由 Skill 提炼，请逐条确认。`);
+  }, '项目文档提炼完成，请逐条确认后保存。');
 
   const openKnowledgeDocumentUpload = (factId) => {
     setUploadFactId(factId);
@@ -324,11 +409,18 @@ const CareerStudio = () => {
     setKnowledgeDocuments((items) => items.filter((item) => item.id !== saved.id));
   }, '技术资料已归档，不会继续进入面试评估。');
 
-const saveDraftFact = (fact) => run(async () => {
-    const { source_file: sourceFile, source_document: _sourceDocument, quality: _quality, ...factPayload } = fact;
+  const saveDraftFact = (fact) => run(async () => {
+    const sourceFile = fact.source_file;
+    const sourceDocument = fact.source_document || {};
+    const { source_file: _sourceFile, source_document: _sourceDocument, quality: _quality, ...factPayload } = fact;
     const saved = await careerService.createFact({ ...factPayload, is_verified: true });
-    if (sourceFile && saved.fact_type === 'project') {
-      await careerService.uploadKnowledgeDocument({ file: sourceFile, factId: saved.id });
+    if (sourceFile && ['project', 'experience'].includes(saved.fact_type)) {
+      await careerService.uploadKnowledgeDocument({
+        file: sourceFile,
+        factId: saved.id,
+        title: sourceDocument.project_metadata?.title || sourceDocument.title || saved.title,
+        projectKey: sourceDocument.project_metadata?.project_key || saved.content?.project_key || saved.content?.projects?.[0]?.project_key,
+      });
     }
     setFacts((items) => [saved, ...items]);
     setDraftFacts((items) => items.filter((item) => item !== fact));
@@ -348,18 +440,44 @@ const saveDraftFact = (fact) => run(async () => {
       fact_type: factEditor.fact_type,
       title: factEditor.title.trim(),
       content: {
+        period: factEditor.period.trim(),
         summary: factEditor.summary.trim(),
+        engineering_challenge: factEditor.engineering_challenge.trim(),
+        design_rationale: factEditor.design_rationale.trim(),
+        industrial_roles: roleTracksFromText(factEditor.industrial_roles),
+        role_variants: Array.isArray(factEditor.role_variants) ? factEditor.role_variants : [],
+        company: factEditor.company.trim(),
         role: factEditor.role.trim(),
         tech_stack: factEditor.tech_stack.split(',').map((item) => item.trim()).filter(Boolean),
         highlights: splitLines(factEditor.highlights),
         evidence_map: factEditor.evidence_map || [],
+        projects: (factEditor.projects || []).map((project) => ({
+          title: String(project.title || '').trim(),
+          summary: String(project.summary || '').trim(),
+          project_key: String(project.project_key || '').trim(),
+          engineering_challenge: String(project.engineering_challenge || '').trim(),
+          design_rationale: String(project.design_rationale || '').trim(),
+          industrial_roles: roleTracksFromText(project.industrial_roles),
+          role_variants: Array.isArray(project.role_variants) ? project.role_variants : [],
+          role: String(project.role || '').trim(),
+          tech_stack: String(project.tech_stack || '').split(',').map((item) => item.trim()).filter(Boolean),
+          highlights: splitLines(project.highlights),
+          evidence_map: Array.isArray(project.evidence_map) ? project.evidence_map : [],
+          tags: Array.isArray(project.tags) ? project.tags : [],
+          evidence: String(project.evidence || '').trim(),
+        })).filter((project) => project.title && (project.summary || project.highlights.length)),
       },
       tags: factEditor.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
       evidence: factEditor.evidence.trim() || undefined,
       is_verified: isDraftFact ? false : factEditor.is_verified,
     };
     if (isDraftFact) {
-      setDraftFacts((items) => items.map((item, index) => index === factEditor.draftIndex ? payload : item));
+      setDraftFacts((items) => items.map((item, index) => index === factEditor.draftIndex ? {
+        ...payload,
+        source_file: factEditor.source_file,
+        source_document: factEditor.source_document,
+        quality: factEditor.quality,
+      } : item));
       setFactEditor(null);
       return;
     }
@@ -369,11 +487,17 @@ const saveDraftFact = (fact) => run(async () => {
     setFacts((items) => factEditor.id ? items.map((fact) => fact.id === saved.id ? saved : fact) : [saved, ...items]);
     if (saved.is_verified) setSelectedFactIds((ids) => ids.includes(saved.id) ? ids : [...ids, saved.id]);
     if (isNewFact && sourceFile) {
-      if (saved.fact_type !== 'project') {
-        setError('事实已保存，但技术文档只能绑定到项目事实，请将事实类型改为“项目经历”后重新上传。');
+      if (!['project', 'experience'].includes(saved.fact_type)) {
+        setError('事实已保存，但技术文档只能绑定到项目/经历事实，请将事实类型改为“项目经历”或“实习/工作经历”后重新上传。');
       } else {
         try {
-          const document = await careerService.uploadKnowledgeDocument({ file: sourceFile, factId: saved.id, title: saved.title });
+          const project = saved.content?.projects?.[0] || {};
+          const document = await careerService.uploadKnowledgeDocument({
+            file: sourceFile,
+            factId: saved.id,
+            title: factEditor.source_document?.project_metadata?.title || project.title || saved.title,
+            projectKey: factEditor.source_document?.project_metadata?.project_key || project.project_key || saved.content?.project_key,
+          });
           setKnowledgeDocuments((items) => [document, ...items]);
         } catch (err) {
           setError(`事实已保存，但 Markdown 文档未绑定成功：${err.response?.data?.detail || err.message || '请稍后重试'}。`);
@@ -522,8 +646,6 @@ const saveDraftFact = (fact) => run(async () => {
                 </Stack>
               </Paper>
 
-              <Alert severity="info">请在下方对应的项目事实中上传 Markdown 技术文档。每份文档只归属于一个事实，后续面试评估会按事实使用对应资料。</Alert>
-
               {factExtractionWarnings.length > 0 && (
                 <Alert severity="warning">
                   部分事实未通过结构校验：{factExtractionWarnings.map((item) => item.title || `第 ${item.index + 1} 条`).join('、')}。可先确认已识别内容，再编辑或手动补充。
@@ -538,8 +660,8 @@ const saveDraftFact = (fact) => run(async () => {
                     {draftFacts.map((fact, index) => (
                       <Paper key={`${fact.title}-${index}`} variant="outlined" sx={{ p: 2, borderRadius: 1.5 }}>
                         <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} justifyContent="space-between">
-                          <Box sx={{ minWidth: 0 }}><Chip size="small" label={factTypeLabels[fact.fact_type] || '其他'} /><Typography sx={{ mt: 1, fontWeight: 700 }}>{fact.title}</Typography><Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, whiteSpace: 'pre-wrap' }}>{fact.content?.summary || fact.evidence || '无摘要'}</Typography>{(fact.content?.highlights || []).map((highlight, highlightIndex) => <Typography key={`${fact.title}-highlight-${highlightIndex}`} variant="body2" color="text.secondary" sx={{ mt: 0.35 }}>• {highlight}</Typography>)}</Box>
-                          <Stack direction="row" spacing={0.5} alignItems="center"><Button size="small" startIcon={<EditRoundedIcon />} onClick={() => setFactEditor({ ...factToEditor(fact), draftIndex: index, is_verified: false })} disabled={working}>编辑</Button><Button size="small" onClick={() => saveDraftFact(fact)} disabled={working}>确认事实</Button></Stack>
+                          <Box sx={{ minWidth: 0 }}><Chip size="small" label={factTypeLabels[fact.fact_type] || '其他'} /><Typography sx={{ mt: 1, fontWeight: 700 }}>{fact.title}</Typography><Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, whiteSpace: 'pre-wrap' }}>{fact.content?.summary || fact.evidence || '无摘要'}</Typography>{(fact.content?.highlights || []).map((highlight, highlightIndex) => <Typography key={`${fact.title}-highlight-${highlightIndex}`} variant="body2" color="text.secondary" sx={{ mt: 0.35 }}>• {highlight}</Typography>)}<ProjectFactList projects={fact.content?.projects} /></Box>
+                          <Stack direction="row" spacing={0.5} alignItems="center"><Button size="small" startIcon={<EditRoundedIcon />} onClick={() => setFactEditor({ ...factToEditor(fact), draftIndex: index, is_verified: false, source_file: fact.source_file, source_document: fact.source_document, quality: fact.quality })} disabled={working}>编辑</Button><Button size="small" onClick={() => saveDraftFact(fact)} disabled={working}>确认事实</Button></Stack>
                         </Stack>
                       </Paper>
                     ))}
@@ -567,9 +689,12 @@ const saveDraftFact = (fact) => run(async () => {
                     <Box sx={{ minWidth: 0 }}>
                       <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap"><Chip size="small" label={factTypeLabels[fact.fact_type] || '其他'} /><Typography fontWeight={700}>{fact.title}</Typography><Chip size="small" color={fact.is_verified ? 'success' : 'warning'} label={fact.is_verified ? '已确认' : '待确认'} /></Stack>
                       <Typography variant="body2" color="text.secondary" sx={{ mt: 0.85, whiteSpace: 'pre-wrap' }}>{fact.content?.summary || fact.evidence || '无摘要'}</Typography>
+                      {fact.content?.engineering_challenge && <Typography variant="body2" color="warning.dark" sx={{ mt: 0.55 }}>工程难点：{fact.content.engineering_challenge}</Typography>}
+                      {fact.content?.design_rationale && <Typography variant="body2" color="text.secondary" sx={{ mt: 0.55 }}>方案原因：{fact.content.design_rationale}</Typography>}
                       {fact.content?.role && <Typography variant="body2" color="text.secondary" sx={{ mt: 0.55 }}>角色：{fact.content.role}</Typography>}
                       {Array.isArray(fact.content?.tech_stack) && fact.content.tech_stack.length > 0 && <Typography variant="body2" color="text.secondary" sx={{ mt: 0.55 }}>技术栈：{fact.content.tech_stack.join('、')}</Typography>}
                       {Array.isArray(fact.content?.highlights) && fact.content.highlights.length > 0 && <Stack spacing={0.35} sx={{ mt: 0.65 }}>{fact.content.highlights.map((highlight, index) => <Typography key={`${fact.id}-highlight-${index}`} variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-wrap' }}>• {highlight}</Typography>)}</Stack>}
+                      <ProjectFactList projects={fact.content?.projects} />
                       {!!fact.evidence && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>核查依据：{fact.evidence}</Typography>}
                     </Box>
                     <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap flexWrap="wrap">
@@ -580,9 +705,9 @@ const saveDraftFact = (fact) => run(async () => {
                       <Button size="small" color="error" startIcon={<DeleteOutlineRoundedIcon />} onClick={() => deleteFact(fact)} disabled={working}>删除</Button>
                     </Stack>
                   </Stack>
-                  {fact.fact_type === 'project' && <Box sx={{ mt: 1.5, pt: 1.25, borderTop: '1px solid', borderColor: 'divider' }}>
+                  {['project', 'experience'].includes(fact.fact_type) && <Box sx={{ mt: 1.5, pt: 1.25, borderTop: '1px solid', borderColor: 'divider' }}>
                     <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ sm: 'center' }}>
-                      <Typography variant="caption" color="text.secondary">项目技术文档（Markdown） · {factDocuments.length} 份</Typography>
+                      <Typography variant="caption" color="text.secondary">技术文档（Markdown） · {factDocuments.length} 份</Typography>
                       <><input ref={documentInputRef} hidden type="file" accept=".md,text/markdown" onChange={uploadKnowledgeDocument} /><Button size="small" startIcon={<UploadFileRoundedIcon />} onClick={() => openKnowledgeDocumentUpload(fact.id)} disabled={working}>上传 .md</Button></>
                     </Stack>
                     {factDocuments.map((document) => <Stack key={document.id} direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ sm: 'center' }} sx={{ mt: 0.75, pl: 1 }}><Typography variant="body2" noWrap>{document.title} <Typography component="span" variant="caption" color="text.secondary">({document.metadata?.character_count || document.content_text.length} 字符)</Typography></Typography><Stack direction="row" spacing={0.5}><Button size="small" onClick={() => setDocumentEditor(documentToEditor(document))}>编辑文档</Button><Button size="small" color="warning" onClick={() => archiveKnowledgeDocument(document)} disabled={working}>归档</Button></Stack></Stack>)}
@@ -646,32 +771,116 @@ const saveDraftFact = (fact) => run(async () => {
         </Stack>
       </Container>
 
+      <Dialog open={Boolean(projectUploadDialog)} onClose={() => !working && setProjectUploadDialog(null)} fullWidth maxWidth="md">
+        <DialogTitle>上传实习项目文档</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2} sx={{ pt: 0.5 }}>
+            <Alert severity="info">每个 Markdown 文件独立生成一条项目内容事实。Skill 不会从正文猜项目名称、时间、公司或岗位，这些信息以本表单填写为准。</Alert>
+            <FormControl fullWidth>
+              <InputLabel>保存类型</InputLabel>
+              <Select label="保存类型" value={projectUploadDialog?.fact_type || 'experience'} onChange={(event) => setProjectUploadDialog((item) => ({ ...item, fact_type: event.target.value }))}>
+                <MenuItem value="experience">实习经历（多个文档分别作为项目内容）</MenuItem>
+                <MenuItem value="project">项目经历（多个文档分别作为项目事实）</MenuItem>
+              </Select>
+            </FormControl>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+              <TextField fullWidth label="公司 / 实习单位（可选）" value={projectUploadDialog?.company || ''} onChange={(event) => setProjectUploadDialog((item) => ({ ...item, company: event.target.value }))} />
+              <TextField fullWidth label="岗位 / 角色（可选）" value={projectUploadDialog?.role || ''} onChange={(event) => setProjectUploadDialog((item) => ({ ...item, role: event.target.value }))} />
+            </Stack>
+            <Stack spacing={1.25}>
+              {projectUploadDialog?.items?.map((item, index) => (
+                <Paper key={`${item.file.name}-${index}`} variant="outlined" sx={{ p: 1.5 }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1, wordBreak: 'break-all' }}>{index + 1}. {item.file.name}</Typography>
+                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+                    <TextField fullWidth required size="small" label="项目名称" value={item.title} onChange={(event) => updateProjectUploadItem(index, 'title', event.target.value)} />
+                    <TextField fullWidth size="small" label="项目时间" placeholder="例如 2025.08—2026.03" value={item.period} onChange={(event) => updateProjectUploadItem(index, 'period', event.target.value)} />
+                  </Stack>
+                </Paper>
+              ))}
+            </Stack>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setProjectUploadDialog(null)} disabled={working}>取消</Button>
+          <Button variant="contained" startIcon={working ? <CircularProgress size={16} /> : <AutoAwesomeRoundedIcon />} onClick={submitProjectUploads} disabled={working || !projectUploadDialog?.items?.length || projectUploadDialog.items.some((item) => !item.title.trim())}>{working ? '正在分别提炼…' : '上传并提炼项目内容'}</Button>
+        </DialogActions>
+      </Dialog>
+
       <Dialog open={Boolean(factEditor)} onClose={() => !working && setFactEditor(null)} fullWidth maxWidth="md">
         <DialogTitle>{factEditor?.draftIndex !== undefined ? '编辑待确认事实' : factEditor?.id ? '编辑职业事实' : '新建职业事实'}</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2} sx={{ pt: 0.5 }}>
-            {factEditor?.draftIndex === undefined && !factEditor?.id && <Paper variant="outlined" sx={{ p: 1.5, bgcolor: 'action.hover' }}>
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} justifyContent="space-between" alignItems={{ sm: 'center' }}>
-                <Box><Typography variant="subtitle2">上传 Markdown 技术文档，AI 提炼项目事实</Typography><Typography variant="body2" color="text.secondary">仅支持 .md；提炼结果会先回填到下面的表单，确认保存后原文才会绑定到项目事实。</Typography>{factEditor?.source_document?.file_name && <Typography variant="caption" color="text.secondary" display="block">已载入：{factEditor.source_document.file_name} · {factEditor.source_document.character_count || 0} 字符</Typography>}{factEditor?.quality?.highlight_count !== undefined && <Typography variant="caption" color={factEditor.quality.requires_review ? 'warning.main' : 'success.main'}>证据覆盖率：{Math.round((factEditor.quality.citation_coverage || 0) * 100)}% · {factEditor.quality.requires_review ? '需要人工核对' : '可进入人工确认'}</Typography>}</Box>
-                <><input ref={factMarkdownInputRef} hidden type="file" accept=".md,text/markdown" onChange={extractFactFromMarkdown} /><Button variant="outlined" startIcon={working ? <CircularProgress size={16} /> : <UploadFileRoundedIcon />} onClick={() => factMarkdownInputRef.current?.click()} disabled={working}>{working ? '正在解析 Markdown…' : '上传并提炼'}</Button></>
-              </Stack>
-            </Paper>}
+            {factEditor?.draftIndex === undefined && !factEditor?.id && <>
+              <Paper elevation={0} sx={{ p: 2.5, borderRadius: 2, border: '1px solid', borderColor: 'primary.light' }}>
+                <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} justifyContent="space-between" alignItems={{ md: 'center' }}>
+                  <Box>
+                    <Typography variant="h6">批量上传实习项目文档</Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>一份 Markdown 对应一个项目内容事实。项目名称和时间由你填写，Skill 只提炼项目内容；一次可以选择多个项目文档。</Typography>
+                  </Box>
+                  <Box>
+                    <input ref={projectMarkdownInputRef} hidden type="file" accept=".md,text/markdown" multiple onChange={selectProjectFiles} />
+                    <Button variant="contained" startIcon={<UploadFileRoundedIcon />} onClick={openProjectUploadDialog} disabled={working}>选择多个项目文档</Button>
+                  </Box>
+                </Stack>
+              </Paper>
+              <Paper variant="outlined" sx={{ p: 1.5, bgcolor: 'action.hover' }}>
+                <Typography variant="subtitle2">项目内容由 Skill 提炼</Typography>
+                <Typography variant="body2" color="text.secondary">也可以直接填写下面的项目名称、时间和内容，保存为一条职业事实。</Typography>
+                {factEditor?.source_document?.file_name && <Typography variant="caption" color="text.secondary" display="block">已载入：{factEditor.source_document.file_name} · {factEditor.source_document.character_count || 0} 字符</Typography>}
+                {factEditor?.quality?.highlight_count !== undefined && <Typography variant="caption" color={factEditor.quality.requires_review ? 'warning.main' : 'success.main'}>证据覆盖率：{Math.round((factEditor.quality.citation_coverage || 0) * 100)}% · {factEditor.quality.requires_review ? '需要人工核对' : '可进入人工确认'}</Typography>}
+              </Paper>
+            </>}
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
               <FormControl sx={{ minWidth: 155 }}><InputLabel>事实类型</InputLabel><Select label="事实类型" value={factEditor?.fact_type || 'project'} onChange={(event) => setFactEditor((item) => ({ ...item, fact_type: event.target.value }))}>{factTypes.map((type) => <MenuItem key={type} value={type}>{factTypeLabels[type]}</MenuItem>)}</Select></FormControl>
-              <TextField fullWidth required label="事实标题" value={factEditor?.title || ''} onChange={(event) => setFactEditor((item) => ({ ...item, title: event.target.value }))} />
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+                <TextField fullWidth required label="项目名称（用户填写）" value={factEditor?.title || ''} onChange={(event) => setFactEditor((item) => ({ ...item, title: event.target.value }))} />
+                <TextField fullWidth label="项目时间（用户填写）" placeholder="例如 2025.08—2026.03" value={factEditor?.period || ''} onChange={(event) => setFactEditor((item) => ({ ...item, period: event.target.value }))} />
+              </Stack>
             </Stack>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-              <TextField fullWidth label="项目角色" helperText="只填写文档明确说明的角色，例如后端开发、算法实习生。" value={factEditor?.role || ''} onChange={(event) => setFactEditor((item) => ({ ...item, role: event.target.value }))} />
+              <TextField fullWidth label="公司 / 实习单位" value={factEditor?.company || ''} onChange={(event) => setFactEditor((item) => ({ ...item, company: event.target.value }))} />
+              <TextField fullWidth label="项目角色" helperText="由用户填写或按原文核对，例如后端开发、算法实习生。" value={factEditor?.role || ''} onChange={(event) => setFactEditor((item) => ({ ...item, role: event.target.value }))} />
               <TextField fullWidth label="技术栈（逗号分隔）" value={factEditor?.tech_stack || ''} onChange={(event) => setFactEditor((item) => ({ ...item, tech_stack: event.target.value }))} />
             </Stack>
-            <TextField fullWidth required multiline minRows={3} label="事实描述" helperText="只写真实、可核查的经历和成果。" value={factEditor?.summary || ''} onChange={(event) => setFactEditor((item) => ({ ...item, summary: event.target.value }))} />
-            <TextField fullWidth multiline minRows={3} label="简历要点（每行一条）" helperText="建议写成：动作 + 技术方法 + 解决对象 + 结果；修改后需重新核对原文证据。" value={factEditor?.highlights || ''} onChange={(event) => setFactEditor((item) => ({ ...item, highlights: event.target.value, evidence_map: [] }))} />
-            <TextField fullWidth label="标签（用逗号分隔）" value={factEditor?.tags || ''} onChange={(event) => setFactEditor((item) => ({ ...item, tags: event.target.value }))} />
-            <TextField fullWidth multiline minRows={2} label="核查依据" helperText="例如原简历摘录、项目链接或证书名称。" value={factEditor?.evidence || ''} onChange={(event) => setFactEditor((item) => ({ ...item, evidence: event.target.value }))} />
+            {['project', 'experience'].includes(factEditor?.fact_type) ? (Array.isArray(factEditor?.projects) && factEditor.projects.length > 0 ? <Box>
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>项目要点</Typography>
+              <Stack spacing={1.5}>
+                {factEditor.projects.map((project, index) => <Paper key={`${project.title || 'project'}-${index}`} variant="outlined" sx={{ p: 1.5 }}>
+                  <TextField
+                    size="small"
+                    fullWidth
+                    multiline
+                    minRows={3}
+                    label={project.title ? `${project.title} · 项目要点` : `项目 ${index + 1} · 项目要点`}
+                    helperText="每行一条；只保留动作、技术方法、解决对象和可核查结果。"
+                    value={project.highlights}
+                    onChange={(event) => setFactEditor((item) => ({
+                      ...item,
+                      projects: item.projects.map((current, currentIndex) => currentIndex === index
+                        ? { ...current, highlights: event.target.value, evidence_map: [] }
+                        : current),
+                    }))}
+                  />
+                </Paper>)}
+              </Stack>
+            </Box> : <TextField
+              fullWidth
+              required={['project', 'experience'].includes(factEditor?.fact_type)}
+              multiline
+              minRows={4}
+              label="项目要点（每行一条）"
+              helperText="只保留项目要点；建议写成：动作 + 技术方法 + 解决对象 + 可核查结果。"
+              value={factEditor?.highlights || ''}
+              onChange={(event) => setFactEditor((item) => ({ ...item, highlights: event.target.value, evidence_map: [] }))}
+            />) : <>
+              <TextField fullWidth required multiline minRows={3} label="事实描述" helperText="只写真实、可核查的经历和成果。" value={factEditor?.summary || ''} onChange={(event) => setFactEditor((item) => ({ ...item, summary: event.target.value }))} />
+              <TextField fullWidth multiline minRows={2} label="标签（用逗号分隔）" value={factEditor?.tags || ''} onChange={(event) => setFactEditor((item) => ({ ...item, tags: event.target.value }))} />
+              <TextField fullWidth multiline minRows={2} label="核查依据" helperText="例如原简历摘录、项目链接或证书名称。" value={factEditor?.evidence || ''} onChange={(event) => setFactEditor((item) => ({ ...item, evidence: event.target.value }))} />
+            </>}
             {factEditor?.draftIndex === undefined && <FormControlLabel control={<Switch checked={Boolean(factEditor?.is_verified)} onChange={(event) => setFactEditor((item) => ({ ...item, is_verified: event.target.checked }))} />} label="已确认，可用于生成简历" />}
           </Stack>
         </DialogContent>
-        <DialogActions><Button onClick={() => setFactEditor(null)} disabled={working}>取消</Button><Button variant="contained" startIcon={<SaveRoundedIcon />} onClick={saveFact} disabled={working || !factEditor?.title?.trim() || !(factEditor?.summary?.trim() || factEditor?.highlights?.trim() || factEditor?.evidence?.trim())}>保存事实</Button></DialogActions>
+        <DialogActions><Button onClick={() => setFactEditor(null)} disabled={working}>取消</Button><Button variant="contained" startIcon={<SaveRoundedIcon />} onClick={saveFact} disabled={working || !factEditor?.title?.trim() || (['project', 'experience'].includes(factEditor?.fact_type) ? !hasProjectHighlights(factEditor) : !(factEditor?.summary?.trim() || factEditor?.evidence?.trim()))}>保存事实</Button></DialogActions>
       </Dialog>
 
       <Dialog open={Boolean(jobEditor)} onClose={() => !working && setJobEditor(null)} fullWidth maxWidth="lg">

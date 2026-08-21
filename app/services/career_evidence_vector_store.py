@@ -86,6 +86,7 @@ class CareerEvidenceVectorStore:
         )
         names = {item.name for item in collections}
         if self.collection_name in names:
+            self._ensure_payload_indexes()
             return
         self._run(
             "create_collection",
@@ -98,6 +99,32 @@ class CareerEvidenceVectorStore:
                 on_disk_payload=True,
             ),
         )
+        self._ensure_payload_indexes()
+
+    def _ensure_payload_indexes(self) -> None:
+        """Index the fields used to enforce tenant/project/version boundaries."""
+        for field_name in (
+            "metadata.tenant_id",
+            "metadata.user_id",
+            "metadata.document_id",
+            "metadata.fact_id",
+            "metadata.project_key",
+            "metadata.source_version",
+        ):
+            try:
+                self._run(
+                    f"create_payload_index:{field_name}",
+                    lambda field_name=field_name: self.client.create_payload_index(
+                        collection_name=self.collection_name,
+                        field_name=field_name,
+                        field_schema=models.PayloadSchemaType.KEYWORD,
+                        wait=True,
+                    ),
+                )
+            except Exception as exc:
+                # An existing collection may have an incompatible schema; vector
+                # retrieval remains usable because filters are still applied.
+                logger.warning("Career evidence payload index unavailable for %s: %s", field_name, exc)
 
     @staticmethod
     def _point_id(tenant_id: str, user_id: str, document_id: str, chunk_id: str, source_version: str | None) -> str:
@@ -136,7 +163,13 @@ class CareerEvidenceVectorStore:
             return 0
 
         texts = [str(chunk["text"]) for chunk in chunks]
-        vectors = self.embedding.embed_documents(texts)
+        embedding_texts = [
+            " ".join(str(item) for item in chunk.get("claim_texts", []) if str(item).strip())
+            + "\n\n"
+            + text
+            for chunk, text in zip(chunks, texts)
+        ]
+        vectors = self.embedding.embed_documents(embedding_texts)
         title = str(_value(document, "title", "未命名文档"))
         fact_id = _value(document, "fact_id", None)
         source_version = str(_value(document, "source_hash", "")) or None
@@ -150,7 +183,11 @@ class CareerEvidenceVectorStore:
                 "title": title,
                 "section": str(chunk["section"]),
                 "chunk_id": str(chunk["chunk_id"]),
+                "project_key": str(chunk.get("project_key") or ""),
+                "claim_ids": [str(item) for item in chunk.get("claim_ids", [])],
+                "claim_texts": [str(item) for item in chunk.get("claim_texts", [])],
                 "source_version": source_version or "",
+                "chunking_version": str(chunk.get("chunking_version", "")),
             }
             points.append(
                 models.PointStruct(
@@ -201,6 +238,9 @@ class CareerEvidenceVectorStore:
                 "title": metadata.get("title", ""),
                 "section": metadata.get("section", ""),
                 "chunk_id": metadata.get("chunk_id", ""),
+                "project_key": metadata.get("project_key", ""),
+                "claim_ids": metadata.get("claim_ids", []) or [],
+                "claim_texts": metadata.get("claim_texts", []) or [],
                 "source_version": metadata.get("source_version") or None,
                 "text": str(payload.get("page_content", "")),
                 "score": float(hit.score),
