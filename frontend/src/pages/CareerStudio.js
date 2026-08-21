@@ -79,6 +79,7 @@ const hasProjectHighlights = (editor) => Boolean(
   String(editor?.highlights || '').trim()
   || (Array.isArray(editor?.projects) && editor.projects.some((project) => String(project?.highlights || '').trim()))
 );
+const isDraftEditor = (editor) => editor?.draftIndex !== undefined || Boolean(editor?.client_draft_key);
 const roleTracksToText = (tracks) => (Array.isArray(tracks) ? tracks : []).map((track) => {
   const role = String(track?.role || '').trim();
   const reason = String(track?.fit_reason || '').trim();
@@ -90,7 +91,7 @@ const roleTracksFromText = (value) => splitLines(value).map((line) => {
   return { role, fit_reason, evidence: evidenceText ? evidenceText.split(/[、,，]/).map((item) => item.trim()).filter(Boolean) : [], confidence: 0.5 };
 }).filter((track) => track.role);
 
-const factToEditor = (fact) => ({
+export const factToEditor = (fact) => ({
   id: fact?.id,
   fact_type: fact?.fact_type || 'project',
   title: fact?.title || '',
@@ -124,6 +125,26 @@ const factToEditor = (fact) => ({
   evidence: fact?.evidence || '',
   is_verified: fact?.is_verified ?? true,
 });
+
+export const prepareUploadedFactReview = (preparedFacts) => {
+  const draftFacts = Array.isArray(preparedFacts) ? preparedFacts : [];
+  const [firstFact] = draftFacts;
+  if (!firstFact) return { editor: null, draftFacts: [] };
+  const metadataTitle = firstFact.source_document?.project_metadata?.title;
+  const nestedProjectTitle = firstFact.content?.projects?.[0]?.title;
+  return {
+    editor: {
+      ...factToEditor(firstFact),
+      title: metadataTitle || nestedProjectTitle || firstFact.title || '',
+      is_verified: false,
+      source_file: firstFact.source_file,
+      source_document: firstFact.source_document,
+      quality: firstFact.quality,
+      client_draft_key: firstFact.client_draft_key,
+    },
+    draftFacts,
+  };
+};
 
 const jobToEditor = (job) => ({
   id: job?.id,
@@ -271,8 +292,8 @@ const CareerStudio = () => {
     setError('');
     setNotice('');
     try {
-      await action();
-      setNotice(successMessage);
+      const actionMessage = await action();
+      setNotice(typeof actionMessage === 'string' ? actionMessage : successMessage);
     } catch (err) {
       setError(err.response?.data?.detail || err.message || '操作失败，请稍后重试。');
     } finally {
@@ -368,9 +389,17 @@ const CareerStudio = () => {
       }));
     });
     if (!preparedFacts.length) throw new Error('没有提炼出有效项目内容，请检查文档后重试。');
-    setDraftFacts((items) => [...items, ...preparedFacts]);
+    const batchKey = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const review = prepareUploadedFactReview(preparedFacts.map((fact, index) => ({
+      ...fact,
+      client_draft_key: `${batchKey}-${index}`,
+    })));
+    setDraftFacts((items) => [...items, ...review.draftFacts]);
+    setFactEditor(review.editor);
     setProjectUploadDialog(null);
-    setNotice(`已生成 ${preparedFacts.length} 条项目草稿。项目名称和时间来自你的填写，项目内容由 Skill 提炼，请逐条确认。`);
+    return preparedFacts.length > 1
+      ? `首条项目草稿已回填表单，全部 ${preparedFacts.length} 条草稿均保留在待确认列表。`
+      : 'Skill 提炼的项目内容已回填表单，关闭弹窗后仍可从待确认列表继续编辑。';
   }, '项目文档提炼完成，请逐条确认后保存。');
 
   const openKnowledgeDocumentUpload = (factId) => {
@@ -412,7 +441,7 @@ const CareerStudio = () => {
   const saveDraftFact = (fact) => run(async () => {
     const sourceFile = fact.source_file;
     const sourceDocument = fact.source_document || {};
-    const { source_file: _sourceFile, source_document: _sourceDocument, quality: _quality, ...factPayload } = fact;
+    const { source_file: _sourceFile, source_document: _sourceDocument, quality: _quality, client_draft_key: _clientDraftKey, ...factPayload } = fact;
     const saved = await careerService.createFact({ ...factPayload, is_verified: true });
     if (sourceFile && ['project', 'experience'].includes(saved.fact_type)) {
       await careerService.uploadKnowledgeDocument({
@@ -433,7 +462,7 @@ const CareerStudio = () => {
   }, '事实已确认，可用于对岗和生成简历。');
 
   const saveFact = () => run(async () => {
-    const isDraftFact = factEditor?.draftIndex !== undefined;
+    const isDraftFact = isDraftEditor(factEditor);
     const isNewFact = !factEditor?.id && !isDraftFact;
     const sourceFile = factEditor?.source_file;
     const payload = {
@@ -472,11 +501,16 @@ const CareerStudio = () => {
       is_verified: isDraftFact ? false : factEditor.is_verified,
     };
     if (isDraftFact) {
-      setDraftFacts((items) => items.map((item, index) => index === factEditor.draftIndex ? {
+      setDraftFacts((items) => items.map((item, index) => (
+        factEditor.client_draft_key
+          ? item.client_draft_key === factEditor.client_draft_key
+          : index === factEditor.draftIndex
+      ) ? {
         ...payload,
         source_file: factEditor.source_file,
         source_document: factEditor.source_document,
         quality: factEditor.quality,
+        client_draft_key: factEditor.client_draft_key,
       } : item));
       setFactEditor(null);
       return;
@@ -505,7 +539,7 @@ const CareerStudio = () => {
       }
     }
     setFactEditor(null);
-  }, factEditor?.draftIndex !== undefined ? '待确认事实已更新。' : factEditor?.id ? '事实已更新。' : '事实已保存。');
+  }, isDraftEditor(factEditor) ? '待确认事实已更新。' : factEditor?.id ? '事实已更新。' : '事实已保存。');
 
   const archiveFact = (fact) => run(async () => {
     const saved = await careerService.archiveFact(fact.id);
@@ -661,7 +695,7 @@ const CareerStudio = () => {
                       <Paper key={`${fact.title}-${index}`} variant="outlined" sx={{ p: 2, borderRadius: 1.5 }}>
                         <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} justifyContent="space-between">
                           <Box sx={{ minWidth: 0 }}><Chip size="small" label={factTypeLabels[fact.fact_type] || '其他'} /><Typography sx={{ mt: 1, fontWeight: 700 }}>{fact.title}</Typography><Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, whiteSpace: 'pre-wrap' }}>{fact.content?.summary || fact.evidence || '无摘要'}</Typography>{(fact.content?.highlights || []).map((highlight, highlightIndex) => <Typography key={`${fact.title}-highlight-${highlightIndex}`} variant="body2" color="text.secondary" sx={{ mt: 0.35 }}>• {highlight}</Typography>)}<ProjectFactList projects={fact.content?.projects} /></Box>
-                          <Stack direction="row" spacing={0.5} alignItems="center"><Button size="small" startIcon={<EditRoundedIcon />} onClick={() => setFactEditor({ ...factToEditor(fact), draftIndex: index, is_verified: false, source_file: fact.source_file, source_document: fact.source_document, quality: fact.quality })} disabled={working}>编辑</Button><Button size="small" onClick={() => saveDraftFact(fact)} disabled={working}>确认事实</Button></Stack>
+                          <Stack direction="row" spacing={0.5} alignItems="center"><Button size="small" startIcon={<EditRoundedIcon />} onClick={() => setFactEditor({ ...factToEditor(fact), draftIndex: index, client_draft_key: fact.client_draft_key, is_verified: false, source_file: fact.source_file, source_document: fact.source_document, quality: fact.quality })} disabled={working}>编辑</Button><Button size="small" onClick={() => saveDraftFact(fact)} disabled={working}>确认事实</Button></Stack>
                         </Stack>
                       </Paper>
                     ))}
@@ -807,10 +841,10 @@ const CareerStudio = () => {
       </Dialog>
 
       <Dialog open={Boolean(factEditor)} onClose={() => !working && setFactEditor(null)} fullWidth maxWidth="md">
-        <DialogTitle>{factEditor?.draftIndex !== undefined ? '编辑待确认事实' : factEditor?.id ? '编辑职业事实' : '新建职业事实'}</DialogTitle>
+        <DialogTitle>{isDraftEditor(factEditor) ? '编辑待确认事实' : factEditor?.id ? '编辑职业事实' : '新建职业事实'}</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2} sx={{ pt: 0.5 }}>
-            {factEditor?.draftIndex === undefined && !factEditor?.id && <>
+            {!isDraftEditor(factEditor) && !factEditor?.id && <>
               <Paper elevation={0} sx={{ p: 2.5, borderRadius: 2, border: '1px solid', borderColor: 'primary.light' }}>
                 <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} justifyContent="space-between" alignItems={{ md: 'center' }}>
                   <Box>
@@ -877,7 +911,7 @@ const CareerStudio = () => {
               <TextField fullWidth multiline minRows={2} label="标签（用逗号分隔）" value={factEditor?.tags || ''} onChange={(event) => setFactEditor((item) => ({ ...item, tags: event.target.value }))} />
               <TextField fullWidth multiline minRows={2} label="核查依据" helperText="例如原简历摘录、项目链接或证书名称。" value={factEditor?.evidence || ''} onChange={(event) => setFactEditor((item) => ({ ...item, evidence: event.target.value }))} />
             </>}
-            {factEditor?.draftIndex === undefined && <FormControlLabel control={<Switch checked={Boolean(factEditor?.is_verified)} onChange={(event) => setFactEditor((item) => ({ ...item, is_verified: event.target.checked }))} />} label="已确认，可用于生成简历" />}
+            {!isDraftEditor(factEditor) && <FormControlLabel control={<Switch checked={Boolean(factEditor?.is_verified)} onChange={(event) => setFactEditor((item) => ({ ...item, is_verified: event.target.checked }))} />} label="已确认，可用于生成简历" />}
           </Stack>
         </DialogContent>
         <DialogActions><Button onClick={() => setFactEditor(null)} disabled={working}>取消</Button><Button variant="contained" startIcon={<SaveRoundedIcon />} onClick={saveFact} disabled={working || !factEditor?.title?.trim() || (['project', 'experience'].includes(factEditor?.fact_type) ? !hasProjectHighlights(factEditor) : !(factEditor?.summary?.trim() || factEditor?.evidence?.trim()))}>保存事实</Button></DialogActions>
