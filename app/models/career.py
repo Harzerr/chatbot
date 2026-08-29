@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import relationship
 
 from app.db.base_class import Base
@@ -56,6 +56,16 @@ class ResumeDocument(Base):
 
 class CareerKnowledgeDocument(Base):
     __tablename__ = "career_knowledge_documents"
+    __table_args__ = (
+        Index(
+            "uq_career_knowledge_documents_active_source",
+            "user_id",
+            "source_hash",
+            unique=True,
+            sqlite_where=text("is_archived = 0"),
+            postgresql_where=text("is_archived = false"),
+        ),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, nullable=False, index=True)

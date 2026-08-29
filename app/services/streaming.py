@@ -74,6 +74,7 @@ class StreamingService:
                             "resume_content": request.resume_content,
                             "code_execution": request.code_execution.model_dump() if request.code_execution else None,
                             "knowledge_context": request.knowledge_context,
+                            "evidence_pack": request.evidence_pack.model_dump(mode="json") if request.evidence_pack else None,
                             "knowledge_context_cache_hit": request.knowledge_context_cache_hit,
                         }
                         if interview_mode:

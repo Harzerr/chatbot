@@ -13,9 +13,10 @@ from app.db.session import get_db
 from app.models.career import CareerKnowledgeDocument
 from app.models.user import User as DBUser
 from app.schemas.api import LLMRequest
+from app.schemas.evaluation import EvidencePack
 from app.services.streaming import StreamingService
 from app.services.vector_store import MultiTenantVectorStore
-from app.services.career_knowledge import build_cached_knowledge_context
+from app.services.career_knowledge import build_cached_evidence_pack
 from app.services.interview_assessment import should_use_career_evidence
 from app.utils.logger import setup_logger
 
@@ -93,6 +94,7 @@ async def chat_completions(
 
     effective_resume_content = build_profile_resume_context(current_user) if (current_user.resume_text or "").strip() else request.resume_content
     knowledge_context = request.knowledge_context
+    evidence_pack = None
     evidence_cache_hit = False
     previous_question = ""
     previous_knowledge_context = ""
@@ -117,14 +119,20 @@ async def chat_completions(
                     CareerKnowledgeDocument.updated_at.desc()
                 )
             )).all()
-            knowledge_context, evidence_cache_hit = await asyncio.to_thread(
-                build_cached_knowledge_context,
+            # Scope and rank against the current turn only. Feeding the previous
+            # evidence body back into retrieval can pin a follow-up to the wrong
+            # project after the interviewer switches topics.
+            evidence_query = f"{previous_question}\n{request.user_message}\n{request.jd_content or ''}"
+            evidence_pack, evidence_cache_hit = await asyncio.to_thread(
+                build_cached_evidence_pack,
                 documents,
-                f"{previous_question}\n{request.user_message}\n{request.jd_content or ''}\n{previous_knowledge_context[:1200]}",
+                evidence_query,
                 tenant_id=current_user.tenant_id,
                 user_id=str(current_user.id),
                 fact_id=request.knowledge_fact_id,
             )
+            evidence_pack = EvidencePack.model_validate(evidence_pack)
+            knowledge_context = evidence_pack.context
             logger.info(
                 "Interview evidence pack ready: chat_id=%s fact_id=%s cache_hit=%s chars=%s",
                 request.chat_id,
@@ -134,6 +142,7 @@ async def chat_completions(
             )
         else:
             knowledge_context = None
+            evidence_pack = None
             logger.info(
                 "Interview career evidence skipped: chat_id=%s question_type=non-project previous_question_len=%s",
                 request.chat_id,
@@ -142,6 +151,7 @@ async def chat_completions(
     request = request.model_copy(update={
         "resume_content": effective_resume_content,
         "knowledge_context": knowledge_context,
+        "evidence_pack": evidence_pack,
         "knowledge_context_cache_hit": evidence_cache_hit,
     })
     logger.info(

@@ -329,6 +329,8 @@ class InterviewReportBuilder:
     def _generate_reference_answers(self, questions: list[str]) -> list[str]:
         if not questions:
             return []
+        if not getattr(self, "llm", None):
+            return ["暂时无法生成参考答案。"] * len(questions)
 
         numbered = "\n".join(
             f"{idx}. {q.strip()[:800]}" for idx, q in enumerate(questions, start=1)
@@ -374,6 +376,7 @@ class InterviewReportBuilder:
         items: list[dict] = []
         missing: list[tuple[int, str]] = []
         pending_question = ""
+        pending_question_grounding: dict = {}
 
         for msg in chat_messages:
             candidate_answer = (msg.get("user_message") or "").strip()
@@ -387,6 +390,7 @@ class InterviewReportBuilder:
                     evidence_items
                     and evaluation.get("question_type") != "代码题"
                     and not evaluation.get("knowledge_evidence_items")
+                    and not evaluation.get("consistency_summary")
                 ):
                     evaluation["knowledge_evidence"] = list(dict.fromkeys([
                         *(evaluation.get("knowledge_evidence") or []),
@@ -408,11 +412,9 @@ class InterviewReportBuilder:
                 if answer_counted is None
                 else bool(answer_counted) and is_countable_answer(candidate_answer)
             )
-            # Keep every transcript pair in the report, including an explicit
-            # "不清楚" answer.  It must not increase the valid-answer count,
-            # but removing it also removes the preceding coding question and
-            # makes the conversation appear truncated.
-            if pending_question and candidate_answer:
+            # Reports aggregate effective answers only. The transcript remains in
+            # Qdrant for audit, while explicit non-answers cannot distort scoring.
+            if pending_question and candidate_answer and is_valid_answer:
                 reference_answer = self._format_reference_answer_from_evaluation(evaluation) if evaluation else ""
                 if not reference_answer:
                     missing.append((len(items), pending_question))
@@ -428,6 +430,10 @@ class InterviewReportBuilder:
                         "evaluation_status": msg.get("evaluation_status"),
                         "evaluation_error": msg.get("evaluation_error"),
                         "answer_counted": is_valid_answer,
+                        "question_grounded": bool(pending_question_grounding.get("question_grounded", False)),
+                        "question_grounding_version": pending_question_grounding.get("question_grounding_version"),
+                        "question_evidence_ids": pending_question_grounding.get("question_evidence_ids", []),
+                        "question_evidence_items": pending_question_grounding.get("question_evidence_items", []),
                         "evidence_feedback": msg.get("evidence_feedback") or [],
                     }
                 )
@@ -435,6 +441,12 @@ class InterviewReportBuilder:
             # assistant_message 视为下一轮面试官问题
             if assistant_message:
                 pending_question = assistant_message
+                pending_question_grounding = {
+                    "question_grounded": msg.get("question_grounded", False),
+                    "question_grounding_version": msg.get("question_grounding_version"),
+                    "question_evidence_ids": msg.get("question_evidence_ids") or [],
+                    "question_evidence_items": msg.get("question_evidence_items") or [],
+                }
 
         if missing and include_reference_answers:
             generated = self._generate_reference_answers([q for _, q in missing])

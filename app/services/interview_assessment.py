@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 
 ASSESSMENT_VERSION = "rubric-v2"
+CONSISTENCY_VERSION = "experience-consistency-v2"
 
 NON_ANSWER_MARKERS = (
     "不知道",

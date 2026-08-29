@@ -127,7 +127,7 @@ def test_extraction_windows_remap_evidence_to_canonical_chunks():
                 "category": "implementation",
                 "title": "边界处理",
                 "normalized_fact": quote,
-                "resume_bullet": "针对边界状态不一致问题，通过处理器完成校验并保存结果。",
+                "resume_bullet": quote,
                 "confidence": "high",
                 "evidence_chunks": [{
                     "chunk_id": window["chunk_id"],
@@ -145,7 +145,7 @@ def test_extraction_windows_remap_evidence_to_canonical_chunks():
     assert evidence["source_chunk_ids"] == [target_chunk["chunk_id"]]
 
 
-def test_extraction_uses_exact_quote_when_model_selects_wrong_window():
+def test_extraction_rejects_exact_quote_attached_to_wrong_window():
     markdown = "\n\n".join(
         f"## 模块 {index}\n针对边界 {index}，使用处理器 {index} 完成状态校验和结果保存。"
         for index in range(120)
@@ -170,14 +170,11 @@ def test_extraction_uses_exact_quote_when_model_selects_wrong_window():
         }],
     }
 
-    adapted, warnings = CareerStudioService._adapt_project_extraction_payload(payload, extractor_input)
-    evidence = adapted["facts"][0]["content"]["evidence_map"][0]
-
-    assert not warnings
-    assert evidence["source_chunk_ids"] == [extractor_input["_canonical_chunks"][-1]["chunk_id"]]
+    with pytest.raises(ValueError, match="没有可用事实"):
+        CareerStudioService._adapt_project_extraction_payload(payload, extractor_input)
 
 
-def test_extraction_recovers_paraphrased_quote_with_lower_confidence():
+def test_extraction_rejects_paraphrased_evidence_quote():
     markdown = "## 任务链路\n针对压缩包目录层级不固定的问题，递归查找 DLT 日志并提取收敛状态。"
     extractor_input = CareerStudioService._build_project_extractor_input(markdown, "calibration.md", True)
     window = extractor_input["chunks"][0]
@@ -197,12 +194,30 @@ def test_extraction_recovers_paraphrased_quote_with_lower_confidence():
         }],
     }
 
-    adapted, warnings = CareerStudioService._adapt_project_extraction_payload(payload, extractor_input)
-    evidence = adapted["facts"][0]["content"]["evidence_map"][0]
+    with pytest.raises(ValueError, match="没有可用事实"):
+        CareerStudioService._adapt_project_extraction_payload(payload, extractor_input)
 
-    assert evidence["source_quote"] == "针对压缩包目录层级不固定的问题，递归查找 DLT 日志并提取收敛状态。"
-    assert evidence["confidence"] == 0.65
-    assert warnings == ["1 条要点已回对到最相关的原文证据，请重点核对。"]
+
+def test_extraction_rejects_claim_clauses_not_supported_by_exact_quote():
+    extractor_input = {
+        "project_mode": "single_project",
+        "chunks": [{"chunk_id": "window:0", "text": "使用 Django 开发任务接口，支持任务创建和查询。"}],
+    }
+    payload = {"projects": [{
+        "project_name": "任务平台",
+        "key_points": [{
+            "resume_bullet": "使用 Django 开发任务接口，并通过数据库事务与分布式锁保证高并发状态一致性。",
+            "confidence": "high",
+            "evidence_chunks": [{
+                "chunk_id": "window:0",
+                "quote": "使用 Django 开发任务接口，支持任务创建和查询。",
+                "support": "接口实现",
+            }],
+        }],
+    }]}
+
+    with pytest.raises(ValueError, match="没有可用事实"):
+        CareerStudioService._adapt_project_extraction_payload(payload, extractor_input)
 
 
 def test_markdown_extraction_uses_registry_and_preserves_skill_bullets(monkeypatch):
@@ -233,7 +248,7 @@ def test_markdown_extraction_uses_registry_and_preserves_skill_bullets(monkeypat
                             "category": "implementation",
                             "title": "记录路径",
                             "normalized_fact": "记录路径点。",
-                            "resume_bullet": "针对路径点需要连续记录的问题，按定位结果计算并保存路径点，完成路径数据链路。",
+                            "resume_bullet": "按定位结果计算并保存路径点。",
                             "confidence": "high",
                             "evidence_chunks": [{
                                 "chunk_id": chunk["chunk_id"],
@@ -272,7 +287,7 @@ def test_markdown_extraction_uses_registry_and_preserves_skill_bullets(monkeypat
     assert '"_canonical_chunks"' not in prompt
     fact = result["facts"][0]
     assert fact["content"]["highlights"]
-    assert fact["content"]["highlights"] == ["针对路径点需要连续记录的问题，按定位结果计算并保存路径点，完成路径数据链路。"]
+    assert fact["content"]["highlights"] == ["按定位结果计算并保存路径点。"]
     assert fact["content"]["role_variants"][0]["highlights"] == ["岗位改写。"]
     assert fact["content"]["evidence_map"][0]["source_chunk_ids"] == [
         extractor_input["_canonical_chunks"][0]["chunk_id"]
@@ -353,10 +368,65 @@ def test_project_is_mapped_to_enterprise_role_tracks_from_evidence():
     )
 
     roles = [track["role"] for track in tracks]
-    assert "后端 / 平台工程师" in roles
-    assert "数据处理 / 自动化工具链工程师" in roles
+    assert "后端 / 分布式系统工程师" in roles
+    assert "数据工程 / 分析平台工程师" in roles
     assert all(track["fit_reason"] and track["evidence"] for track in tracks)
     assert all(0 < track["confidence"] < 1 for track in tracks)
+
+
+@pytest.mark.parametrize(
+    ("title", "content", "expected_role"),
+    [
+        ("跨端电商前端", {"tech_stack": ["React", "TypeScript", "Vite"], "highlights": ["优化前端长列表渲染"]}, "前端 / Web 工程师"),
+        ("移动端应用", {"tech_stack": ["Flutter", "Dart"], "highlights": ["完成移动端离线缓存"]}, "移动端 / 客户端工程师"),
+        ("检索增强问答", {"tech_stack": ["LLM", "RAG"], "highlights": ["构建模型评估数据集"]}, "机器学习 / AI 工程师"),
+        ("应用安全平台", {"highlights": ["完成漏洞扫描和权限审计"]}, "安全工程师"),
+    ],
+)
+def test_role_taxonomy_covers_unrelated_technical_domains(title, content, expected_role):
+    roles = [item["role"] for item in infer_industrial_roles(title, content)]
+
+    assert expected_role in roles
+
+
+def test_fallback_extracts_english_prose_actions_without_domain_keywords():
+    source = """# Checkout Experience\n\n## Implementation\nBuilt a React checkout application. Improved rendering performance with virtualization. Added Playwright regression coverage."""
+
+    fact = CareerStudioService._fallback_markdown_fact(source, "checkout.md")
+
+    assert len(fact["content"]["highlights"]) == 3
+    assert fact["content"]["highlights"][0].startswith("Built a React")
+
+
+def test_long_resume_windows_preserve_the_tail_instead_of_truncating_it():
+    paragraphs = [f"项目 {index}\n实现模块 {index} 并完成验证。" + ("内容" * 500) for index in range(20)]
+    source = "\n\n".join(paragraphs)
+
+    windows = CareerStudioService._resume_text_windows(source, 2400)
+
+    assert len(windows) > 1
+    assert "项目 0" in windows[0]
+    assert "项目 19" in windows[-1]
+    assert sum(len(item) for item in windows) >= len(source) - 2 * (len(windows) - 1)
+
+
+def test_window_level_project_payloads_merge_under_user_project_boundary():
+    extractor_input = {
+        "document_id": "source:test",
+        "project_mode": "single_project",
+        "project_metadata": {"title": "用户填写的项目"},
+    }
+    payloads = [
+        {"projects": [{"project_name": "模型名称一", "summary": "项目摘要", "tech_stack": ["React"], "key_points": [{"normalized_fact": "实现组件库", "resume_bullet": "实现组件库。"}]}]},
+        {"projects": [{"project_name": "模型名称二", "tech_stack": ["Playwright"], "key_points": [{"normalized_fact": "建立端到端测试", "resume_bullet": "建立端到端测试。"}]}]},
+    ]
+
+    result = CareerStudioService._merge_project_extraction_payloads(payloads, extractor_input)
+
+    project = result["projects"][0]
+    assert project["project_name"] == "用户填写的项目"
+    assert project["tech_stack"] == ["React", "Playwright"]
+    assert len(project["key_points"]) == 2
 
 
 def test_tailoring_selects_role_specific_variant_from_job_requirements():
@@ -487,3 +557,10 @@ def test_skill_requires_industrial_technical_mechanisms():
     assert "resume_bullet" in skill
     assert "chunk_id" in skill
     assert "industrial" in skill.lower()
+
+
+def test_skill_does_not_anchor_extraction_to_previous_project_domain():
+    skill = Path("resume-optimizer-skill/SKILL.md").read_text(encoding="utf-8").lower()
+
+    for project_specific_term in ("rapath", "dlt", "onboardmapping", "mutex", "atomic", "标定平台"):
+        assert project_specific_term not in skill

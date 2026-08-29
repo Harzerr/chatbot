@@ -1,0 +1,64 @@
+{
+  "documents": [
+    {
+      "id": 101,
+      "fact_id": 201,
+      "title": "异步评估平台",
+      "file_name": "异步评估平台技术文档.md",
+      "source_hash": "golden-async-v1",
+      "content_text": "# 实时链路\n提交回答接口只保存事实并投递任务，不等待评分模型。\n\n# 异步与幂等\n使用 Redis 和 RQ 将逐题评估移出请求，Worker 通过请求哈希和分布式锁防止重复执行。\n\n# 代码校验\n代码题调用 Judge0 编译运行，并保存测试用例结果和超时状态。"
+    },
+    {
+      "id": 102,
+      "fact_id": 202,
+      "title": "车载路径记录模块",
+      "file_name": "车载路径记录模块技术文档.md",
+      "source_hash": "golden-path-v1",
+      "content_text": "# 路径线程安全\n路径点容器使用 mutex 保护，运行标志使用 atomic，避免长时间持锁执行平滑计算。\n\n# 路径有效性\n定位跳变、倒车偏轨和超长路径触发有效性检查，异常路径不会直接保存。\n\n# 坐标计算\n从 local_loc 的位置、四元数、速度和运动方向计算路径点、航向角与累计距离。"
+    },
+    {
+      "id": 103,
+      "fact_id": 203,
+      "title": "医学图像原型网络",
+      "file_name": "医学图像原型网络技术文档.md",
+      "source_hash": "golden-image-v1",
+      "content_text": "# 多尺度特征\n分组层级卷积提取不同感受野信息并融合局部纹理与全局语义。\n\n# 可变形原型\n可变形原型子部件学习偏移，自适应对齐分散或不规则病灶区域。\n\n# 类别不均衡\n使用类别先验校正分类 Logit，缓解训练样本长尾分布。"
+    },
+    {
+      "id": 104,
+      "fact_id": 204,
+      "title": "超声视频分级模型",
+      "file_name": "超声视频分级模型技术文档.md",
+      "source_hash": "golden-video-v1",
+      "content_text": "# 关键帧\n根据 RAFT 光流变化筛选关键帧，聚合局部短时运动特征。\n\n# 双分支融合\n图像和光流双分支分别建模外观与运动，CEFF 根据预测不确定性和冲突程度自适应融合。\n\n# 验证\n采用患者级五折交叉验证，避免同一患者数据泄漏到训练集和测试集。"
+    },
+    {
+      "id": 105,
+      "fact_id": 205,
+      "title": "标定日志质量平台",
+      "file_name": "标定日志质量平台技术文档.md",
+      "source_hash": "golden-calibration-v1",
+      "content_text": "# DLT 解析\n递归查找压缩包中的 DLT 日志，提取故障码、算法进度和传感器安装参数。\n\n# 半结构化存储\n使用 PostgreSQL JSONB 保存不同版本的半结构化标定结果，保留公共索引用于查询。\n\n# 报表\n通过 SQL 和 Superset 展示不同车辆、摄像头和时间范围的标定趋势。"
+    },
+    {
+      "id": 106,
+      "fact_id": 206,
+      "title": "仓储智能分拣系统",
+      "file_name": "仓储智能分拣系统技术文档.md",
+      "source_hash": "golden-warehouse-v1",
+      "content_text": "# 视觉循迹\n摄像头识别轨迹和货物类别，并将偏差输入控制模块。\n\n# PID 控制\n增量式 PID 根据循迹误差调整左右轮速度，限制积分饱和和输出幅度。\n\n# 异常状态\n状态机处理抓取失败、传感器超时和任务恢复，记录可追踪的执行状态。"
+    }
+  ],
+  "cases": [
+    {"case_id": "async-worker-idempotency", "query": "逐题评估为什么使用 RQ 后台 Worker，如何防止重复执行？", "relevant_chunk_ids": ["101:1"]},
+    {"case_id": "judge-objective-check", "query": "在线编程怎样客观校验编译运行和测试结果？", "relevant_chunk_ids": ["101:2"]},
+    {"case_id": "path-concurrency", "query": "路径点容器为什么用 mutex，atomic 保护什么？", "relevant_chunk_ids": ["102:0"]},
+    {"case_id": "path-anomaly", "query": "定位跳变、倒车偏轨和路径过长怎么处理？", "relevant_chunk_ids": ["102:1"]},
+    {"case_id": "prototype-offset", "query": "原型如何自适应对齐不规则病灶区域？", "relevant_chunk_ids": ["103:1"]},
+    {"case_id": "class-imbalance", "query": "医学分类训练样本长尾时如何校正类别先验？", "relevant_chunk_ids": ["103:2"]},
+    {"case_id": "video-fusion", "query": "图像外观和光流运动信息如何根据不确定性融合？", "relevant_chunk_ids": ["104:1"]},
+    {"case_id": "patient-split", "query": "视频模型验证如何避免同一患者造成数据泄漏？", "relevant_chunk_ids": ["104:2"]},
+    {"case_id": "dlt-jsonb", "query": "不同版本的 DLT 标定字段为什么存 PostgreSQL JSONB？", "relevant_chunk_ids": ["105:1"]},
+    {"case_id": "warehouse-pid", "query": "循迹误差怎样通过增量式 PID 调整左右轮速度？", "relevant_chunk_ids": ["106:1"]}
+  ]
+}

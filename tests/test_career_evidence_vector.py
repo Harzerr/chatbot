@@ -21,12 +21,17 @@ class FakeClient:
     def __init__(self):
         self.deleted = []
         self.upserted = []
+        self.existing_ids = []
 
     def delete(self, **kwargs):
         self.deleted.append(kwargs)
 
     def upsert(self, **kwargs):
         self.upserted.extend(kwargs["points"])
+
+    def scroll(self, **kwargs):
+        records = [type("Point", (), {"id": point_id})() for point_id in self.existing_ids]
+        return records, None
 
     def search(self, **kwargs):
         return [FakeHit({
@@ -75,7 +80,43 @@ class CareerEvidenceVectorTests(unittest.TestCase):
         self.assertEqual(metadata["tenant_id"], "tenant-a")
         self.assertEqual(metadata["user_id"], "user-1")
         self.assertEqual(metadata["source_version"], "v1")
-        self.assertEqual(len(store.client.deleted), 2)
+        self.assertEqual(len(store.client.deleted), 0)
+
+    def test_new_version_is_written_before_stale_points_are_deleted(self):
+        store = self._store()
+        store.client.existing_ids = ["old-version-point"]
+        document = {
+            "id": 7,
+            "fact_id": 11,
+            "title": "异步任务",
+            "source_hash": "v2",
+            "content_text": "# 队列\nRedis RQ worker 负责异步任务。",
+        }
+
+        store.upsert_document(document=document, tenant_id="tenant-a", user_id="user-1")
+
+        self.assertTrue(store.client.upserted)
+        self.assertEqual(len(store.client.deleted), 1)
+        self.assertEqual(store.client.deleted[0]["points_selector"].points, ["old-version-point"])
+
+    def test_embedding_failure_does_not_delete_previous_version(self):
+        store = self._store()
+        store.client.existing_ids = ["old-version-point"]
+        store.embedding = type("FailingEmbedding", (), {
+            "embed_documents": lambda self, texts: (_ for _ in ()).throw(TimeoutError("provider timeout")),
+        })()
+        document = {
+            "id": 7,
+            "title": "异步任务",
+            "source_hash": "v2",
+            "content_text": "# 队列\nRedis RQ worker 负责异步任务。",
+        }
+
+        with self.assertRaises(TimeoutError):
+            store.upsert_document(document=document, tenant_id="tenant-a", user_id="user-1")
+
+        self.assertEqual(store.client.upserted, [])
+        self.assertEqual(store.client.deleted, [])
 
     def test_search_returns_provenance_metadata(self):
         result = self._store().search(

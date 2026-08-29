@@ -7,9 +7,18 @@ from time import perf_counter
 from langchain_openai import ChatOpenAI
 
 from app.core.config import settings
-from app.schemas.chat import AnswerEvaluation, EvidenceItem, LLMAnswerEvaluation, RubricScore
+from app.schemas.chat import (
+    AnswerEvaluation,
+    ConsistencyEvidenceCitation,
+    EvidenceItem,
+    ExperienceConsistencyCheck,
+    LLMAnswerEvaluation,
+    RubricScore,
+)
+from app.schemas.evaluation import EvidencePack
 from app.services.interview_assessment import (
     ASSESSMENT_VERSION,
+    CONSISTENCY_VERSION,
     calculate_confidence,
     classify_question_type,
     confidence_level,
@@ -95,6 +104,37 @@ class InterviewEvaluator:
             payload = json.loads(match.group(0))
         if not isinstance(payload, dict):
             raise ValueError("评估模型未返回 JSON 对象")
+
+        def as_list(value):
+            if value is None:
+                return []
+            if isinstance(value, list):
+                return value
+            if isinstance(value, str):
+                return [value] if value.strip() else []
+            return [value]
+
+        for field in (
+            "error_analysis",
+            "expected_key_points",
+            "strengths",
+            "improvement_areas",
+            "consistency_checks",
+        ):
+            payload[field] = as_list(payload.get(field))
+        for field in (
+            "technical_accuracy",
+            "knowledge_depth",
+            "communication_clarity",
+            "logical_structure",
+            "problem_solving",
+            "job_match_score",
+            "overall_score",
+        ):
+            try:
+                payload[field] = max(0, min(100, round(float(payload.get(field) or 0))))
+            except (TypeError, ValueError):
+                payload[field] = 0
         rubric_scores = payload.get("rubric_scores")
         if isinstance(rubric_scores, dict):
             normalized_scores = []
@@ -107,6 +147,47 @@ class InterviewEvaluator:
                 item.setdefault("rationale", "")
                 normalized_scores.append(item)
             payload["rubric_scores"] = normalized_scores
+        else:
+            payload["rubric_scores"] = as_list(rubric_scores)
+        for item in payload["rubric_scores"]:
+            if not isinstance(item, dict):
+                continue
+            item["evidence"] = as_list(item.get("evidence"))
+            item["missing_points"] = as_list(item.get("missing_points"))
+        consistency_aliases = {
+            "部分一致": "部分一致",
+            "基本一致": "部分一致",
+            "冲突": "存在冲突",
+            "无法判断": "证据不足",
+            "insufficient": "证据不足",
+            "partial": "部分一致",
+            "true": "一致",
+            "false": "证据不足",
+            "consistent": "一致",
+            "conflict": "存在冲突",
+        }
+        raw_consistency = str(payload.get("resume_consistency") or "不适用").strip()
+        payload["resume_consistency"] = consistency_aliases.get(raw_consistency.lower(), raw_consistency)
+        check_verdict_aliases = {
+            "supported": "支持",
+            "support": "支持",
+            "consistent": "支持",
+            "部分支持": "部分支持",
+            "partially_supported": "部分支持",
+            "partial_support": "部分支持",
+            "partial": "部分支持",
+            "conflicted": "冲突",
+            "conflict": "冲突",
+            "contradiction": "冲突",
+            "insufficient": "证据不足",
+            "unknown": "证据不足",
+        }
+        for check in payload.get("consistency_checks") or []:
+            if not isinstance(check, dict):
+                continue
+            check["citations"] = as_list(check.get("citations"))
+            raw_verdict = str(check.get("verdict") or "证据不足").strip()
+            check["verdict"] = check_verdict_aliases.get(raw_verdict.lower(), raw_verdict)
         return LLMAnswerEvaluation.model_validate(payload)
 
     async def _invoke_json(self, llm, prompt: str, timeout: float) -> LLMAnswerEvaluation:
@@ -263,70 +344,40 @@ class InterviewEvaluator:
             return InterviewEvaluator._legacy_knowledge_items(context)
         blocks = re.split(r"\n\n(?=\[证据ID：)", context[start:])
         items: list[EvidenceItem] = []
-        header_pattern = re.compile(
-            r"^\[证据ID：(?P<evidence_id>[^｜\]]+)｜职业事实：(?P<fact_id>[^｜\]]+)｜"
-            r"文档：(?P<title>[^｜\]]+)｜章节：(?P<section>[^｜\]]+)｜"
-            r"版本：(?P<version>[^｜\]]*)｜(?:检索方式：(?P<method>[^｜\]]+)｜)?"
-            r"检索分数：(?P<score>[^\]]+)\]"
-        )
-        legacy_header_pattern = re.compile(
-            r"^\[证据ID：(?P<evidence_id>[^｜\]]+)｜职业事实：(?P<fact_id>[^｜\]]+)｜"
-            r"文档：(?P<title>[^｜\]]+)｜章节：(?P<section>[^\]]+)\]"
-        )
         for block in blocks:
             lines = block.strip().splitlines()
             if not lines:
                 continue
-            match = header_pattern.match(lines[0].strip())
-            if not match:
-                match = legacy_header_pattern.match(lines[0].strip())
-            if not match:
+            header = lines[0].strip()
+
+            def field(name: str) -> str:
+                match = re.search(rf"(?:^\[?|｜){re.escape(name)}：([^｜\]]*)", header)
+                return match.group(1).strip() if match else ""
+
+            evidence_id = field("证据ID")
+            if not evidence_id:
                 continue
-            score_text = match.groupdict().get("score")
+            score_text = field("检索分数")
             try:
                 score = float(score_text.strip()) if score_text else None
             except ValueError:
                 score = None
-            evidence_id = match.group("evidence_id").strip()
+            fact_id = field("职业事实")
             items.append(EvidenceItem(
                 evidence_id=evidence_id,
                 source_type="career_rag",
                 verification_status="user_provided",
                 quote="\n".join(lines[1:]).strip()[:900],
-                fact_id=None if match.group("fact_id").strip() == "未关联" else match.group("fact_id").strip(),
+                fact_id=None if fact_id in {"", "未关联"} else fact_id,
                 document_id=evidence_id.split(":", 1)[0],
-                document_title=match.group("title").strip(),
-                section=match.group("section").strip(),
+                document_title=field("文档"),
+                section=field("章节"),
                 chunk_id=evidence_id,
-                source_version=(match.groupdict().get("version") or "").strip() or None,
-                retrieval_method=(match.groupdict().get("method") or "lexical_bm25_heading_boost").strip(),
+                source_version=field("版本") or None,
+                retrieval_method=field("检索方式") or "lexical_bm25_heading_boost",
                 retrieval_score=score,
             ))
         return items[:4]
-
-    def _attach_retrieved_evidence(
-        self,
-        result: AnswerEvaluation,
-        knowledge_context: str | None,
-        question_type: str | None = None,
-    ) -> AnswerEvaluation:
-        if question_type == "代码题":
-            return result
-        retrieved, evidence_ids, items = self.extract_knowledge_evidence(knowledge_context)
-        if not retrieved:
-            return result
-        existing = list(result.knowledge_evidence or [])
-        normalized = {"".join(item.split()) for item in existing}
-        for item in retrieved:
-            if "".join(item.split()) not in normalized:
-                existing.append(item)
-        result.knowledge_evidence = existing[:4]
-        result.knowledge_evidence_ids = list(dict.fromkeys(
-            [*result.knowledge_evidence_ids, *evidence_ids]
-        ))[:4]
-        result.knowledge_evidence_items = items
-        result.knowledge_evidence_source = "career_rag"
-        return result
 
     @staticmethod
     def _validate_rubric_completeness(result: AnswerEvaluation | LLMAnswerEvaluation, rubric) -> None:
@@ -359,6 +410,7 @@ class InterviewEvaluator:
         user_answer: str,
         rubric,
         knowledge_context: str | None,
+        evidence_pack: dict | None = None,
         evidence_feedback: list[dict] | None = None,
     ) -> str:
         """Build a genuinely smaller retry prompt instead of appending to the full prompt."""
@@ -368,6 +420,7 @@ class InterviewEvaluator:
 问题：{previous_question[:700]}
 回答：{user_answer[:1800]}
 技术证据：{(knowledge_context or '未提供')[:1200]}
+EvidencePack：{json.dumps(evidence_pack or {}, ensure_ascii=False)[:1800]}
 用户核验证据反馈：{json.dumps(evidence_feedback or [], ensure_ascii=False)[:1600]}
 Rubric：{rubric_prompt(rubric)}
 
@@ -375,7 +428,38 @@ Rubric：{rubric_prompt(rubric)}
 只引用回答中出现的证据，不编造事实；数组最多 2 项，每项尽量简短；给出 summary、
 correctness_summary、expected_key_points 和 correction_suggestion。若引用技术资料，
 knowledge_evidence 必须原样摘录技术资料中的证据片段，并保留其中的证据 ID。
+项目深挖题还必须输出 resume_consistency、consistency_summary、consistency_checks；每个
+consistency_check 包含 candidate_claim、claim_type、verdict、citations 和 rationale，candidate_claim
+必须逐字来自回答，citation 必须包含 EvidencePack 中的 evidence_id 和逐字 quote。
+项目资料可直接支持 project_fact；只有资料或对应要点明确记录候选人的动作/职责时，才能支持
+personal_ownership 或 responsibility_scope。若理由认为资料明确一致，verdict 必须为“支持”并给出引用。
+一条声明只有部分细节被资料覆盖时使用“部分支持”，并在 rationale 写明未覆盖的边界。
 """.strip()
+
+    @staticmethod
+    def _prompt_evidence_index(evidence_pack: EvidencePack | None) -> dict:
+        """Expose provenance to the model without duplicating chunk bodies."""
+        if evidence_pack is None:
+            return {}
+        return {
+            "version": evidence_pack.version,
+            "retrieval_method": evidence_pack.retrieval_method,
+            "fact_id": evidence_pack.fact_id,
+            "evidence_ids": evidence_pack.evidence_ids,
+            "chunks": [
+                {
+                    "evidence_id": chunk.evidence_id,
+                    "document_id": chunk.document_id,
+                    "title": chunk.title,
+                    "section": chunk.section,
+                    "project_key": chunk.project_key,
+                    "source_version": chunk.source_version,
+                    "claim_ids": chunk.claim_ids,
+                    "claim_texts": chunk.claim_texts,
+                }
+                for chunk in evidence_pack.chunks
+            ],
+        }
 
     async def evaluate_answer(
         self,
@@ -389,6 +473,7 @@ knowledge_evidence 必须原样摘录技术资料中的证据片段，并保留�
         resume_content: str | None = None,
         code_execution: dict | None = None,
         knowledge_context: str | None = None,
+        evidence_pack: EvidencePack | dict | None = None,
         knowledge_context_cache_hit: bool = False,
         evidence_feedback: list[dict] | None = None,
     ) -> AnswerEvaluation:
@@ -404,6 +489,8 @@ knowledge_evidence 必须原样摘录技术资料中的证据片段，并保留�
         jd_requirements = extract_jd_requirements(jd_content)
         resume_evidence = extract_resume_evidence(resume_content, previous_question)
         feedback_context = json.dumps(evidence_feedback or [], ensure_ascii=False)
+        normalized_pack = self._coerce_evidence_pack(evidence_pack, knowledge_context)
+        evidence_pack_index = self._prompt_evidence_index(normalized_pack)
 
         prompt = f"""
         你是严格、客观的中文面试评估官。只返回 JSON，不要输出分析过程。
@@ -417,6 +504,7 @@ knowledge_evidence 必须原样摘录技术资料中的证据片段，并保留�
         JD要求：{jd_requirements or ['未提供']}
         简历证据：{resume_evidence or ['未找到直接证据']}
         技术资料证据：{(knowledge_context or '未提供')[:3000]}
+        结构化 EvidencePack 索引：{json.dumps(evidence_pack_index, ensure_ascii=False)[:2200]}
         用户核验证据反馈：{feedback_context[:3000]}
         Judge0证据：{json.dumps(code_execution or {}, ensure_ascii=False)}
         Rubric：{rubric_prompt(rubric)}
@@ -429,6 +517,11 @@ knowledge_evidence 必须原样摘录技术资料中的证据片段，并保留�
         5. 评分看准确性、机制深度、工程细节、边界和验证，不按回答长度虚高。
         6. 如果使用技术资料，只能从“技术资料证据”中原样摘录 knowledge_evidence，并保留 [证据ID]、文档和章节信息；不能把资料内容当成候选人已经证明的经历。
         7. 用户核验反馈是对检索证据的纠偏信号，不是候选人能力证明；对标记为 incorrect 的证据不得继续作为支持依据，partial 只能谨慎使用并说明边界。
+        8. 项目深挖题必须抽取回答中 1-4 条可核验的关键事实，输出 resume_consistency、consistency_summary 和 consistency_checks。
+           consistency_checks 每项格式为 {{"candidate_claim":"回答中的逐字声明","claim_type":"project_fact/personal_ownership/metric_result/responsibility_scope","verdict":"支持/部分支持/冲突/证据不足","citations":[{{"evidence_id":"...","quote":"资料逐字引用"}}],"rationale":"..."}}。
+           “一致”要求关键声明均有有效支持且不能存在冲突；仅部分声明或部分细节有依据时标记“部分一致/部分支持”；资料没有明确支持或反驳时标记“证据不足”，不得把检索相关性当作事实一致性。
+        9. 分开判断“项目中是否存在该技术事实”和“候选人是否亲自负责”。项目资料明确记录某机制时，project_fact 应判“支持”，不能仅因资料未写“我负责”而判证据不足；个人所有权仍需简历要点、对应要点或资料中的动作表述支持。
+        10. 若 rationale 中写明“资料明确提到/与回答一致”，verdict 必须为“支持”并提供 EvidencePack 逐字引用，不能输出自相矛盾的“证据不足”。混合了已知事实与新增细节的长句要拆成原文中的多个声明分别判断。
         """
 
         try:
@@ -448,6 +541,7 @@ knowledge_evidence 必须原样摘录技术资料中的证据片段，并保留�
                     user_answer=user_answer,
                     rubric=rubric,
                     knowledge_context=knowledge_context,
+                    evidence_pack=evidence_pack_index,
                     evidence_feedback=evidence_feedback,
                 )
                 result = await self._invoke_json(
@@ -488,8 +582,451 @@ knowledge_evidence 必须原样摘录技术资料中的证据片段，并保留�
         if applied.evaluation_mode == "fallback":
             applied.confidence_score = min(applied.confidence_score, 20)
             applied.confidence_level = "低"
-        applied = self._attach_retrieved_evidence(applied, knowledge_context, question_type)
+        applied = self._apply_experience_consistency(
+            applied,
+            question_type=question_type,
+            previous_question=previous_question,
+            user_answer=user_answer,
+            evidence_pack=normalized_pack,
+            evidence_feedback=evidence_feedback,
+            rubric=rubric,
+        )
         return self._apply_usage_metadata(applied)
+
+    @classmethod
+    def _coerce_evidence_pack(
+        cls,
+        evidence_pack: EvidencePack | dict | None,
+        knowledge_context: str | None,
+    ) -> EvidencePack | None:
+        if evidence_pack:
+            try:
+                return evidence_pack if isinstance(evidence_pack, EvidencePack) else EvidencePack.model_validate(evidence_pack)
+            except Exception as exc:
+                logger.warning("Invalid structured EvidencePack; trying legacy context: %s", exc)
+
+        legacy_items = cls._retrieved_knowledge_items(knowledge_context)
+        if not legacy_items:
+            return None
+        chunks = [
+            {
+                "evidence_id": item.evidence_id,
+                "text": item.quote,
+                "document_id": item.document_id or "",
+                "title": item.document_title or "",
+                "section": item.section or "",
+                "fact_id": item.fact_id,
+                "source_version": item.source_version or "",
+                "retrieval_method": item.retrieval_method,
+                "score": item.retrieval_score or 0,
+            }
+            for item in legacy_items
+        ]
+        return EvidencePack(
+            version="evidence-pack-legacy-adapter",
+            retrieval_method="legacy_context_compatibility",
+            retrieval_count=len(chunks),
+            evidence_ids=[item["evidence_id"] for item in chunks],
+            chunks=chunks,
+            context=str(knowledge_context or ""),
+        )
+
+    @staticmethod
+    def _normalized_text(value: str) -> str:
+        return re.sub(r"[^\w\u4e00-\u9fff]+", "", str(value or "")).lower()
+
+    @classmethod
+    def _quote_belongs_to(cls, quote: str, source: str) -> bool:
+        normalized_quote = cls._normalized_text(quote)
+        normalized_source = cls._normalized_text(source)
+        return len(normalized_quote) >= 6 and normalized_quote in normalized_source
+
+    @staticmethod
+    def _consistency_terms(value: str) -> set[str]:
+        stopwords = {
+            "项目", "系统", "平台", "技术", "实现", "使用", "通过", "进行", "相关", "具体",
+            "这个", "一种", "可以", "负责", "工作", "模块", "同时", "实际", "处理", "保证",
+        }
+        terms = {
+            match.group(0).lower()
+            for match in re.finditer(r"[a-zA-Z][a-zA-Z0-9_+#.-]{1,}|\d+(?:\.\d+)?", value or "")
+        }
+        for sequence in re.findall(r"[\u4e00-\u9fff]{2,}", value or ""):
+            terms.update(sequence[index:index + 2] for index in range(len(sequence) - 1))
+        return {term for term in terms if term not in stopwords}
+
+    @staticmethod
+    def _claim_type_for_text(value: str, supplied_type: str = "project_fact") -> str:
+        text = str(value or "")
+        if re.search(r"(?:提升|降低|减少|增加|达到|缩短|优化).{0,10}\d", text) or re.search(r"\d+(?:\.\d+)?\s*%", text):
+            return "metric_result"
+        if any(marker in text for marker in ("我负责", "我主导", "我独立", "我牵头", "本人负责")):
+            return "responsibility_scope"
+        if any(marker in text for marker in ("我实现", "我开发", "我设计", "我搭建", "我改造", "我增加", "我完成")):
+            return "personal_ownership"
+        return supplied_type if supplied_type in {
+            "project_fact", "personal_ownership", "metric_result", "responsibility_scope"
+        } else "project_fact"
+
+    @classmethod
+    def _direct_support_for_claim(
+        cls,
+        claim: str,
+        claim_type: str,
+        evidence_pack: EvidencePack,
+        feedback_by_id: dict[str, str],
+    ) -> tuple[list[ConsistencyEvidenceCitation], str, str] | None:
+        """Recover auditable full/partial support when a provider omits citations."""
+        if any(marker in claim for marker in ("没有", "并未", "未使用", "不采用", "不是", "不依赖")):
+            return None
+        claim_terms = cls._consistency_terms(claim)
+        if len(claim_terms) < 4:
+            return None
+        resolved_type = cls._claim_type_for_text(claim, claim_type)
+        candidate_segments: list[tuple[set[str], ConsistencyEvidenceCitation, int]] = []
+        ownership_terms: set[str] = set()
+        all_source_numbers: set[str] = set()
+        for chunk in evidence_pack.chunks:
+            if feedback_by_id.get(chunk.evidence_id) in {"incorrect", "partial"}:
+                continue
+            source_values = [
+                (str(chunk.text or ""), 0),
+                *[(str(item), 1) for item in chunk.claim_texts if str(item).strip()],
+            ]
+            all_source_numbers.update(re.findall(r"\d+(?:\.\d+)?", " ".join(value for value, _ in source_values)))
+            ownership_terms.update(cls._consistency_terms(" ".join(chunk.claim_texts)))
+
+            segments = [
+                (segment.strip(), source_priority)
+                for source, source_priority in source_values
+                for segment in re.split(r"(?<=[。！？；])|\n+", source)
+                if len(cls._normalized_text(segment)) >= 6
+            ] or source_values
+            for segment, source_priority in segments:
+                source_terms = cls._consistency_terms(segment)
+                overlap = claim_terms & source_terms
+                if len(overlap) < 2:
+                    continue
+                candidate_segments.append((overlap, ConsistencyEvidenceCitation(
+                    evidence_id=chunk.evidence_id,
+                    quote=segment[:1200],
+                ), source_priority))
+
+        if resolved_type in {"personal_ownership", "responsibility_scope"}:
+            ownership_overlap = len(claim_terms & ownership_terms) / max(len(claim_terms), 1)
+            if ownership_overlap < 0.32:
+                return None
+
+        covered: set[str] = set()
+        citations: list[ConsistencyEvidenceCitation] = []
+        remaining = list(candidate_segments)
+        while remaining and len(citations) < 3:
+            remaining.sort(key=lambda item: len(item[0] - covered) + item[2] * 3, reverse=True)
+            terms, citation, _ = remaining.pop(0)
+            if len(terms - covered) < 2:
+                break
+            covered.update(terms)
+            citations.append(citation)
+
+        coverage = len(covered) / max(len(claim_terms), 1)
+        ascii_claim = {term for term in claim_terms if re.search(r"[a-z0-9]", term)}
+        ascii_covered = ascii_claim & covered
+        chinese_covered = {term for term in covered if re.fullmatch(r"[\u4e00-\u9fff]{2}", term)}
+        if len(covered) < 4 or (not ascii_covered and len(chinese_covered) < 5):
+            return None
+
+        claim_numbers = set(re.findall(r"\d+(?:\.\d+)?", claim))
+        numbers_complete = claim_numbers.issubset(all_source_numbers)
+        identifiers_complete = ascii_claim.issubset(covered)
+        if coverage >= 0.58 and numbers_complete and identifiers_complete:
+            return citations, resolved_type, "支持"
+        if coverage >= 0.16 and len(covered) >= 6:
+            return citations[:2], resolved_type, "部分支持"
+        return None
+
+    @classmethod
+    def _recover_direct_support_checks(
+        cls,
+        checks: list[ExperienceConsistencyCheck],
+        *,
+        user_answer: str,
+        evidence_pack: EvidencePack,
+        feedback_by_id: dict[str, str],
+        recoverable_claims: set[str],
+        allow_generate: bool,
+    ) -> list[ExperienceConsistencyCheck]:
+        candidates = list(checks)
+        if not candidates and allow_generate:
+            clauses = [
+                clause.strip(" \t-•")
+                for clause in re.split(r"(?<=[。！？；])|\n+", user_answer)
+                if 10 <= len(clause.strip()) <= 500
+            ]
+            candidates = [
+                ExperienceConsistencyCheck(
+                    candidate_claim=clause,
+                    claim_type=cls._claim_type_for_text(clause),
+                    verdict="证据不足",
+                    rationale="本条仅依据已上传资料进行直接文本核验；本次未取得完整模型评估结果。",
+                )
+                for clause in clauses[:6]
+            ]
+            recoverable_claims = {check.candidate_claim for check in candidates}
+
+        recovered: list[ExperienceConsistencyCheck] = []
+        for check in candidates:
+            if check.verdict != "证据不足" or check.candidate_claim not in recoverable_claims:
+                recovered.append(check)
+                continue
+            atomic_claims = [
+                item.strip(" \t-•，,；;。")
+                for item in re.split(r"[，,；;。]+", check.candidate_claim)
+                if len(item.strip(" \t-•，,；;。")) >= 8
+            ]
+            if len(atomic_claims) > 1:
+                atomic_checks: list[ExperienceConsistencyCheck] = []
+                for atomic_claim in atomic_claims:
+                    atomic_type = cls._claim_type_for_text(atomic_claim, check.claim_type)
+                    atomic_support = cls._direct_support_for_claim(
+                        atomic_claim,
+                        atomic_type,
+                        evidence_pack,
+                        feedback_by_id,
+                    )
+                    if atomic_support is None:
+                        atomic_checks.append(check.model_copy(update={
+                            "candidate_claim": atomic_claim,
+                            "claim_type": atomic_type,
+                            "verdict": "证据不足",
+                            "citations": [],
+                            "rationale": "现有资料不足以支持或反驳这条拆分后的完整声明。",
+                        }))
+                        continue
+                    atomic_citations, atomic_type, atomic_verdict = atomic_support
+                    atomic_checks.append(check.model_copy(update={
+                        "candidate_claim": atomic_claim,
+                        "claim_type": atomic_type,
+                        "verdict": atomic_verdict,
+                        "citations": atomic_citations,
+                        "rationale": (
+                            "该项拆分声明与已上传资料存在高强度直接文本匹配。"
+                            if atomic_verdict == "支持"
+                            else "资料覆盖该项拆分声明的核心方向，但未覆盖全部实现边界。"
+                        ),
+                    }))
+                if any(item.verdict in {"支持", "部分支持"} for item in atomic_checks):
+                    recovered.extend(atomic_checks)
+                    continue
+            support = cls._direct_support_for_claim(
+                check.candidate_claim,
+                check.claim_type,
+                evidence_pack,
+                feedback_by_id,
+            )
+            if support is None:
+                recovered.append(check)
+                continue
+            citations, claim_type, verdict = support
+            recovered.append(check.model_copy(update={
+                "claim_type": claim_type,
+                "verdict": verdict,
+                "citations": citations,
+                "rationale": (
+                    "回答中的该项事实与用户上传项目资料存在高强度直接文本匹配。"
+                    if verdict == "支持"
+                    else "资料支持该声明的核心方向，但未完整覆盖其中的全部实现细节或量化边界。"
+                ),
+            }))
+        return recovered[:4]
+
+    @classmethod
+    def _apply_experience_consistency(
+        cls,
+        result: AnswerEvaluation,
+        *,
+        question_type: str,
+        previous_question: str = "",
+        user_answer: str,
+        evidence_pack: EvidencePack | None,
+        evidence_feedback: list[dict] | None,
+        rubric,
+    ) -> AnswerEvaluation:
+        result.consistency_version = CONSISTENCY_VERSION
+        if question_type != "项目深挖题":
+            result.resume_consistency = "不适用"
+            result.consistency_summary = "该题不是项目或实习经历深挖题，不执行经历一致性核验。"
+            result.consistency_checks = []
+            return result
+
+        if evidence_pack is None or not evidence_pack.chunks:
+            result.resume_consistency = "证据不足"
+            result.consistency_summary = "未检索到可用于核验该回答的个人项目资料。"
+            result.consistency_checks = []
+            result.confidence_score = min(result.confidence_score, 60)
+            result.confidence_level = confidence_level(result.confidence_score)
+            return result
+
+        chunks_by_id = {chunk.evidence_id: chunk for chunk in evidence_pack.chunks}
+        feedback_by_id = {
+            str(item.get("evidence_id")): str(item.get("verdict"))
+            for item in (evidence_feedback or [])
+            if isinstance(item, dict) and item.get("evidence_id")
+        }
+        valid_checks: list[ExperienceConsistencyCheck] = []
+        recoverable_claims: set[str] = set()
+        cited_ids: list[str] = []
+        warnings = list(result.evidence_warnings or [])
+
+        for check in result.consistency_checks:
+            if not cls._quote_belongs_to(check.candidate_claim, user_answer):
+                warnings.append("一致性判断包含无法在候选人回答中定位的声明，已丢弃。")
+                continue
+            if check.verdict == "证据不足":
+                rationale = check.rationale
+                if any(marker in rationale for marker in ("明确描述", "明确提到", "与候选人", "一致", "相符", "支持")):
+                    rationale = "资料包含相关背景，但当前引用不足以支持或反驳这条完整声明。"
+                valid_checks.append(check.model_copy(update={"citations": [], "rationale": rationale}))
+                recoverable_claims.add(check.candidate_claim)
+                continue
+            if not check.citations:
+                warnings.append("支持、部分支持或冲突判断缺少 EvidencePack 引用，已降级为证据不足。")
+                valid_checks.append(check.model_copy(update={
+                    "verdict": "证据不足",
+                    "citations": [],
+                    "rationale": "模型没有提供可核验的 EvidencePack 引用，无法据此确认该声明。",
+                }))
+                recoverable_claims.add(check.candidate_claim)
+                continue
+
+            citations_valid = True
+            accepted_citations = []
+            for citation in check.citations:
+                chunk = chunks_by_id.get(citation.evidence_id)
+                feedback_verdict = feedback_by_id.get(citation.evidence_id)
+                chunk_source = "\n".join([chunk.text, *chunk.claim_texts]) if chunk is not None else ""
+                if (
+                    chunk is None
+                    or feedback_verdict in {"incorrect", "partial"}
+                    or not cls._quote_belongs_to(citation.quote, chunk_source)
+                ):
+                    citations_valid = False
+                    break
+                accepted_citations.append(citation)
+            if not citations_valid:
+                warnings.append("一致性判断引用了未知、非逐字或已被用户否定的证据，已降级为证据不足。")
+                valid_checks.append(check.model_copy(update={
+                    "verdict": "证据不足",
+                    "citations": [],
+                    "rationale": "模型给出的 Evidence ID 或原文引用未通过后端校验，不能据此确认该声明。",
+                }))
+                recoverable_claims.add(check.candidate_claim)
+                continue
+            valid_checks.append(check.model_copy(update={"citations": accepted_citations}))
+            cited_ids.extend(citation.evidence_id for citation in accepted_citations)
+
+        valid_checks = cls._recover_direct_support_checks(
+            valid_checks,
+            user_answer=user_answer,
+            evidence_pack=evidence_pack,
+            feedback_by_id=feedback_by_id,
+            recoverable_claims=recoverable_claims,
+            allow_generate=not bool(result.consistency_checks),
+        )
+        cited_ids = [
+            citation.evidence_id
+            for check in valid_checks
+            if check.verdict in {"支持", "部分支持", "冲突"}
+            for citation in check.citations
+        ]
+
+        has_conflict = any(check.verdict == "冲突" for check in valid_checks)
+        has_support = any(check.verdict == "支持" for check in valid_checks)
+        has_partial_support = any(check.verdict == "部分支持" for check in valid_checks)
+        has_insufficient = any(check.verdict == "证据不足" for check in valid_checks)
+        if has_conflict:
+            consistency = "存在冲突"
+            summary = "回答中的至少一项关键经历声明与用户上传资料存在可追踪冲突。"
+        elif has_support and not has_partial_support and not has_insufficient:
+            consistency = "一致"
+            summary = "回答中的关键项目事实或个人职责均获得用户上传资料的可追踪支持，未发现可核验冲突。"
+        elif has_support or has_partial_support:
+            consistency = "部分一致"
+            summary = "资料支持回答中的部分项目事实，但尚未覆盖全部实现细节、个人职责或量化边界。"
+        else:
+            consistency = "证据不足"
+            summary = "现有资料不足以支持或反驳回答中的关键经历声明。"
+
+        result.resume_consistency = consistency
+        result.consistency_summary = summary
+        result.consistency_checks = valid_checks[:4]
+        result.evidence_warnings = list(dict.fromkeys(warnings))
+
+        cited_id_set = set(cited_ids)
+        cited_chunks = [chunk for chunk in evidence_pack.chunks if chunk.evidence_id in cited_id_set]
+        accepted_quotes_by_id: dict[str, list[str]] = {}
+        for check in valid_checks:
+            if check.verdict not in {"支持", "部分支持", "冲突"}:
+                continue
+            for citation in check.citations:
+                accepted_quotes_by_id.setdefault(citation.evidence_id, [])
+                if citation.quote not in accepted_quotes_by_id[citation.evidence_id]:
+                    accepted_quotes_by_id[citation.evidence_id].append(citation.quote)
+        result.knowledge_evidence_ids = [chunk.evidence_id for chunk in cited_chunks]
+        result.knowledge_evidence = [
+            quote
+            for chunk in cited_chunks
+            for quote in accepted_quotes_by_id.get(chunk.evidence_id, [])
+        ]
+        result.knowledge_evidence_items = [
+            EvidenceItem(
+                evidence_id=chunk.evidence_id,
+                source_type="career_rag",
+                verification_status="user_provided",
+                quote=(accepted_quotes_by_id.get(chunk.evidence_id) or [chunk.text])[0][:900],
+                fact_id=str(chunk.fact_id) if chunk.fact_id is not None else None,
+                document_id=chunk.document_id,
+                document_title=chunk.title,
+                section=chunk.section,
+                chunk_id=chunk.evidence_id,
+                source_version=chunk.source_version,
+                retrieval_method=chunk.retrieval_method,
+                retrieval_score=chunk.score,
+            )
+            for chunk in cited_chunks
+        ]
+        result.knowledge_evidence_source = "evidence_pack_v2" if cited_chunks else "none"
+
+        if consistency == "存在冲突":
+            for score in result.rubric_scores:
+                if score.dimension == "personal_ownership":
+                    score.score = min(score.score, 1)
+                    score.missing_points = list(dict.fromkeys([
+                        *score.missing_points,
+                        "回答中的项目所有权声明与个人资料存在冲突，需要澄清责任边界。",
+                    ]))
+            total_weight = sum(spec.weight for spec in rubric) or 1
+            result.rubric_overall_score = round(
+                sum(score.score * spec.weight for score, spec in zip(result.rubric_scores, rubric))
+                / total_weight
+                * 25
+            )
+            result.overall_score = result.rubric_overall_score
+            result.confidence_score = min(result.confidence_score, 40)
+        elif consistency == "部分一致":
+            result.confidence_score = min(result.confidence_score, 70)
+        elif consistency == "证据不足":
+            result.confidence_score = min(result.confidence_score, 60)
+        result.confidence_level = confidence_level(result.confidence_score)
+        logger.info(
+            "Experience consistency applied: question_chars=%s pack_chunks=%s checks=%s supports=%s conflicts=%s insufficient=%s",
+            len(previous_question or ""),
+            len(evidence_pack.chunks),
+            len(valid_checks),
+            sum(check.verdict == "支持" for check in valid_checks),
+            sum(check.verdict == "冲突" for check in valid_checks),
+            sum(check.verdict in {"部分支持", "证据不足"} for check in valid_checks),
+        )
+        return result
 
     @staticmethod
     def _expand_llm_result(result: LLMAnswerEvaluation | AnswerEvaluation) -> AnswerEvaluation:
@@ -549,11 +1086,11 @@ knowledge_evidence 必须原样摘录技术资料中的证据片段，并保留�
             job_match_score=weighted_score,
             overall_score=weighted_score,
             verdict="证据不足",
-            correctness_summary="未调用远程语义模型，无法确认技术结论；本题仅按可观察信号和 Rubric 给出保守分数。",
+            correctness_summary="本次未取得完整模型评估结果，无法确认全部技术结论；当前仅按可观察信号和 Rubric 给出低置信度临时分数。",
             error_analysis=missing_points[:3],
             expected_key_points=[spec.description for spec in rubric[:3]],
-            correction_suggestion="远程模型恢复后重新评估，并补充上述 Rubric 维度缺少的技术证据。",
-            summary="远程模型暂时不可用，已按可解释的 Rubric 规则降级评估；该结果仅供临时参考。",
+            correction_suggestion="可稍后重新评估，并补充上述 Rubric 维度缺少的技术证据。",
+            summary="完整模型评估本次未成功，系统已按可解释的 Rubric 规则生成低置信度临时结果。",
             strengths=strengths,
             improvement_areas=improvements,
             assessment_version="rubric-v2-fallback",

@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from app.core.config import settings
 from app.schemas.chat import AnswerEvaluation
-from app.schemas.evaluation import EvaluationRequest, EvaluationRunMetadata
+from app.schemas.evaluation import EvidencePack, EvaluationRequest, EvaluationRunMetadata
 from app.services.interview_evaluator import InterviewEvaluator
 
 
@@ -54,6 +54,7 @@ class EvaluationAgent:
         resume_content: str | None = None,
         code_execution: dict | None = None,
         knowledge_context: str | None = None,
+        evidence_pack: EvidencePack | dict | None = None,
         knowledge_context_cache_hit: bool = False,
     ) -> AnswerEvaluation:
         request = EvaluationRequest(
@@ -67,6 +68,7 @@ class EvaluationAgent:
             resume_content=resume_content,
             code_execution=code_execution,
             knowledge_context=knowledge_context,
+            evidence_pack=evidence_pack,
             knowledge_context_cache_hit=knowledge_context_cache_hit,
         )
         return await self.evaluate(request)
@@ -95,9 +97,13 @@ class EvaluationAgent:
         if invalid:
             warnings.append("简历一致性证据中存在无法在简历原文中核验的内容。")
 
+        knowledge_sources = [request.knowledge_context or ""]
+        if request.evidence_pack is not None:
+            for chunk in request.evidence_pack.chunks:
+                knowledge_sources.extend([chunk.text, *chunk.claim_texts])
         result.knowledge_evidence, invalid = cls._ground_evidence(
             result.knowledge_evidence,
-            [request.knowledge_context or ""],
+            knowledge_sources,
         )
         if invalid:
             warnings.append("用户资料证据中存在无法在上传文档中核验的内容。")

@@ -26,6 +26,21 @@ class CapabilityAssessment(BaseModel):
     missing_points: List[str] = Field(default_factory=list)
 
 
+class ConsistencyEvidenceCitation(BaseModel):
+    evidence_id: str = Field(min_length=1, max_length=255)
+    quote: str = Field(min_length=1, max_length=1200)
+
+
+class ExperienceConsistencyCheck(BaseModel):
+    """Claim-level comparison between an answer and user-provided evidence."""
+
+    candidate_claim: str = Field(min_length=1, max_length=1200)
+    claim_type: Literal["project_fact", "personal_ownership", "metric_result", "responsibility_scope"] = "project_fact"
+    verdict: Literal["支持", "部分支持", "冲突", "证据不足"]
+    citations: List[ConsistencyEvidenceCitation] = Field(default_factory=list, max_length=4)
+    rationale: str = Field(default="", max_length=1200)
+
+
 class EvidenceItem(BaseModel):
     evidence_id: str
     source_type: Literal["career_rag", "candidate_answer", "resume", "judge0"]
@@ -75,7 +90,10 @@ class AnswerEvaluation(BaseModel):
     confidence_score: int = 0
     confidence_level: Literal["低", "中", "高"] = "低"
     jd_requirement_matches: List[JDRequirementMatch] = Field(default_factory=list)
-    resume_consistency: Literal["一致", "证据不足", "存在冲突", "不适用"] = "不适用"
+    resume_consistency: Literal["一致", "部分一致", "证据不足", "存在冲突", "不适用"] = "不适用"
+    consistency_version: str = "experience-consistency-v2"
+    consistency_summary: str = ""
+    consistency_checks: List[ExperienceConsistencyCheck] = Field(default_factory=list)
     resume_evidence: List[str] = Field(default_factory=list)
     knowledge_evidence: List[str] = Field(default_factory=list)
     knowledge_evidence_ids: List[str] = Field(default_factory=list)
@@ -117,6 +135,25 @@ class LLMAnswerEvaluation(BaseModel):
     strengths: List[str] = Field(default_factory=list)
     improvement_areas: List[str] = Field(default_factory=list)
     rubric_scores: List[RubricScore] = Field(default_factory=list)
+    resume_consistency: Literal["一致", "部分一致", "证据不足", "存在冲突", "不适用"] = "不适用"
+    consistency_version: str = "experience-consistency-v2"
+    consistency_summary: str = ""
+    consistency_checks: List[ExperienceConsistencyCheck] = Field(default_factory=list)
+
+
+class QuestionEvidenceReference(BaseModel):
+    """Auditable career evidence supplied as a hard constraint for one generated question."""
+
+    evidence_id: str = Field(min_length=1, max_length=255)
+    document_id: str = ""
+    document_title: str = ""
+    section: str = ""
+    fact_id: str | None = None
+    project_key: str = ""
+    source_version: str | None = None
+    retrieval_method: str = "unknown"
+    retrieval_score: float = 0
+    quote: str = Field(default="", max_length=500)
 
 class ChatMessage(BaseModel):
     """Chat message model for API responses"""
@@ -137,6 +174,14 @@ class ChatMessage(BaseModel):
     evaluation_job_id: Optional[str] = None
     evaluation_error: Optional[str] = None
     answer_counted: Optional[bool] = None
+    interview_phase: Optional[str] = None
+    question_mode: Optional[str] = None
+    follow_up_count: int = 0
+    max_follow_ups: int = 0
+    question_grounded: bool = False
+    question_grounding_version: Optional[str] = None
+    question_evidence_ids: List[str] = Field(default_factory=list)
+    question_evidence_items: List[QuestionEvidenceReference] = Field(default_factory=list)
     interview_status: Optional[str] = None
     interview_paused_at: Optional[str] = None
     interview_paused_seconds: float = 0.0
@@ -173,6 +218,10 @@ class InterviewQuestionReference(BaseModel):
     evaluation_status: Optional[str] = None
     evaluation_error: Optional[str] = None
     answer_counted: Optional[bool] = None
+    question_grounded: bool = False
+    question_grounding_version: Optional[str] = None
+    question_evidence_ids: List[str] = Field(default_factory=list)
+    question_evidence_items: List[QuestionEvidenceReference] = Field(default_factory=list)
     evidence_feedback: List[EvidenceFeedback] = Field(default_factory=list)
 
 class InterviewReportResponse(BaseModel):

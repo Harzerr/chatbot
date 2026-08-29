@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 from unittest.mock import MagicMock, patch
 
@@ -42,6 +43,21 @@ class FailOnceEvaluationAgent(FakeEvaluationAgent):
             self.failed = True
             raise RuntimeError("模拟模型调用失败")
         return await super().evaluate(request)
+
+
+class BlockingEvaluationAgent(FakeEvaluationAgent):
+    def __init__(self):
+        self.calls = 0
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def evaluate(self, request):
+        self.calls += 1
+        self.started.set()
+        await self.release.wait()
+        result = await super().evaluate(request)
+        self.calls -= 1
+        return result
 
 
 class FakeRedisCache:
@@ -155,6 +171,38 @@ class InterviewEvaluationQueueTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(refreshed["evaluation_cache_hit"])
         self.assertEqual(agent.calls, 2)
+
+    async def test_concurrent_duplicate_jobs_share_one_model_call(self):
+        vector_store = FakeVectorStore()
+        cache = FakeRedisCache()
+        agent = BlockingEvaluationAgent()
+        payload = {
+            "point_id": "point-singleflight-1",
+            "tenant_id": "tenant-a",
+            "user_id": "7",
+            "chat_id": "chat-singleflight",
+            "request": {
+                "previous_question": "请介绍缓存方案。",
+                "user_answer": "我使用 Redis 做缓存。",
+            },
+        }
+
+        with patch("app.services.evaluation_jobs.MultiTenantVectorStore", return_value=vector_store), patch(
+            "app.services.evaluation_jobs.RedisCache", return_value=cache
+        ), patch("app.services.evaluation_jobs.EvaluationAgent", return_value=agent):
+            first_task = asyncio.create_task(process_evaluation_job(payload))
+            await agent.started.wait()
+            second_task = asyncio.create_task(process_evaluation_job({
+                **payload,
+                "point_id": "point-singleflight-2",
+            }))
+            await asyncio.sleep(0.05)
+            agent.release.set()
+            first, second = await asyncio.gather(first_task, second_task)
+
+        self.assertEqual(agent.calls, 1)
+        self.assertFalse(first["evaluation_cache_hit"])
+        self.assertTrue(second["evaluation_cache_hit"])
 
     async def test_one_failed_job_does_not_block_the_next_job(self):
         vector_store = FakeVectorStore()

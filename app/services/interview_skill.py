@@ -4,6 +4,7 @@ from pathlib import Path
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
+from app.core.config import settings
 from app.services.coding_question_bank_loader import load_coding_question_bank
 from app.services.coding_knowledge_store import QdrantCodingKnowledgeStore
 from app.services.interview_kit import (
@@ -18,6 +19,11 @@ from app.services.interview_assessment import (
     count_countable_answers,
     is_countable_answer,
     is_non_answer,
+)
+from app.services.interview_workflow import (
+    InterviewWorkflowDecision,
+    decide_interview_workflow,
+    render_workflow_instruction,
 )
 from app.services.role_knowledge_store import QdrantRoleKnowledgeStore
 from app.services.stream_context import current_stream_callback
@@ -278,6 +284,8 @@ INTERVIEW SKILL INSTRUCTIONS:
     def _has_started_coding_round(self, relevant_docs: list[dict]) -> bool:
         coding_markers = ("手撕代码", "代码题", "写出核心代码", "贴出你的代码", "实现这个函数")
         for doc in relevant_docs:
+            if doc.get("interview_phase") == "coding" or doc.get("question_mode") == "coding":
+                return True
             assistant_message = (doc.get("assistant_message") or "").lower()
             if any(marker.lower() in assistant_message for marker in coding_markers):
                 return True
@@ -531,10 +539,12 @@ INTERVIEW SKILL INSTRUCTIONS:
         coding_round_context: str,
         company_jd_resume_context: str,
         knowledge_context: str | None,
+        question_grounding_context: str,
         history_messages: list,
         interview_role: str | None,
         interview_level: str | None,
         interview_type: str | None,
+        workflow_decision: InterviewWorkflowDecision,
     ) -> list:
         role = normalize_interview_role(interview_role)
         level = interview_level or "中级"
@@ -552,6 +562,8 @@ Skill 运行时上下文：
 - 岗位：{role}
 - 级别：{level}
 - 面试类型：{interview_kind}
+
+{render_workflow_instruction(workflow_decision)}
 
 核心目标：
 - 生成高质量、高区分度、足够专业的面试问题
@@ -588,6 +600,9 @@ JD 分析：
 
 用户上传技术资料证据：
 {knowledge_context or "未上传可用技术资料。"}
+
+本题证据驱动约束：
+{question_grounding_context or "本题没有可用的项目证据锚点，不得编造候选人的项目事实。"}
 
 对话上下文：
 {context}
@@ -635,6 +650,80 @@ JD 分析：
             HumanMessage(content=question),
         ]
 
+    @staticmethod
+    def _question_evidence_references(
+        evidence_pack: dict | object | None,
+        workflow_decision: InterviewWorkflowDecision,
+        limit: int = 3,
+    ) -> list[dict]:
+        """Select one project's evidence as the auditable input lineage for a question."""
+        if (
+            not evidence_pack
+            or workflow_decision.question_mode in {"coding", "finish"}
+            or not (
+                workflow_decision.phase == "project_deep_dive"
+                or workflow_decision.question_mode == "follow_up"
+            )
+        ):
+            return []
+
+        payload = evidence_pack.model_dump(mode="json") if hasattr(evidence_pack, "model_dump") else evidence_pack
+        chunks = payload.get("chunks", []) if isinstance(payload, dict) else []
+        chunks = [chunk for chunk in chunks if isinstance(chunk, dict) and str(chunk.get("evidence_id") or "").strip()]
+        if not chunks:
+            return []
+
+        lead = chunks[0]
+        project_key = str(lead.get("project_key") or "").strip()
+        document_id = str(lead.get("document_id") or "").strip()
+
+        def same_project(chunk: dict) -> bool:
+            if project_key:
+                return str(chunk.get("project_key") or "").strip() == project_key
+            return str(chunk.get("document_id") or "").strip() == document_id
+
+        selected = [chunk for chunk in chunks if same_project(chunk)][:max(1, limit)] or [lead]
+        return [
+            {
+                "evidence_id": str(chunk["evidence_id"]),
+                "document_id": str(chunk.get("document_id") or ""),
+                "document_title": str(chunk.get("title") or ""),
+                "section": str(chunk.get("section") or ""),
+                "fact_id": str(chunk.get("fact_id")) if chunk.get("fact_id") is not None else None,
+                "project_key": str(chunk.get("project_key") or ""),
+                "source_version": chunk.get("source_version"),
+                "retrieval_method": str(chunk.get("retrieval_method") or "unknown"),
+                "retrieval_score": float(chunk.get("score") or 0),
+                "quote": " ".join(str(chunk.get("text") or "").split())[:360],
+            }
+            for chunk in selected
+        ]
+
+    @staticmethod
+    def _render_question_grounding_context(references: list[dict]) -> str:
+        if not references:
+            return ""
+        evidence_lines = "\n".join(
+            f"- {item['evidence_id']}｜{item.get('document_title') or '技术文档'}｜"
+            f"{item.get('section') or '未标注章节'}：{item.get('quote') or '无可用摘录'}"
+            for item in references
+        )
+        return f"""以下证据是本题生成的强制项目锚点：
+{evidence_lines}
+- 必须至少基于其中一个证据里的技术对象、实现机制、工程约束或验证方法提出问题。
+- 追问候选人的个人职责时，只能把资料明确记录的动作作为前提；资料只描述系统事实时，应询问候选人具体负责什么，不能替其认领。
+- 面向候选人的问题中不得展示 Evidence ID、检索分数、文档路径或内部字段。
+- 不得引用锚点之外的项目来拼接事实。"""
+
+    @staticmethod
+    def _sanitize_grounded_question(text: str, references: list[dict]) -> str:
+        sanitized = str(text or "")
+        for item in references:
+            evidence_id = str(item.get("evidence_id") or "").strip()
+            if evidence_id:
+                sanitized = sanitized.replace(evidence_id, "相关项目资料")
+        return sanitized.strip()
+
     def _build_history_messages(self, history_context_docs: list[dict]) -> list:
         history = []
         for doc in history_context_docs:
@@ -659,6 +748,7 @@ JD 分析：
         resume_content: str | None = None,
         code_execution: dict | None = None,
         knowledge_context: str | None = None,
+        evidence_pack: dict | None = None,
         knowledge_context_cache_hit: bool = False,
     ) -> dict:
         question_limit = get_interview_question_limit(interview_type)
@@ -677,6 +767,35 @@ JD 分析：
             normalized_question,
             has_previous_question=bool(previous_interviewer_question),
         )
+        workflow_decision = decide_interview_workflow(
+            answer=normalized_question,
+            has_previous_question=bool(previous_interviewer_question),
+            current_answer_counted=current_answer_counted,
+            completed_questions=completed_questions,
+            question_limit=question_limit,
+            interview_type=interview_type,
+            relevant_docs=relevant_docs,
+            coding_started=self._has_started_coding_round(relevant_docs),
+            max_follow_ups=settings.INTERVIEW_MAX_FOLLOW_UPS,
+        )
+        question_evidence_references = self._question_evidence_references(
+            evidence_pack,
+            workflow_decision,
+        )
+        grounded_workflow_state = {
+            **workflow_decision.as_dict(),
+            "question_grounded": bool(question_evidence_references),
+            "question_grounding_version": "career-question-grounding-v1" if question_evidence_references else None,
+            "question_evidence_ids": [item["evidence_id"] for item in question_evidence_references],
+            "question_evidence_items": question_evidence_references,
+        }
+        if question_evidence_references:
+            logger.info(
+                "Career evidence grounded question prepared: phase=%s mode=%s evidence_ids=%s",
+                workflow_decision.phase,
+                workflow_decision.question_mode,
+                [item["evidence_id"] for item in question_evidence_references],
+            )
 
         if normalized_question == MANUAL_FINISH_COMMAND:
             completed_questions = min(completed_questions, question_limit)
@@ -687,6 +806,11 @@ JD 分析：
                 ),
                 "evaluation": None,
                 "is_finished": True,
+                "workflow_state": {
+                    **workflow_decision.as_dict(),
+                    "phase": "closing",
+                    "question_mode": "finish",
+                },
             }
 
         if completed_questions >= question_limit:
@@ -694,6 +818,11 @@ JD 分析：
                 "response": f"本场面试已结束。你已完成 {question_limit}/{question_limit} 题。系统已记录本次作答数据，请查看右侧综合报告。",
                 "evaluation": None,
                 "is_finished": True,
+                "workflow_state": {
+                    **workflow_decision.as_dict(),
+                    "phase": "closing",
+                    "question_mode": "finish",
+                },
             }
 
         jd_analysis = self._analyze_jd(jd_content)
@@ -735,7 +864,25 @@ JD 分析：
 - 请换一道同岗位、同面试阶段、难度相近但考察点不同的问题
 """
 
-        if self._should_switch_to_coding_round(relevant_docs, interview_type) and not self._looks_like_code_submission(question):
+        evaluation_enabled = self._evaluator.should_evaluate(question, previous_interviewer_question)
+        evaluation_request = None
+        if evaluation_enabled and current_answer_counted:
+            evaluation_request = EvaluationRequest(
+                previous_question=previous_interviewer_question,
+                user_answer=question,
+                interview_role=normalized_role,
+                interview_level=interview_level,
+                interview_type=interview_type,
+                target_company=target_company,
+                jd_content=jd_content,
+                resume_content=resume_content,
+                code_execution=code_execution,
+                knowledge_context=knowledge_context,
+                evidence_pack=evidence_pack,
+                knowledge_context_cache_hit=knowledge_context_cache_hit,
+            ).model_dump()
+
+        if workflow_decision.should_switch_to_coding and not self._looks_like_code_submission(question):
             coding_question = self._pick_coding_question(
                 interview_role=normalized_role,
                 interview_type=interview_type,
@@ -745,7 +892,16 @@ JD 分析：
                 return {
                     "response": self._render_coding_question_prompt(coding_question),
                     "evaluation": None,
+                    "evaluation_request": evaluation_request,
                     "is_finished": False,
+                    "answer_counted": current_answer_counted,
+                    "workflow_state": grounded_workflow_state,
+                    "model_usage": {
+                        "prompt_tokens": 0,
+                        "completion_tokens": 0,
+                        "total_tokens": 0,
+                        "model_latency_ms": 0,
+                    },
                 }
 
         company_jd_resume_context = build_company_jd_resume_context(
@@ -767,16 +923,17 @@ JD 分析：
             coding_round_context=coding_round_context,
             company_jd_resume_context=company_jd_resume_context,
             knowledge_context=knowledge_context,
+            question_grounding_context=self._render_question_grounding_context(question_evidence_references),
             history_messages=history_messages,
             interview_role=normalized_role,
             interview_level=interview_level,
             interview_type=interview_type,
+            workflow_decision=workflow_decision,
         )
 
-        evaluation_enabled = self._evaluator.should_evaluate(question, previous_interviewer_question)
         stream_callback = current_stream_callback.get()
 
-        finish_after_answer = current_answer_counted and completed_questions + 1 >= question_limit
+        finish_after_answer = workflow_decision.should_finish
         if finish_after_answer:
             # Do not invoke or stream another interviewer question after the
             # last valid answer. The final answer is still sent to evaluation.
@@ -820,7 +977,13 @@ JD 分析：
                         delta = content
                     if delta:
                         assembled += delta
-                        await stream_callback(delta)
+                        if not question_evidence_references:
+                            await stream_callback(delta)
+
+                if question_evidence_references:
+                    assembled = self._sanitize_grounded_question(assembled, question_evidence_references)
+                    if assembled:
+                        await stream_callback(assembled)
 
                 return assembled, usage
 
@@ -829,23 +992,9 @@ JD 分析：
             response_text = response if isinstance(response, str) else (
                 response.content if hasattr(response, "content") else str(response)
             )
+            if question_evidence_references:
+                response_text = self._sanitize_grounded_question(response_text, question_evidence_references)
             model_usage["model_latency_ms"] = round((perf_counter() - llm_started_at) * 1000)
-
-        evaluation_request = None
-        if evaluation_enabled and current_answer_counted:
-            evaluation_request = EvaluationRequest(
-                previous_question=previous_interviewer_question,
-                user_answer=question,
-                interview_role=normalized_role,
-                interview_level=interview_level,
-                interview_type=interview_type,
-                target_company=target_company,
-                jd_content=jd_content,
-                resume_content=resume_content,
-                code_execution=code_execution,
-                knowledge_context=knowledge_context,
-                knowledge_context_cache_hit=knowledge_context_cache_hit,
-            ).model_dump()
 
         return {
             "response": response_text,
@@ -854,4 +1003,5 @@ JD 分析：
             "is_finished": finish_after_answer,
             "answer_counted": current_answer_counted,
             "model_usage": model_usage,
+            "workflow_state": grounded_workflow_state,
         }

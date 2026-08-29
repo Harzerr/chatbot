@@ -28,7 +28,11 @@ class EvidenceChunk(BaseModel):
     char_start: Optional[int] = None
     char_end: Optional[int] = None
 
-PointCategory = Literal['background','goal','role','responsibility','architecture','tech_stack','implementation','agent_workflow','data_processing','memory_context','tool_calling','evaluation','optimization','difficulty','result','metric','deployment','other']
+PointCategory = Literal[
+    'background', 'goal', 'role', 'responsibility', 'architecture', 'implementation',
+    'integration', 'data_processing', 'algorithm', 'performance', 'reliability',
+    'security', 'testing', 'deployment', 'operations', 'result', 'metric', 'other',
+]
 
 class ProjectKeyPoint(BaseModel):
     point_id: str
@@ -38,7 +42,7 @@ class ProjectKeyPoint(BaseModel):
     resume_bullet: str
     confidence: Literal['high','medium','low']
     notes: Optional[str] = None
-    evidence_chunks: list[EvidenceChunk] = Field(min_length=1, max_length=6)
+    evidence_chunks: list[EvidenceChunk] = Field(min_length=1, max_length=3)
 
 class ProjectExtraction(BaseModel):
     project_id: str

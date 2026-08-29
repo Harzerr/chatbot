@@ -8,6 +8,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
@@ -20,8 +21,7 @@ from app.schemas.career import (
     CareerFactUpdate,
     CareerKnowledgeDocumentRead,
     CareerKnowledgeDocumentUpdate,
-    FactExtractionResponse,
-    FactExtractionWarning,
+    FactExtractionJobResponse,
     MarkdownFactExtractionResponse,
     JobImportRequest,
     JobPostingRead,
@@ -632,7 +632,12 @@ async def _owned_knowledge_document(db: AsyncSession, user_id: int, document_id:
     return document
 
 
-def _knowledge_document_response(document: CareerKnowledgeDocument) -> CareerKnowledgeDocumentRead:
+def _knowledge_document_response(
+    document: CareerKnowledgeDocument,
+    *,
+    deduplicated: bool = False,
+    restored_from_archive: bool = False,
+) -> CareerKnowledgeDocumentRead:
     return CareerKnowledgeDocumentRead(
         id=document.id,
         fact_id=document.fact_id,
@@ -644,8 +649,36 @@ def _knowledge_document_response(document: CareerKnowledgeDocument) -> CareerKno
         metadata=_json_load(document.metadata_json, {}),
         source_hash=document.source_hash,
         is_archived=document.is_archived,
+        deduplicated=deduplicated,
+        restored_from_archive=restored_from_archive,
         created_at=document.created_at,
         updated_at=document.updated_at,
+    )
+
+
+async def _knowledge_document_by_source_hash(
+    db: AsyncSession,
+    user_id: int,
+    source_hash: str,
+    *,
+    archived: bool,
+) -> CareerKnowledgeDocument | None:
+    return await db.scalar(
+        select(CareerKnowledgeDocument).where(
+            CareerKnowledgeDocument.user_id == user_id,
+            CareerKnowledgeDocument.source_hash == source_hash,
+            CareerKnowledgeDocument.is_archived.is_(archived),
+        ).order_by(CareerKnowledgeDocument.updated_at.desc(), CareerKnowledgeDocument.id.desc())
+    )
+
+
+def _raise_document_hash_conflict(document: CareerKnowledgeDocument) -> None:
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=(
+            f"相同内容的技术文档已绑定到另一个项目（文档 ID: {document.id}，"
+            f"项目事实 ID: {document.fact_id}），请使用已有文档或先归档原绑定。"
+        ),
     )
 
 
@@ -664,6 +697,7 @@ async def list_knowledge_documents(
 
 @router.post("/documents/upload", response_model=CareerKnowledgeDocumentRead, status_code=status.HTTP_201_CREATED)
 async def upload_knowledge_document(
+    response: Response,
     file: UploadFile = File(...),
     fact_id: int = Form(...),
     title: str | None = Form(default=None),
@@ -682,6 +716,48 @@ async def upload_knowledge_document(
         parsed = parse_document(file_name, file.content_type, data, "technical_doc")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    active_document = await _knowledge_document_by_source_hash(
+        db,
+        current_user.id,
+        parsed["source_hash"],
+        archived=False,
+    )
+    if active_document:
+        if active_document.fact_id != fact_id:
+            _raise_document_hash_conflict(active_document)
+        response.status_code = status.HTTP_200_OK
+        return _knowledge_document_response(active_document, deduplicated=True)
+
+    archived_document = await _knowledge_document_by_source_hash(
+        db,
+        current_user.id,
+        parsed["source_hash"],
+        archived=True,
+    )
+    if archived_document:
+        if archived_document.fact_id != fact_id:
+            _raise_document_hash_conflict(archived_document)
+        archived_document.is_archived = False
+        try:
+            await db.commit()
+        except IntegrityError as exc:
+            await db.rollback()
+            active_document = await _knowledge_document_by_source_hash(
+                db, current_user.id, parsed["source_hash"], archived=False,
+            )
+            if active_document and active_document.fact_id == fact_id:
+                response.status_code = status.HTTP_200_OK
+                return _knowledge_document_response(active_document, deduplicated=True)
+            raise HTTPException(status_code=409, detail="相同技术文档正在被其他请求恢复，请刷新后重试。") from exc
+        await db.refresh(archived_document)
+        await _enqueue_career_evidence_index(archived_document.id, current_user)
+        response.status_code = status.HTTP_200_OK
+        return _knowledge_document_response(
+            archived_document,
+            deduplicated=True,
+            restored_from_archive=True,
+        )
 
     fact_content = _json_load(fact.content_json, {})
     fact_projects = fact_content.get("projects") if isinstance(fact_content, dict) else []
@@ -717,7 +793,19 @@ async def upload_knowledge_document(
         source_hash=parsed["source_hash"],
     )
     db.add(document)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        await db.rollback()
+        active_document = await _knowledge_document_by_source_hash(
+            db, current_user.id, parsed["source_hash"], archived=False,
+        )
+        if active_document:
+            if active_document.fact_id != fact_id:
+                _raise_document_hash_conflict(active_document)
+            response.status_code = status.HTTP_200_OK
+            return _knowledge_document_response(active_document, deduplicated=True)
+        raise HTTPException(status_code=409, detail="相同技术文档正在上传，请刷新后重试。") from exc
     await _replace_knowledge_document_chunks(db, document, fact)
     await db.commit()
     await db.refresh(document)
@@ -752,6 +840,17 @@ async def update_knowledge_document(
         content_text = updates["content_text"].strip()
         if not content_text:
             raise HTTPException(status_code=400, detail="资料正文不能为空")
+        source_hash = edited_source_hash(content_text)
+        conflicting_document = await db.scalar(
+            select(CareerKnowledgeDocument).where(
+                CareerKnowledgeDocument.user_id == current_user.id,
+                CareerKnowledgeDocument.source_hash == source_hash,
+                CareerKnowledgeDocument.is_archived.is_(False),
+                CareerKnowledgeDocument.id != document.id,
+            )
+        )
+        if conflicting_document:
+            _raise_document_hash_conflict(conflicting_document)
         document.content_text = content_text
         metadata = _json_load(document.metadata_json, {})
         metadata.update({
@@ -761,13 +860,17 @@ async def update_knowledge_document(
             "claim_linking_version": CLAIM_LINKING_VERSION,
         })
         document.metadata_json = json.dumps(metadata, ensure_ascii=False)
-        document.source_hash = edited_source_hash(document.content_text)
+        document.source_hash = source_hash
         rebuild_chunks = True
     if "is_archived" in updates:
         document.is_archived = updates["is_archived"]
     if rebuild_chunks:
         await _replace_knowledge_document_chunks(db, document)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="更新后的正文与另一份活跃技术文档重复。") from exc
     await db.refresh(document)
     await _enqueue_career_evidence_index(document.id, current_user)
     return _knowledge_document_response(document)
@@ -892,51 +995,57 @@ async def delete_fact_permanently(
     await db.commit()
 
 
-@router.post("/facts/extract", response_model=FactExtractionResponse)
+@router.post(
+    "/facts/extract",
+    response_model=FactExtractionJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 async def extract_resume_facts(
-    db: Annotated[AsyncSession, Depends(get_db)],
     current_user: Annotated[User, Depends(get_current_user)],
-) -> FactExtractionResponse:
+) -> FactExtractionJobResponse:
     resume_text = (current_user.resume_text or "").strip()
     if not resume_text:
         raise HTTPException(status_code=400, detail="Upload a resume before extracting career facts")
     try:
-        raw_facts = await career_studio.extract_facts(resume_text)
-        facts: list[CareerFactCreate] = []
-        warnings: list[FactExtractionWarning] = []
-        for index, item in enumerate(raw_facts):
-            try:
-                facts.append(CareerFactCreate.model_validate(item))
-            except Exception as exc:
-                title = item.get("title", "") if isinstance(item, dict) else ""
-                warnings.append(FactExtractionWarning(
-                    index=index,
-                    title=str(title)[:255],
-                    reason=str(exc).split("\n", 1)[0][:500],
-                ))
-        rejected_count = len(warnings)
-        if not facts and raw_facts:
-            status_value = "failed_validation"
-            message = "模型返回了事实，但没有任何一条通过字段校验。"
-        elif not facts:
-            status_value = "empty"
-            message = "模型没有从当前简历中提取到有效事实。"
-        elif warnings:
-            status_value = "partial"
-            message = f"已识别 {len(facts)} 条事实，另有 {rejected_count} 条需要检查。"
-        else:
-            status_value = "completed"
-            message = f"已识别 {len(facts)} 条待确认事实。"
-        return FactExtractionResponse(
-            facts=facts,
-            status=status_value,
-            accepted_count=len(facts),
-            rejected_count=rejected_count,
-            warnings=warnings,
-            message=message,
+        queue_job = enqueue_career_fact_job(
+            {
+                "job_type": "resume",
+                "user_id": current_user.id,
+            },
+            current_user.id,
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except QueueUnavailable as exc:
+        raise HTTPException(status_code=503, detail="事实提取队列暂时不可用，请稍后重试。") from exc
+    return FactExtractionJobResponse(
+        job_id=queue_job.id,
+        facts=[],
+        status="queued",
+        message="职业事实提取任务已创建。",
+    )
+
+
+@router.get("/facts/extraction-jobs/{job_id}", response_model=FactExtractionJobResponse)
+async def read_resume_fact_job(
+    job_id: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> FactExtractionJobResponse:
+    try:
+        job = get_career_fact_job(job_id)
+    except QueueUnavailable as exc:
+        raise HTTPException(status_code=503, detail="事实提取队列暂时不可用，请稍后重试。") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="事实提取任务不存在或已过期。") from exc
+    if str(job.meta.get("user_id")) != str(current_user.id):
+        raise HTTPException(status_code=404, detail="事实提取任务不存在。")
+
+    status_value = job.get_status(refresh=True)
+    if status_value in {"queued", "started", "deferred", "scheduled"}:
+        return FactExtractionJobResponse(job_id=job.id, facts=[], status="processing", message="AI 正在提取职业事实，请稍候。")
+    if status_value == "failed":
+        return FactExtractionJobResponse(job_id=job.id, facts=[], status="failed", message="职业事实提取失败，请稍后重试。")
+    if status_value != "finished" or not isinstance(job.result, dict):
+        return FactExtractionJobResponse(job_id=job.id, facts=[], status="processing", message="AI 正在提取职业事实，请稍候。")
+    return FactExtractionJobResponse(job_id=job.id, **job.result)
 
 
 @router.post("/facts/extract-from-markdown", response_model=MarkdownFactExtractionResponse, status_code=status.HTTP_202_ACCEPTED)

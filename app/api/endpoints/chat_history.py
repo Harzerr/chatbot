@@ -4,6 +4,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.schemas.chat import (
     ChatDeleteResponse,
@@ -15,11 +16,14 @@ from app.schemas.chat import (
 )
 from app.db.session import get_db
 from app.models.interview_session import InterviewSession
+from app.models.career import CareerKnowledgeDocument
 from app.services.interview_report import InterviewReportBuilder
 from app.services.interview_report_pdf import InterviewReportPdfBuilder, InterviewReportPdfError
 from app.services.interview_evaluator import InterviewEvaluator
 from app.services.vector_store import MultiTenantVectorStore
-from app.schemas.evaluation import EvidenceFeedbackRequest, EvaluationRequest
+from app.schemas.evaluation import EvidenceFeedbackRequest, EvidencePack, EvaluationRequest
+from app.services.career_knowledge import build_cached_evidence_pack
+from app.services.interview_assessment import should_use_career_evidence
 from app.services.task_queue import QueueUnavailable, enqueue_evaluation_job
 from app.api.deps import get_current_user, get_vector_store
 from app.utils.logger import setup_logger
@@ -245,7 +249,7 @@ async def download_chat_report_pdf(
     current_user=Depends(get_current_user),
     vector_store: MultiTenantVectorStore = Depends(get_vector_store),
 ):
-    """Generate a selectable-text A4 report on the server with XeLaTeX."""
+    """Generate a selectable-text A4 report with an available server renderer."""
     try:
         chat_messages = vector_store.get_chat_by_id(
             chat_id=chat_id,
@@ -285,6 +289,7 @@ async def retry_chat_evaluation(
     point_id: str,
     current_user=Depends(get_current_user),
     vector_store: MultiTenantVectorStore = Depends(get_vector_store),
+    db: AsyncSession = Depends(get_db),
 ):
     """Requeue one failed or fallback evaluation using the original stored interview turn."""
     messages = await _get_owned_chat_or_404(chat_id, current_user, vector_store)
@@ -305,6 +310,28 @@ async def retry_chat_evaluation(
     if not previous_question or not target.get("user_message"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="缺少原始面试问题或回答，无法重试")
 
+    evidence_pack = target.get("evidence_pack")
+    knowledge_context = target.get("knowledge_context")
+    evidence_cache_hit = False
+    if should_use_career_evidence(previous_question) or knowledge_context:
+        documents = (await db.scalars(
+            select(CareerKnowledgeDocument).where(
+                CareerKnowledgeDocument.user_id == current_user.id,
+                CareerKnowledgeDocument.is_archived.is_(False),
+            ).options(selectinload(CareerKnowledgeDocument.chunks)).order_by(
+                CareerKnowledgeDocument.updated_at.desc()
+            )
+        )).all()
+        rebuilt_pack, evidence_cache_hit = await asyncio.to_thread(
+            build_cached_evidence_pack,
+            documents,
+            f"{previous_question}\n{target.get('user_message') or ''}\n{target.get('jd_content') or ''}",
+            tenant_id=current_user.tenant_id,
+            user_id=str(current_user.id),
+        )
+        evidence_pack = EvidencePack.model_validate(rebuilt_pack)
+        knowledge_context = evidence_pack.context
+
     request = EvaluationRequest(
         previous_question=previous_question,
         user_answer=str(target.get("user_message") or ""),
@@ -315,7 +342,9 @@ async def retry_chat_evaluation(
         jd_content=target.get("jd_content"),
         resume_content=target.get("resume_content"),
         code_execution=target.get("code_execution"),
-        knowledge_context=target.get("knowledge_context"),
+        knowledge_context=knowledge_context,
+        evidence_pack=evidence_pack,
+        knowledge_context_cache_hit=evidence_cache_hit,
         evidence_feedback=target.get("evidence_feedback") or [],
     )
     payload = {
@@ -324,6 +353,7 @@ async def retry_chat_evaluation(
         "user_id": str(current_user.id),
         "chat_id": str(chat_id),
         "request": request.model_dump(mode="json"),
+        "force_refresh": True,
     }
 
     vector_store.update_conversation_evaluation(
@@ -431,6 +461,7 @@ async def submit_evidence_feedback(
         resume_content=target.get("resume_content"),
         code_execution=target.get("code_execution"),
         knowledge_context=target.get("knowledge_context"),
+        evidence_pack=target.get("evidence_pack"),
         evidence_feedback=feedback,
     )
     payload = {

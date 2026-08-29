@@ -4,7 +4,7 @@ import json
 
 from app.core.config import settings
 from app.schemas.evaluation import EvaluationRequest
-from app.services.interview_assessment import ASSESSMENT_VERSION
+from app.services.interview_assessment import ASSESSMENT_VERSION, CONSISTENCY_VERSION
 from app.services.redis_cache import RedisCache, stable_cache_key
 
 
@@ -15,6 +15,7 @@ def evaluation_cache_key(request: EvaluationRequest) -> str:
         [
             getattr(settings, "EVALUATION_CACHE_VERSION", "evaluation-v1"),
             ASSESSMENT_VERSION,
+            CONSISTENCY_VERSION,
             settings.EVALUATION_LLM_MODEL,
             payload,
         ],
@@ -38,11 +39,14 @@ def set_cached_evaluation(
     result: dict,
     cache: RedisCache | None = None,
 ) -> bool:
-    if result.get("evaluation_mode") != "llm":
-        return False
     cache = cache or RedisCache()
+    ttl_seconds = (
+        getattr(settings, "EVALUATION_CACHE_TTL_SECONDS", 86400)
+        if result.get("evaluation_mode") == "llm"
+        else getattr(settings, "EVALUATION_FALLBACK_CACHE_TTL_SECONDS", 300)
+    )
     return cache.set_text(
         evaluation_cache_key(request),
         json.dumps(result, ensure_ascii=False, separators=(",", ":")),
-        getattr(settings, "EVALUATION_CACHE_TTL_SECONDS", 86400),
+        ttl_seconds,
     )

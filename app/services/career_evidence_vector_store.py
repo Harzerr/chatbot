@@ -9,6 +9,7 @@ from qdrant_client import QdrantClient, models
 from app.core.config import settings
 from app.services.embedding_provider import create_embeddings
 from app.services.career_knowledge import split_knowledge_document
+from app.services.qdrant_collection_contract import missing_payload_indexes, validate_vector_contract
 from app.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -86,31 +87,37 @@ class CareerEvidenceVectorStore:
         )
         names = {item.name for item in collections}
         if self.collection_name in names:
-            self._ensure_payload_indexes()
-            return
-        self._run(
-            "create_collection",
-            lambda: self.client.create_collection(
-                collection_name=self.collection_name,
-                vectors_config=models.VectorParams(
-                    size=self.embedding_size,
-                    distance=models.Distance.COSINE,
+            logger.info("Career evidence collection %s already exists", self.collection_name)
+        else:
+            self._run(
+                "create_collection",
+                lambda: self.client.create_collection(
+                    collection_name=self.collection_name,
+                    vectors_config=models.VectorParams(
+                        size=self.embedding_size,
+                        distance=models.Distance.COSINE,
+                    ),
+                    on_disk_payload=True,
                 ),
-                on_disk_payload=True,
-            ),
+            )
+        collection_info = self._run(
+            "get_collection_contract",
+            lambda: self.client.get_collection(self.collection_name),
         )
-        self._ensure_payload_indexes()
+        validate_vector_contract(
+            collection_info,
+            collection_name=self.collection_name,
+            expected_size=self.embedding_size,
+        )
+        self._ensure_payload_indexes(collection_info)
 
-    def _ensure_payload_indexes(self) -> None:
+    def _ensure_payload_indexes(self, collection_info: Any) -> None:
         """Index the fields used to enforce tenant/project/version boundaries."""
-        for field_name in (
-            "metadata.tenant_id",
-            "metadata.user_id",
-            "metadata.document_id",
-            "metadata.fact_id",
-            "metadata.project_key",
-            "metadata.source_version",
-        ):
+        required_fields = (
+            "metadata.tenant_id", "metadata.user_id", "metadata.document_id",
+            "metadata.fact_id", "metadata.project_key", "metadata.source_version",
+        )
+        for field_name in missing_payload_indexes(collection_info, required_fields):
             try:
                 self._run(
                     f"create_payload_index:{field_name}",
@@ -132,13 +139,7 @@ class CareerEvidenceVectorStore:
         return str(uuid5(NAMESPACE_URL, f"career-evidence:{sha256(key.encode('utf-8')).hexdigest()}"))
 
     def delete_document(self, *, tenant_id: str, user_id: str, document_id: str) -> None:
-        document_filter = models.Filter(
-            must=[
-                models.FieldCondition(key="metadata.tenant_id", match=models.MatchValue(value=str(tenant_id))),
-                models.FieldCondition(key="metadata.user_id", match=models.MatchValue(value=str(user_id))),
-                models.FieldCondition(key="metadata.document_id", match=models.MatchValue(value=str(document_id))),
-            ]
-        )
+        document_filter = self._document_filter(tenant_id, user_id, document_id)
         self._run(
             "delete_document",
             lambda: self.client.delete(
@@ -148,11 +149,41 @@ class CareerEvidenceVectorStore:
             ),
         )
 
+    @staticmethod
+    def _document_filter(tenant_id: str, user_id: str, document_id: str) -> models.Filter:
+        return models.Filter(
+            must=[
+                models.FieldCondition(key="metadata.tenant_id", match=models.MatchValue(value=str(tenant_id))),
+                models.FieldCondition(key="metadata.user_id", match=models.MatchValue(value=str(user_id))),
+                models.FieldCondition(key="metadata.document_id", match=models.MatchValue(value=str(document_id))),
+            ]
+        )
+
+    def _document_point_ids(self, *, tenant_id: str, user_id: str, document_id: str) -> set[str]:
+        document_filter = self._document_filter(tenant_id, user_id, document_id)
+
+        def collect() -> set[str]:
+            point_ids: set[str] = set()
+            offset = None
+            while True:
+                records, offset = self.client.scroll(
+                    collection_name=self.collection_name,
+                    scroll_filter=document_filter,
+                    limit=256,
+                    offset=offset,
+                    with_payload=False,
+                    with_vectors=False,
+                )
+                point_ids.update(str(record.id) for record in records)
+                if offset is None:
+                    return point_ids
+
+        return self._run("list_document_points", collect)
+
     def upsert_document(self, *, document: Any, tenant_id: str, user_id: str) -> int:
         document_id = str(_value(document, "id", ""))
         if not document_id:
             raise ValueError("career evidence document id is required")
-        self.delete_document(tenant_id=tenant_id, user_id=user_id, document_id=document_id)
 
         chunks = split_knowledge_document(
             document,
@@ -160,8 +191,14 @@ class CareerEvidenceVectorStore:
             overlap_chars=settings.EVIDENCE_CHUNK_OVERLAP_CHARS,
         )
         if not chunks:
+            self.delete_document(tenant_id=tenant_id, user_id=user_id, document_id=document_id)
             return 0
 
+        existing_point_ids = self._document_point_ids(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            document_id=document_id,
+        )
         texts = [str(chunk["text"]) for chunk in chunks]
         embedding_texts = [
             " ".join(str(item) for item in chunk.get("claim_texts", []) if str(item).strip())
@@ -169,7 +206,15 @@ class CareerEvidenceVectorStore:
             + text
             for chunk, text in zip(chunks, texts)
         ]
-        vectors = self.embedding.embed_documents(embedding_texts)
+        batch_size = max(1, int(getattr(settings, "CAREER_EVIDENCE_VECTOR_BATCH_SIZE", 64)))
+        vectors = []
+        for index in range(0, len(embedding_texts), batch_size):
+            vectors.extend(self.embedding.embed_documents(embedding_texts[index:index + batch_size]))
+        if len(vectors) != len(chunks):
+            raise ValueError(f"Embedding count mismatch: expected {len(chunks)}, got {len(vectors)}")
+        if any(len(vector) != self.embedding_size for vector in vectors):
+            actual = sorted({len(vector) for vector in vectors})
+            raise ValueError(f"Embedding dimension mismatch: expected {self.embedding_size}, got {actual}")
         title = str(_value(document, "title", "未命名文档"))
         fact_id = _value(document, "fact_id", None)
         source_version = str(_value(document, "source_hash", "")) or None
@@ -200,6 +245,17 @@ class CareerEvidenceVectorStore:
             "upsert_document",
             lambda: self.client.upsert(collection_name=self.collection_name, points=points, wait=True),
         )
+        current_point_ids = {str(point.id) for point in points}
+        stale_point_ids = sorted(existing_point_ids - current_point_ids)
+        if stale_point_ids:
+            self._run(
+                "delete_stale_document_points",
+                lambda: self.client.delete(
+                    collection_name=self.collection_name,
+                    points_selector=models.PointIdsList(points=stale_point_ids),
+                    wait=True,
+                ),
+            )
         return len(points)
 
     def search(

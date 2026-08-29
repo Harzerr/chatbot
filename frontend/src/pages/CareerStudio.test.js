@@ -1,4 +1,4 @@
-import { prepareUploadedFactReview } from './CareerStudio';
+import { mergeKnowledgeDocument, pollMarkdownFactJob, prepareUploadedFactReview } from './CareerStudio';
 
 const uploadedFact = (title, highlights) => ({
   fact_type: 'experience',
@@ -17,6 +17,18 @@ const uploadedFact = (title, highlights) => ({
   client_draft_key: `draft-${title}`,
 });
 
+test('merges a deduplicated upload by document id instead of rendering a copy', () => {
+  const original = [
+    { id: 7, title: '旧标题' },
+    { id: 8, title: '其他文档' },
+  ];
+
+  expect(mergeKnowledgeDocument(original, { id: 7, title: '已复用文档', deduplicated: true })).toEqual([
+    { id: 7, title: '已复用文档', deduplicated: true },
+    { id: 8, title: '其他文档' },
+  ]);
+});
+
 test('fills the editor with the first Skill result and keeps remaining uploads pending', () => {
   const first = uploadedFact('路径记录项目', ['处理定位跳变。', '实现路径滑动窗口。']);
   const second = uploadedFact('标定平台', ['递归解析 DLT 日志。']);
@@ -30,4 +42,24 @@ test('fills the editor with the first Skill result and keeps remaining uploads p
   expect(review.editor.quality.extraction_source).toBe('resume-project-extractor');
   expect(review.editor.client_draft_key).toBe('draft-路径记录项目');
   expect(review.draftFacts).toEqual([first, second]);
+});
+
+test('keeps polling queued and processing extraction jobs until a draft is ready', async () => {
+  const responses = [
+    { status: 'queued' },
+    { status: 'processing' },
+    { status: 'draft', facts: [uploadedFact('通用项目', ['完成接口验证。'])] },
+  ];
+  const getJob = jest.fn(async () => responses.shift());
+
+  const result = await pollMarkdownFactJob({
+    jobId: 'job-1',
+    getJob,
+    intervalMs: 0,
+    timeoutMs: 1000,
+    sleep: async () => {},
+  });
+
+  expect(result.status).toBe('draft');
+  expect(getJob).toHaveBeenCalledTimes(3);
 });

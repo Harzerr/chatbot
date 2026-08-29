@@ -54,10 +54,18 @@ class Settings(BaseSettings):
     CAREER_LLM_TIMEOUT: float = 30.0
     CAREER_RESUME_MAX_TOKENS: int = 5000
     CAREER_RESUME_TIMEOUT: float = 60.0
+    CAREER_RESUME_INPUT_WINDOW_CHARS: int = 14000
     # Keep model work below the RQ hard timeout so deterministic fallback can run.
     CAREER_FACT_AI_TIMEOUT: float = 90.0
+    INTERVIEW_MAX_FOLLOW_UPS: int = 2
+    SKILL_DISCOVERY_INTERVAL_SECONDS: float = 1.0
+    EVALUATION_FALLBACK_CACHE_TTL_SECONDS: int = 300
     # The extractor reads larger windows while persisted RAG chunks stay granular.
     CAREER_EXTRACTION_WINDOW_CHARS: int = 2400
+    CAREER_EXTRACTION_WINDOWS_PER_REQUEST: int = 6
+    CAREER_EXTRACTION_MAX_CONCURRENCY: int = 3
+    # Reject same-language resume claims when too little of the claim is grounded in exact quotes.
+    CAREER_CLAIM_MIN_EVIDENCE_COVERAGE: float = 0.5
     # Interview traffic uses a model available in the server's OpenRouter region.
     INTERVIEW_LLM_MODEL: str = "deepseek/deepseek-v4-flash"
     INTERVIEW_LLM_MAX_TOKENS: int = 1024
@@ -66,8 +74,8 @@ class Settings(BaseSettings):
     EVALUATION_LLM_MAX_TOKENS: int = 1536
     EVALUATION_REASONING_EFFORT: str = "none"
     EVALUATION_LLM_TIMEOUT: float = 40.0
-    EVALUATION_COMPACT_LLM_MAX_TOKENS: int = 768
-    EVALUATION_COMPACT_LLM_TIMEOUT: float = 12.0
+    EVALUATION_COMPACT_LLM_MAX_TOKENS: int = 1024
+    EVALUATION_COMPACT_LLM_TIMEOUT: float = 20.0
     # Keep memory extraction independent from the general-chat model's regional availability.
     MEMORY_LLM_MODEL: str = "deepseek/deepseek-v4-flash"
     PDFTOTEXT_PATH: str = ""
@@ -104,10 +112,11 @@ class Settings(BaseSettings):
     EVIDENCE_CHUNK_OVERLAP_CHARS: int = 120
     EVIDENCE_MAX_CHUNKS_PER_DOCUMENT: int = 2
     EVIDENCE_MIN_RETRIEVAL_SCORE: float = 0.05
-    EVIDENCE_RETRIEVER_VERSION: str = "evidence-v4-project-claims"
+    EVIDENCE_RETRIEVER_VERSION: str = "evidence-v5-project-scope"
     CAREER_EVIDENCE_VECTOR_ENABLED: bool = False
     CAREER_EVIDENCE_VECTOR_COLLECTION: str = "career_evidence"
     CAREER_EVIDENCE_VECTOR_TOP_K: int = 8
+    CAREER_EVIDENCE_VECTOR_BATCH_SIZE: int = 64
     CAREER_EVIDENCE_VECTOR_TIMEOUT: float = 10.0
     CAREER_EVIDENCE_HYBRID_LEXICAL_WEIGHT: float = 0.55
     CAREER_EVIDENCE_HYBRID_SEMANTIC_WEIGHT: float = 0.45
@@ -115,7 +124,7 @@ class Settings(BaseSettings):
     CAREER_EVIDENCE_INDEX_QUEUE_NAME: str = "career_evidence_index"
     CAREER_EVIDENCE_INDEX_QUEUE_TIMEOUT: int = 180
     EVALUATION_CACHE_TTL_SECONDS: int = 86400
-    EVALUATION_LOCK_TTL_SECONDS: int = 60
+    EVALUATION_LOCK_TTL_SECONDS: int = 90
     EVALUATION_CACHE_VERSION: str = "evaluation-v1"
     OPENROUTER_RESPONSE_CACHE_ENABLED: bool = False
     OPENROUTER_RESPONSE_CACHE_TTL_SECONDS: int = 86400

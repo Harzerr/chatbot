@@ -8,6 +8,7 @@ VENV_DIR="${VENV_DIR:-${PROJECT_DIR}/.venv}"
 CONDA_ENV_NAME="${CONDA_ENV_NAME:-chatbot313}"
 FRONTEND_DIR="${FRONTEND_DIR:-${PROJECT_DIR}/frontend}"
 LOG_DIR="${LOG_DIR:-${PROJECT_DIR}/logs/tmux}"
+TEX_BIN_DIR="${TEX_BIN_DIR:-${HOME}/.TinyTeX/bin/x86_64-linux}"
 
 BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
 BACKEND_PORT="${BACKEND_PORT:-8000}"
@@ -72,6 +73,7 @@ send_window() {
     "unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY && \
 export NO_PROXY='${LOCAL_NO_PROXY}' no_proxy='${LOCAL_NO_PROXY}' && \
 ${ENV_ACTIVATE_CMD} && \
+if [[ -d '${TEX_BIN_DIR}' ]]; then export PATH='${TEX_BIN_DIR}':\$PATH; fi && \
 cd '${workdir}' && \
 echo '[${window_name}] logging to ${logfile}' && \
 (${command}) 2>&1 | tee -a '${logfile}'" C-m

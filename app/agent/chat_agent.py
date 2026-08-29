@@ -137,6 +137,7 @@ class AISupport:
         self.__app_id = "AI-general-chatbot"
         self.__vector_store = vector_store
         self.__graph: CompiledStateGraph = get_graph()
+        self.__persistence_tasks: set[asyncio.Task] = set()
         self._initialized = True
 
     def __build_conversation_history_messages(self, history_context_docs: list[dict]) -> list:
@@ -177,6 +178,7 @@ class AISupport:
         resume_content: str | None = None,
         code_execution: dict | None = None,
         knowledge_context: str | None = None,
+        evidence_pack: dict | None = None,
         knowledge_context_cache_hit: bool = False,
     ) -> dict:
         """Process a user question and return an AI response.
@@ -295,6 +297,7 @@ class AISupport:
         evaluation_request: dict | None = None
         model_usage: dict | None = None
         answer_counted = False
+        workflow_state: dict = {}
         if use_skill_mode:
             logger.info("Using graph-dispatched skill mode skill=%s chat_id=%s", active_skill, chat_id)
             skill_messages = [
@@ -317,6 +320,7 @@ class AISupport:
                 resume_content=resume_content,
                 code_execution=code_execution,
                 knowledge_context=knowledge_context,
+                evidence_pack=evidence_pack,
                 knowledge_context_cache_hit=knowledge_context_cache_hit,
                 user_id=str(user_id),
                 tenant_id=str(tenant_id),
@@ -339,6 +343,16 @@ class AISupport:
             evaluation_request = response_state.get("evaluation_request")
             model_usage = response_state.get("model_usage")
             answer_counted = bool(response_state.get("answer_counted", False))
+            workflow_state = {
+                "phase": response_state.get("interview_phase"),
+                "question_mode": response_state.get("question_mode"),
+                "follow_up_count": int(response_state.get("follow_up_count") or 0),
+                "max_follow_ups": int(response_state.get("max_follow_ups") or 0),
+                "question_grounded": bool(response_state.get("question_grounded", False)),
+                "question_grounding_version": response_state.get("question_grounding_version"),
+                "question_evidence_ids": list(response_state.get("question_evidence_ids") or []),
+                "question_evidence_items": list(response_state.get("question_evidence_items") or []),
+            }
         else:
             history_messages = self.__build_conversation_history_messages(history_context_docs)
             messages = [
@@ -400,30 +414,37 @@ class AISupport:
             estimated_cost_usd=estimated_cost,
         )
 
-        asyncio.create_task(
-            self.__persist_turn(
-                question=question,
-                answer=final_response,
-                memory_scope=memory_scope,
-                tenant_id=tenant_id,
-                user_id=user_id,
-                chat_id=chat_id,
-                active_skill=active_skill,
-                interview_role=interview_role,
-                interview_level=interview_level,
-                interview_type=interview_type,
-                target_company=target_company,
-                jd_content=jd_content,
-                resume_content=resume_content,
-                code_execution=code_execution,
-                knowledge_context=knowledge_context,
-                knowledge_context_cache_hit=knowledge_context_cache_hit,
-                evaluation=evaluation,
-                evaluation_request=evaluation_request,
-                answer_counted=answer_counted,
-                history_turn_count=len(relevant_docs) + 1,
-            )
-        )
+        # Do not emit SSE [DONE] until the recoverable chat payload is durable.
+        # Optional Mem0 and embedding enrichment continue in the background.
+        persistence_task = asyncio.create_task(self.__persist_turn(
+            question=question,
+            answer=final_response,
+            memory_scope=memory_scope,
+            tenant_id=tenant_id,
+            user_id=user_id,
+            chat_id=chat_id,
+            active_skill=active_skill,
+            interview_role=interview_role,
+            interview_level=interview_level,
+            interview_type=interview_type,
+            target_company=target_company,
+            jd_content=jd_content,
+            resume_content=resume_content,
+            code_execution=code_execution,
+            knowledge_context=knowledge_context,
+            evidence_pack=evidence_pack,
+            knowledge_context_cache_hit=knowledge_context_cache_hit,
+            evaluation=evaluation,
+            evaluation_request=evaluation_request,
+            answer_counted=answer_counted,
+            workflow_state=workflow_state,
+            history_turn_count=len(relevant_docs) + 1,
+        ))
+        self.__persistence_tasks.add(persistence_task)
+        persistence_task.add_done_callback(self.__persistence_tasks.discard)
+        # Keep the write alive if the browser refreshes after receiving the
+        # answer but before the SSE connection emits its final marker.
+        await asyncio.shield(persistence_task)
 
         return {"messages": [final_response]}
 
@@ -451,19 +472,27 @@ class AISupport:
         resume_content: str | None,
         code_execution: dict | None,
         knowledge_context: str | None,
+        evidence_pack: dict | None,
         knowledge_context_cache_hit: bool,
         evaluation: AnswerEvaluation | None,
         evaluation_request: dict | None,
         answer_counted: bool,
+        workflow_state: dict,
         history_turn_count: int,
     ) -> None:
-        memory_task = self.__add_memory(
-            question,
-            answer,
-            memory_scope=memory_scope,
-            tenant_id=tenant_id,
-        )
-        vector_task = asyncio.to_thread(
+        async def persist_optional_memory() -> None:
+            try:
+                await self.__add_memory(
+                    question,
+                    answer,
+                    memory_scope=memory_scope,
+                    tenant_id=tenant_id,
+                )
+            except Exception as exc:
+                logger.warning("mem0 add failed in background: %s", exc)
+
+        asyncio.create_task(persist_optional_memory())
+        point_ids = await asyncio.to_thread(
             self.__vector_store.store_conversation,
             question=question,
             answer=answer,
@@ -481,24 +510,42 @@ class AISupport:
                 "resume_content": resume_content,
                 "code_execution": code_execution,
                 "knowledge_context": knowledge_context,
+                "evidence_pack": evidence_pack,
                 "knowledge_context_cache_hit": knowledge_context_cache_hit,
                 "evaluation": evaluation.model_dump() if evaluation else None,
                 "evaluation_status": "completed" if evaluation else ("queued" if evaluation_request else None),
                 "answer_counted": answer_counted,
+                "interview_phase": workflow_state.get("phase"),
+                "question_mode": workflow_state.get("question_mode"),
+                "follow_up_count": workflow_state.get("follow_up_count", 0),
+                "max_follow_ups": workflow_state.get("max_follow_ups", 0),
+                "question_grounded": bool(workflow_state.get("question_grounded", False)),
+                "question_grounding_version": workflow_state.get("question_grounding_version"),
+                "question_evidence_ids": workflow_state.get("question_evidence_ids", []),
+                "question_evidence_items": workflow_state.get("question_evidence_items", []),
             },
         )
-        results = await asyncio.gather(memory_task, vector_task, return_exceptions=True)
-        if isinstance(results[0], Exception):
-            logger.warning("mem0 add failed in background: %s", results[0])
-        if isinstance(results[1], Exception):
-            logger.warning("vector store write failed in background: %s", results[1])
-            return
+        if not point_ids:
+            raise RuntimeError("Conversation persistence returned no Qdrant point ID")
+
+        async def enrich_embedding() -> None:
+            try:
+                await asyncio.to_thread(
+                    self.__vector_store.enrich_conversation_embedding,
+                    str(point_ids[0]),
+                    f"User: {question}\nAssistant: {answer}",
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Conversation embedding enrichment failed; durable history remains available: chat_id=%s point_id=%s error=%s",
+                    chat_id,
+                    point_ids[0],
+                    exc,
+                )
+
+        asyncio.create_task(enrich_embedding())
 
         if evaluation_request:
-            point_ids = results[1]
-            if not point_ids:
-                logger.warning("Evaluation was not queued because conversation point ID was missing")
-                return
             job_payload = {
                 "point_id": str(point_ids[0]),
                 "tenant_id": str(tenant_id),

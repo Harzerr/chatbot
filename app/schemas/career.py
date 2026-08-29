@@ -58,6 +58,10 @@ class FactExtractionResponse(BaseModel):
     message: str = ""
 
 
+class FactExtractionJobResponse(FactExtractionResponse):
+    job_id: str | None = None
+
+
 class MarkdownFactExtractionResponse(BaseModel):
     job_id: str | None = None
     job_ids: list[str] = Field(default_factory=list)
@@ -155,6 +159,8 @@ class CareerKnowledgeDocumentRead(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     source_hash: str
     is_archived: bool
+    deduplicated: bool = False
+    restored_from_archive: bool = False
     created_at: datetime
     updated_at: datetime
 

@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Alert,
   Box,
   Button,
@@ -14,6 +17,7 @@ import {
 } from '@mui/material';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
+import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import chatService from '../services/chatService';
@@ -22,6 +26,20 @@ const pendingStatuses = new Set(['queued', 'processing']);
 const safeFileNamePart = (value = '') => String(value).replace(/[\\/:*?"<>|]/g, '-').trim();
 const reportFileName = (report) => `${safeFileNamePart(report?.interview_role || '模拟面试')}-${safeFileNamePart(report?.target_company || '通用岗位')}-面试评估报告.pdf`;
 const verdictLabel = { correct: '证据正确', incorrect: '证据不对', partial: '部分相关' };
+
+const exportErrorMessage = async (requestError) => {
+  if (requestError.response?.status === 401) return '登录状态已过期，请重新登录后导出报告。';
+  const payload = requestError.response?.data;
+  if (payload instanceof Blob) {
+    try {
+      const parsed = JSON.parse(await payload.text());
+      return parsed.detail;
+    } catch (parseError) {
+      return '';
+    }
+  }
+  return payload?.detail;
+};
 
 const InterviewEvaluation = () => {
   const { chatId } = useParams();
@@ -149,7 +167,8 @@ const InterviewEvaluation = () => {
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (requestError) {
       console.error('Failed to export interview report:', requestError);
-      setError(requestError.response?.data?.detail || '导出评估报告失败，请稍后重试。');
+      const detail = await exportErrorMessage(requestError);
+      setError(detail || '导出评估报告失败，请确认登录状态后重试。');
     } finally {
       setExporting(false);
     }
@@ -188,12 +207,22 @@ const InterviewEvaluation = () => {
             {report.strengths?.length > 0 && <Box sx={{ flex: 1 }}><Typography variant="subtitle2" color="success.main">表现较好的地方</Typography>{report.strengths.map((item) => <Typography key={item} variant="body2" sx={{ mt: 0.5, lineHeight: 1.65 }}>· {item}</Typography>)}</Box>}
             {report.improvement_areas?.length > 0 && <Box sx={{ flex: 1 }}><Typography variant="subtitle2" color="warning.dark">建议改进</Typography>{report.improvement_areas.map((item) => <Typography key={item} variant="body2" sx={{ mt: 0.5, lineHeight: 1.65 }}>· {item}</Typography>)}</Box>}
           </Stack>}
-          {report.content_analysis && <Box sx={{ mt: 2, p: 1.5, bgcolor: '#f8fafc', borderRadius: 1.5 }}><Typography variant="subtitle2">内容分析</Typography><Typography variant="body2" sx={{ mt: 0.5, lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>{report.content_analysis}</Typography></Box>}
-          {report.recommendations?.length > 0 && <Box sx={{ mt: 2 }}><Typography variant="subtitle2">后续建议</Typography><Stack spacing={0.4} sx={{ mt: 0.5 }}>{report.recommendations.map((item) => <Typography key={item} variant="body2" sx={{ lineHeight: 1.65 }}>· {item}</Typography>)}</Stack></Box>}
-          {report.recommended_resources?.length > 0 && <Box sx={{ mt: 2 }}><Typography variant="subtitle2">推荐学习资源</Typography><Stack spacing={0.5} sx={{ mt: 0.5 }}>{report.recommended_resources.map((item) => <Typography key={`${item.title}-${item.category}`} variant="body2" sx={{ lineHeight: 1.65 }}>{item.title}：{item.reason}</Typography>)}</Stack></Box>}
+          {(report.content_analysis || report.recommendations?.length > 0 || report.recommended_resources?.length > 0) && <Accordion disableGutters elevation={0} sx={{ mt: 2, border: '1px solid rgba(148,163,184,0.22)', borderRadius: '10px !important', '&:before': { display: 'none' } }}>
+            <AccordionSummary expandIcon={<ExpandMoreRoundedIcon />}><Typography variant="subtitle2">查看详细分析与学习建议</Typography></AccordionSummary>
+            <AccordionDetails sx={{ pt: 0 }}>
+              {report.content_analysis && <Box sx={{ p: 1.5, bgcolor: '#f8fafc', borderRadius: 1.5 }}><Typography variant="subtitle2">内容分析</Typography><Typography variant="body2" sx={{ mt: 0.5, lineHeight: 1.75, whiteSpace: 'pre-wrap' }}>{report.content_analysis}</Typography></Box>}
+              {report.recommendations?.length > 0 && <Box sx={{ mt: 1.5 }}><Typography variant="subtitle2">后续建议</Typography><Stack spacing={0.4} sx={{ mt: 0.5 }}>{report.recommendations.map((item) => <Typography key={item} variant="body2" sx={{ lineHeight: 1.65 }}>· {item}</Typography>)}</Stack></Box>}
+              {report.recommended_resources?.length > 0 && <Box sx={{ mt: 1.5 }}><Typography variant="subtitle2">推荐学习资源</Typography><Stack spacing={0.5} sx={{ mt: 0.5 }}>{report.recommended_resources.map((item) => <Typography key={`${item.title}-${item.category}`} variant="body2" sx={{ lineHeight: 1.65 }}>{item.title}：{item.reason}</Typography>)}</Stack></Box>}
+            </AccordionDetails>
+          </Accordion>}
         </Paper>
 
-        {report.competency_assessments?.length > 0 && <Paper sx={{ p: { xs: 2, md: 3 }, mb: 2.5 }}><Typography variant="h6">能力覆盖与评估依据</Typography><Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 1.5 }}>{report.coverage_status}</Typography><Stack spacing={1.2}>{report.competency_assessments.map((item) => <Box key={item.capability} sx={{ p: 1.4, bgcolor: '#f8fafc', borderRadius: 1.5 }}><Stack direction="row" justifyContent="space-between" spacing={1}><Typography fontWeight={700}>{item.capability}</Typography><Chip size="small" label={`${item.score} 分 · ${item.covered_questions} 题 · ${item.confidence}置信度`} /></Stack>{item.evidence?.map((evidence) => <Typography key={evidence} variant="body2" sx={{ mt: 0.5, lineHeight: 1.65 }}>依据：{evidence}</Typography>)}{item.missing_points?.map((point) => <Typography key={point} variant="body2" color="text.secondary" sx={{ mt: 0.4 }}>待补：{point}</Typography>)}</Box>)}</Stack></Paper>}
+        {report.competency_assessments?.length > 0 && <Paper sx={{ mb: 2.5, overflow: 'hidden' }}><Accordion disableGutters elevation={0} sx={{ '&:before': { display: 'none' } }}>
+          <AccordionSummary expandIcon={<ExpandMoreRoundedIcon />} sx={{ px: { xs: 2, md: 3 }, py: 0.8 }}>
+            <Box><Typography variant="h6">能力覆盖</Typography><Typography variant="body2" color="text.secondary" sx={{ mt: 0.3 }}>{report.coverage_status} · 展开查看评分依据</Typography></Box>
+          </AccordionSummary>
+          <AccordionDetails sx={{ px: { xs: 2, md: 3 }, pt: 0, pb: 3 }}><Stack spacing={1.2}>{report.competency_assessments.map((item) => <Box key={item.capability} sx={{ p: 1.4, bgcolor: '#f8fafc', borderRadius: 1.5 }}><Stack direction="row" justifyContent="space-between" spacing={1}><Typography fontWeight={700}>{item.capability}</Typography><Chip size="small" label={`${item.score} 分 · ${item.covered_questions} 题 · ${item.confidence}置信度`} /></Stack>{item.evidence?.map((evidence) => <Typography key={evidence} variant="body2" sx={{ mt: 0.5, lineHeight: 1.65 }}>依据：{evidence}</Typography>)}{item.missing_points?.map((point) => <Typography key={point} variant="body2" color="text.secondary" sx={{ mt: 0.4 }}>待补：{point}</Typography>)}</Box>)}</Stack></AccordionDetails>
+        </Accordion></Paper>}
 
         <Paper sx={{ p: { xs: 2, md: 3 } }}>
           <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}><FactCheckRoundedIcon color="primary" /><Typography variant="h6">逐题评估与证据核对</Typography></Stack>
@@ -202,6 +231,7 @@ const InterviewEvaluation = () => {
             {(report.interview_questions || []).map((question, index) => {
               const evaluation = question.evaluation || {};
               const evidenceItems = question.evaluation?.knowledge_evidence_items || [];
+              const questionEvidenceItems = question.question_evidence_items || [];
               const rubricScores = evaluation.rubric_scores || [];
               const answerEvidence = Array.from(new Set([
                 ...(evaluation.resume_evidence || []),
@@ -215,23 +245,34 @@ const InterviewEvaluation = () => {
                 <Box key={question.point_id || index} sx={{ p: 2, border: '1px solid rgba(148,163,184,0.24)', borderRadius: 2, bgcolor: '#fff' }}>
                   <Typography variant="overline" color="primary">第 {index + 1} 题</Typography>
                   <Typography sx={{ fontWeight: 700, lineHeight: 1.7 }}>{question.question || '未记录问题'}</Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.7, whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{question.candidate_answer || '未记录回答'}</Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.7, whiteSpace: 'pre-wrap', lineHeight: 1.7, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{question.candidate_answer || '未记录回答'}</Typography>
                   <Divider sx={{ my: 1.5 }} />
                   {isPending ? <Stack direction="row" spacing={1} alignItems="center"><CircularProgress size={16} /><Typography color="text.secondary">本题正在评估…</Typography><Button size="small" startIcon={<RefreshRoundedIcon />} onClick={() => retryEvaluation(question)} disabled={retryingPointId === question.point_id}>重新入队</Button></Stack> : question.evaluation_status === 'failed' ? <><Alert severity="error">评估失败：{question.evaluation_error || '评估服务暂时不可用。'}</Alert><Button sx={{ mt: 1 }} size="small" variant="outlined" startIcon={<RefreshRoundedIcon />} onClick={() => retryEvaluation(question)} disabled={retryingPointId === question.point_id}>重新评估</Button></> : (
                     <>
                       <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mb: 1 }}><Chip size="small" label={`综合 ${question.evaluation?.overall_score ?? '暂无'} 分`} color="primary" /><Chip size="small" label={question.evaluation?.verdict || '已完成'} variant="outlined" />{question.evaluation?.evaluation_mode === 'fallback' && <Chip size="small" label="规则降级" color="warning" variant="outlined" />}</Stack>
+                      {evaluation.evaluation_mode === 'fallback' && <Alert severity="warning" sx={{ mb: 1.2 }}>本题使用低置信度规则评估，建议稍后重新评估。</Alert>}
                       <Typography variant="body2" sx={{ lineHeight: 1.75 }}>{evaluation.summary || '暂无评估摘要。'}</Typography>
-                      {evaluation.correctness_summary && <Box sx={{ mt: 1, p: 1.2, bgcolor: '#f8fafc', borderRadius: 1.5 }}><Typography variant="subtitle2">正确性判断</Typography><Typography variant="body2" sx={{ mt: 0.4, lineHeight: 1.7 }}>{evaluation.correctness_summary}</Typography></Box>}
+                      {evaluation.question_type === '项目深挖题' && <Alert severity={evaluation.resume_consistency === '存在冲突' ? 'error' : evaluation.resume_consistency === '一致' ? 'success' : 'warning'} sx={{ mt: 1.5 }}><Typography variant="subtitle2">个人经历一致性：{evaluation.resume_consistency || '证据不足'}</Typography><Typography variant="body2" sx={{ mt: 0.4 }}>{evaluation.consistency_summary || '现有资料不足以完成一致性核验。'}</Typography></Alert>}
+                      {evaluation.correctness_summary && <Box sx={{ mt: 1, p: 1.2, bgcolor: '#f8fafc', borderRadius: 1.5 }}><Typography variant="subtitle2">关键判断</Typography><Typography variant="body2" sx={{ mt: 0.4, lineHeight: 1.7 }}>{evaluation.correctness_summary}</Typography></Box>}
+                      {evaluation.correction_suggestion && <Typography variant="body2" color="warning.dark" sx={{ mt: 1 }}>改进建议：{evaluation.correction_suggestion}</Typography>}
+                      <Accordion disableGutters elevation={0} sx={{ mt: 1.5, border: '1px solid rgba(148,163,184,0.22)', borderRadius: '10px !important', '&:before': { display: 'none' } }}>
+                        <AccordionSummary expandIcon={<ExpandMoreRoundedIcon />}><Typography variant="subtitle2">查看完整回答、评分依据与证据核对</Typography></AccordionSummary>
+                        <AccordionDetails sx={{ pt: 0 }}>
+                      <Box sx={{ p: 1.2, bgcolor: '#f8fafc', borderRadius: 1.5 }}><Typography variant="subtitle2">完整回答</Typography><Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{question.candidate_answer || '未记录回答'}</Typography></Box>
+                      {questionEvidenceItems.length > 0 && <Box sx={{ mt: 1.2, p: 1.2, bgcolor: '#f0f9ff', border: '1px solid rgba(14,116,144,0.18)', borderRadius: 1.5 }}><Typography variant="subtitle2">本题项目深挖依据</Typography><Typography variant="caption" color="text.secondary">以下证据在生成本题时作为强制项目锚点，不代表候选人已经证明个人职责。</Typography>{questionEvidenceItems.map((item) => <Typography key={item.evidence_id} variant="body2" sx={{ mt: 0.5, lineHeight: 1.65 }}>{item.document_title || '技术文档'} · {item.section || '未标注章节'} · {item.evidence_id}</Typography>)}</Box>}
+                      {evaluation.evaluation_mode === 'fallback' && <Alert severity="warning" sx={{ mt: 1.2 }}>本题未取得完整模型评估结果，当前展示的是低置信度临时评分和资料直接核验结果。通常由上游模型超时、输出过长或返回格式不完整触发。</Alert>}
+                      {evaluation.consistency_checks?.length > 0 && <Stack spacing={0.8} sx={{ mt: 1.2 }}>{evaluation.consistency_checks.map((check, checkIndex) => { const contradictoryLegacyRationale = check.verdict === '证据不足' && /(一致|相符|明确描述|明确提到|支持)/.test(check.rationale || ''); const rationale = contradictoryLegacyRationale ? '该声明原有引用未通过后端校验，现有资料不足以确认这条完整声明。' : check.rationale; return <Box key={`${check.candidate_claim}-${checkIndex}`} sx={{ p: 1.2, border: '1px solid rgba(14,116,144,0.2)', borderRadius: 1.5, bgcolor: '#f8fcfd' }}><Stack direction="row" justifyContent="space-between" spacing={1}><Typography variant="body2" fontWeight={700}>回答声明：{check.candidate_claim}</Typography><Chip size="small" label={check.verdict} color={check.verdict === '冲突' ? 'error' : check.verdict === '支持' ? 'success' : 'warning'} /></Stack>{rationale && <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>{rationale}</Typography>}{check.citations?.map((citation) => <Typography key={`${citation.evidence_id}-${citation.quote}`} variant="caption" sx={{ display: 'block', mt: 0.5, lineHeight: 1.55 }}>证据 {citation.evidence_id}：{citation.quote}</Typography>)}</Box>; })}</Stack>}
                       {rubricScores.length > 0 && <Box sx={{ mt: 1.5 }}><Typography variant="subtitle2">评分 Rubric 与判定理由</Typography><Stack spacing={0.8} sx={{ mt: 0.7 }}>{rubricScores.map((item) => <Box key={item.dimension} sx={{ p: 1, border: '1px solid rgba(148,163,184,0.18)', borderRadius: 1 }}><Stack direction="row" justifyContent="space-between"><Typography variant="body2" fontWeight={700}>{item.label || item.dimension}</Typography><Chip size="small" label={`${item.score}/4`} /></Stack>{item.rationale && <Typography variant="body2" sx={{ mt: 0.4, lineHeight: 1.6 }}>{item.rationale}</Typography>}{item.evidence?.length > 0 && <Typography variant="caption" sx={{ display: 'block', mt: 0.4, color: '#475569', lineHeight: 1.55 }}>本维度引用：{item.evidence.join('；')}</Typography>}{item.missing_points?.map((point) => <Typography key={point} variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.3 }}>待补充：{point}</Typography>)}</Box>)}</Stack></Box>}
                       {answerEvidence.length > 0 && <Box sx={{ mt: 1.5, p: 1.2, bgcolor: '#fffdf5', border: '1px solid rgba(245,158,11,0.25)', borderRadius: 1.5 }}><Typography variant="subtitle2">评估引用的回答/简历依据</Typography>{answerEvidence.map((item) => <Typography key={item} variant="body2" sx={{ mt: 0.4, lineHeight: 1.65 }}>· {item}</Typography>)}</Box>}
                       {plainKnowledgeEvidence.length > 0 && evidenceItems.length === 0 && <Box sx={{ mt: 1.5 }}><Typography variant="subtitle2">RAG 召回证据原文</Typography>{plainKnowledgeEvidence.map((item) => <Typography key={item} variant="body2" sx={{ mt: 0.5, p: 1, bgcolor: '#f8fafc', whiteSpace: 'pre-wrap', lineHeight: 1.65 }}>{item}</Typography>)}</Box>}
                       {evidenceItems.length === 0 && evaluation.question_type !== '代码题' && <Alert severity="info" sx={{ mt: 1.5 }}>本题没有形成可核对的职业事实证据，当前评分仅依据候选人回答、简历和规则；不会把未召回的内容当作 RAG 证据。</Alert>}
                       {evaluation.evaluation_mode === 'fallback' && evaluation.evaluation_basis?.length > 0 && <Box sx={{ mt: 1.5 }}><Typography variant="subtitle2">规则/降级评估依据</Typography>{Array.from(new Set(evaluation.evaluation_basis)).map((item) => <Typography key={item} variant="body2" sx={{ mt: 0.4, lineHeight: 1.65 }}>· {item}</Typography>)}</Box>}
                       {evaluation.expected_key_points?.length > 0 && <Box sx={{ mt: 1.5 }}><Typography variant="subtitle2">应覆盖的关键点</Typography>{evaluation.expected_key_points.map((item) => <Typography key={item} variant="body2" sx={{ mt: 0.4 }}>· {item}</Typography>)}</Box>}
-                      {evaluation.correction_suggestion && <Typography variant="body2" color="warning.dark" sx={{ mt: 1 }}>改进建议：{evaluation.correction_suggestion}</Typography>}
                       {question.reference_answer && <Box sx={{ mt: 1.5, p: 1.2, bgcolor: '#f8fafc', borderRadius: 1.5 }}><Typography variant="subtitle2">参考答案</Typography><Typography variant="body2" sx={{ mt: 0.4, whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{question.reference_answer}</Typography></Box>}
                       {evidenceItems.length > 0 && <Stack spacing={1.2} sx={{ mt: 1.5 }}><Typography variant="subtitle2">RAG 召回的职业事实证据（逐条核对）</Typography><Typography variant="caption" color="text.secondary">每条证据都有唯一 ID；选择“证据正确 / 证据不对 / 部分相关”后提交，系统会把核验结果连同本题重新送入评估。</Typography>{evidenceItems.map((evidence) => { const key = `${question.point_id}:${evidence.evidence_id}`; const draft = feedbackDrafts[key] || {}; return <Box key={evidence.evidence_id} sx={{ p: 1.4, bgcolor: '#f8fafc', border: '1px solid rgba(125,211,252,0.35)', borderRadius: 1.5 }}><Typography variant="caption" color="text.secondary">{evidence.document_title || '技术文档'} · {evidence.section || '未标注章节'} · {evidence.evidence_id} · 来源：{evidence.retrieval_method || 'unknown'}</Typography><Typography variant="body2" sx={{ mt: 0.6, whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{evidence.quote || '暂无证据原文。'}</Typography><Stack direction="row" spacing={1} sx={{ mt: 1 }}>{Object.entries(verdictLabel).map(([verdict, label]) => <Button key={verdict} size="small" variant={draft.verdict === verdict ? 'contained' : 'outlined'} color={verdict === 'incorrect' ? 'error' : verdict === 'partial' ? 'warning' : 'success'} onClick={() => updateFeedback(question.point_id, evidence.evidence_id, { verdict })}>{label}</Button>)}</Stack>{(draft.verdict === 'incorrect' || draft.verdict === 'partial') && <TextField fullWidth size="small" multiline minRows={2} label="告诉模型哪里不对（可补充正确证据或边界）" value={draft.correction || ''} onChange={(event) => updateFeedback(question.point_id, evidence.evidence_id, { correction: event.target.value })} sx={{ mt: 1 }} />}</Box>; })}<Button variant="contained" onClick={() => submitFeedback(question)} disabled={submittingPointId === question.point_id} sx={{ alignSelf: 'flex-start' }}>{submittingPointId === question.point_id ? '已提交，重新评估中…' : '提交核对并重新评估本题'}</Button></Stack>}
                       <Button sx={{ mt: 1.5 }} size="small" variant="outlined" startIcon={<RefreshRoundedIcon />} onClick={() => retryEvaluation(question)} disabled={retryingPointId === question.point_id}>重新评估本题</Button>
+                        </AccordionDetails>
+                      </Accordion>
                     </>
                   )}
                 </Box>

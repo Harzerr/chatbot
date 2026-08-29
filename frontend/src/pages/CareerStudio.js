@@ -146,6 +146,29 @@ export const prepareUploadedFactReview = (preparedFacts) => {
   };
 };
 
+const PROJECT_EXTRACTION_POLL_TIMEOUT_MS = Number(
+  process.env.REACT_APP_CAREER_FACT_POLL_TIMEOUT_MS || 210000,
+);
+
+export const pollMarkdownFactJob = async ({
+  jobId,
+  getJob,
+  onProgress = () => {},
+  intervalMs = 1500,
+  timeoutMs = PROJECT_EXTRACTION_POLL_TIMEOUT_MS,
+  sleep = (delay) => new Promise((resolve) => setTimeout(resolve, delay)),
+  timeoutMessage = '项目仍在后台提炼，请稍后重试；已完成的结果不会被当前批次覆盖。',
+}) => {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    await sleep(intervalMs);
+    const response = await getJob(jobId);
+    if (!['queued', 'processing'].includes(response?.status)) return response;
+    onProgress(Math.round((Date.now() - startedAt) / 1000), response?.status);
+  }
+  throw new Error(timeoutMessage);
+};
+
 const jobToEditor = (job) => ({
   id: job?.id,
   title: job?.title || '',
@@ -166,6 +189,11 @@ const documentToEditor = (document) => ({
   document_type: document?.document_type || 'technical_doc',
   content_text: document?.content_text || '',
 });
+
+export const mergeKnowledgeDocument = (documents, savedDocument) => [
+  savedDocument,
+  ...(documents || []).filter((document) => document.id !== savedDocument.id),
+];
 
 const jobRequirements = (job) => {
   const normalized = job?.normalized || {};
@@ -307,7 +335,18 @@ const CareerStudio = () => {
       throw new Error('请先到个人档案上传简历。');
     }
     setFactExtractionWarnings([]);
-    const response = await careerService.extractFacts();
+    let response = await careerService.extractFacts();
+    if (response.job_id && ['queued', 'processing'].includes(response.status)) {
+      response = await pollMarkdownFactJob({
+        jobId: response.job_id,
+        getJob: careerService.getFactExtractionJob,
+        onProgress: (elapsedSeconds) => setNotice(`正在从简历提取职业事实…（已等待 ${elapsedSeconds} 秒）`),
+        timeoutMessage: '职业事实仍在后台提取，请稍后重试。',
+      });
+    }
+    if (response.status === 'failed') {
+      throw new Error(response.message || '职业事实提取失败，请稍后重试。');
+    }
     const extractedFacts = response.facts || [];
     setFactExtractionWarnings(response.warnings || []);
     if (!extractedFacts.length) {
@@ -341,19 +380,13 @@ const CareerStudio = () => {
   };
 
   const waitForMarkdownFactJob = async (jobId, index, total) => {
-    let response;
-    for (let attempt = 0; attempt < 90; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      response = await careerService.getMarkdownFactJob(jobId);
-      if (response.status === 'processing') {
-        setNotice(`正在提炼第 ${index + 1}/${total} 个项目…（已等待 ${Math.round((attempt + 1) * 1.5)} 秒）`);
-        continue;
-      }
-      break;
-    }
-    if (!response || response.status === 'processing' || response.status === 'queued') {
-      throw new Error(`第 ${index + 1} 个项目仍在后台提炼，请稍后刷新事实库。`);
-    }
+    const response = await pollMarkdownFactJob({
+      jobId,
+      getJob: careerService.getMarkdownFactJob,
+      onProgress: (elapsedSeconds) => {
+        setNotice(`正在提炼第 ${index + 1}/${total} 个项目…（已等待 ${elapsedSeconds} 秒）`);
+      },
+    });
     if (response.status === 'failed' || (!(response.facts?.length) && !response.fact)) {
       throw new Error(response.message || `第 ${index + 1} 个项目提炼失败，请重试。`);
     }
@@ -374,17 +407,21 @@ const CareerStudio = () => {
     }));
     const response = await careerService.extractFactFromMarkdown({ files, metadata });
     const jobIds = response.job_ids?.length ? response.job_ids : (response.job_id ? [response.job_id] : []);
-    const responses = response.status === 'queued'
-      ? await Promise.all(jobIds.map((jobId, index) => waitForMarkdownFactJob(jobId, index, jobIds.length)))
-      : [response];
-    const preparedFacts = responses.flatMap((result, index) => {
+    const settled = response.status === 'queued'
+      ? await Promise.allSettled(jobIds.map((jobId, index) => waitForMarkdownFactJob(jobId, index, jobIds.length)))
+      : [{ status: 'fulfilled', value: response }];
+    const completed = settled.flatMap((item, index) => (
+      item.status === 'fulfilled' ? [{ result: item.value, uploadIndex: index }] : []
+    ));
+    const failedCount = settled.length - completed.length;
+    const preparedFacts = completed.flatMap(({ result, uploadIndex }) => {
       const extractedFacts = result.facts?.length ? result.facts : (result.fact ? [result.fact] : []);
       return extractedFacts.map((fact) => ({
         ...fact,
         fact_type: fact.fact_type || upload.fact_type || 'project',
         is_verified: false,
-        source_file: files[index],
-        source_document: result.source_document || response.source_documents?.[index] || {},
+        source_file: files[uploadIndex],
+        source_document: result.source_document || response.source_documents?.[uploadIndex] || {},
         quality: result.quality || {},
       }));
     });
@@ -397,6 +434,9 @@ const CareerStudio = () => {
     setDraftFacts((items) => [...items, ...review.draftFacts]);
     setFactEditor(review.editor);
     setProjectUploadDialog(null);
+    if (failedCount) {
+      return `已回填 ${preparedFacts.length} 条项目草稿，另有 ${failedCount} 条未完成或失败，可单独重试。`;
+    }
     return preparedFacts.length > 1
       ? `首条项目草稿已回填表单，全部 ${preparedFacts.length} 条草稿均保留在待确认列表。`
       : 'Skill 提炼的项目内容已回填表单，关闭弹窗后仍可从待确认列表继续编辑。';
@@ -419,8 +459,11 @@ const CareerStudio = () => {
     }
     return run(async () => {
       const saved = await careerService.uploadKnowledgeDocument({ file, factId });
-      setKnowledgeDocuments((items) => [saved, ...items]);
+      setKnowledgeDocuments((items) => mergeKnowledgeDocument(items, saved));
       setDocumentEditor(documentToEditor(saved));
+      if (saved.restored_from_archive) return '检测到相同文件，已恢复原有技术文档。';
+      if (saved.deduplicated) return '检测到相同文件，已复用原有技术文档，未重复保存。';
+      return null;
     }, '项目技术文档已保存，可直接在线编辑。');
   };
 
@@ -532,7 +575,7 @@ const CareerStudio = () => {
             title: factEditor.source_document?.project_metadata?.title || project.title || saved.title,
             projectKey: factEditor.source_document?.project_metadata?.project_key || project.project_key || saved.content?.project_key,
           });
-          setKnowledgeDocuments((items) => [document, ...items]);
+          setKnowledgeDocuments((items) => mergeKnowledgeDocument(items, document));
         } catch (err) {
           setError(`事实已保存，但 Markdown 文档未绑定成功：${err.response?.data?.detail || err.message || '请稍后重试'}。`);
         }

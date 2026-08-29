@@ -1,4 +1,5 @@
 import asyncio
+import math
 import time
 
 from rq import get_current_job
@@ -98,7 +99,12 @@ async def process_evaluation_job(payload: dict) -> dict:
             return cached_result
 
         lock_key = f"{cache_key}:lock"
-        lock_ttl = getattr(settings, "EVALUATION_LOCK_TTL_SECONDS", 60)
+        minimum_lock_ttl = math.ceil(
+            settings.EVALUATION_LLM_TIMEOUT
+            + getattr(settings, "EVALUATION_COMPACT_LLM_TIMEOUT", 15.0)
+            + 15
+        )
+        lock_ttl = max(getattr(settings, "EVALUATION_LOCK_TTL_SECONDS", 60), minimum_lock_ttl)
         lock_token = cache.acquire_lock(lock_key, lock_ttl)
         if lock_token is None and cache.available is True:
             # Another worker owns the same request. Wait for its result instead of
@@ -118,7 +124,13 @@ async def process_evaluation_job(payload: dict) -> dict:
                     )
                     logger.info("Interview evaluation singleflight hit: chat_id=%s point_id=%s", chat_id, point_id)
                     return cached_result
-            lock_token = cache.acquire_lock(lock_key, lock_ttl)
+                lock_token = cache.acquire_lock(lock_key, lock_ttl)
+                if lock_token:
+                    break
+            if lock_token is None:
+                # Never bypass single-flight. RQ retry can safely resume after the
+                # current owner completes or its lease expires.
+                raise TimeoutError("Timed out waiting for the evaluation single-flight result")
 
         try:
             # Recheck after acquiring the lock because the owner may have finished

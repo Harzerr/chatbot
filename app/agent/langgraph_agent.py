@@ -115,11 +115,20 @@ class AgentState(TypedDict):
     resume_content: Optional[str]
     code_execution: Optional[dict]
     knowledge_context: Optional[str]
+    evidence_pack: Optional[dict]
     knowledge_context_cache_hit: bool
     evaluation: Optional[dict]
     evaluation_request: Optional[dict]
     is_finished: bool
     answer_counted: bool
+    interview_phase: Optional[str]
+    question_mode: Optional[str]
+    follow_up_count: int
+    max_follow_ups: int
+    question_grounded: bool
+    question_grounding_version: Optional[str]
+    question_evidence_ids: List[str]
+    question_evidence_items: List[dict]
     user_id: Optional[str]
     tenant_id: Optional[str]
     chat_id: Optional[str]
@@ -457,9 +466,13 @@ async def create_graph():
         base_url=settings.OPENROUTER_API_BASE,
         stream_usage=True,
     )
-    # Keep chat routing limited to conversational skills. Workflow-only skills
-    # such as resume extraction are executed explicitly by their service.
-    _skill_registry = create_default_skill_registry(skill_llm, skill_names={"interview-skills"})
+    # New chat-enabled SKILL.md bundles become routable without rebuilding the
+    # graph; workflow-only skills opt out through their frontmatter.
+    _skill_registry = create_default_skill_registry(
+        skill_llm,
+        chat_only=True,
+        refresh_interval_seconds=settings.SKILL_DISCOVERY_INTERVAL_SECONDS,
+    )
 
     async def skill_node(state: AgentState):
         try:
@@ -479,6 +492,14 @@ async def create_graph():
                 "is_finished": result.is_finished,
                 "answer_counted": result.answer_counted,
                 "model_usage": result.model_usage,
+                "interview_phase": (result.workflow_state or {}).get("phase"),
+                "question_mode": (result.workflow_state or {}).get("question_mode"),
+                "follow_up_count": (result.workflow_state or {}).get("follow_up_count", 0),
+                "max_follow_ups": (result.workflow_state or {}).get("max_follow_ups", 0),
+                "question_grounded": bool((result.workflow_state or {}).get("question_grounded", False)),
+                "question_grounding_version": (result.workflow_state or {}).get("question_grounding_version"),
+                "question_evidence_ids": (result.workflow_state or {}).get("question_evidence_ids", []),
+                "question_evidence_items": (result.workflow_state or {}).get("question_evidence_items", []),
                 "task_completed": True,
                 "active_skill": skill_definition.name,
             }
@@ -542,11 +563,20 @@ def create_initial_state(messages: List[BaseMessage], max_iterations: int, **kwa
         "resume_content": kwargs.get("resume_content"),
         "code_execution": kwargs.get("code_execution"),
         "knowledge_context": kwargs.get("knowledge_context"),
+        "evidence_pack": kwargs.get("evidence_pack"),
         "knowledge_context_cache_hit": kwargs.get("knowledge_context_cache_hit", False),
         "evaluation": kwargs.get("evaluation"),
         "evaluation_request": kwargs.get("evaluation_request"),
         "is_finished": kwargs.get("is_finished", False),
         "answer_counted": kwargs.get("answer_counted", False),
+        "interview_phase": kwargs.get("interview_phase"),
+        "question_mode": kwargs.get("question_mode"),
+        "follow_up_count": kwargs.get("follow_up_count", 0),
+        "max_follow_ups": kwargs.get("max_follow_ups", 0),
+        "question_grounded": kwargs.get("question_grounded", False),
+        "question_grounding_version": kwargs.get("question_grounding_version"),
+        "question_evidence_ids": kwargs.get("question_evidence_ids", []),
+        "question_evidence_items": kwargs.get("question_evidence_items", []),
         "user_id": kwargs.get("user_id"),
         "tenant_id": kwargs.get("tenant_id"),
         "chat_id": kwargs.get("chat_id"),

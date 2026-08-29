@@ -1,6 +1,8 @@
 import asyncio
 from typing import Any
 
+from app.db.session import AsyncSessionLocal
+from app.models.user import User
 from app.schemas.career import CareerFactCreate
 from app.services.career_studio import CareerStudioService
 from app.services.career_knowledge import normalize_project_claims
@@ -52,6 +54,49 @@ def _apply_project_metadata(fact: dict[str, Any], metadata: dict[str, Any], sour
 
 async def process_career_fact_job(payload: dict[str, Any]) -> dict[str, Any]:
     service = CareerStudioService()
+    if payload.get("job_type") == "resume":
+        resume_text = str(payload.get("resume_text") or "").strip()
+        if not resume_text:
+            async with AsyncSessionLocal() as db:
+                user = await db.get(User, int(payload["user_id"]))
+                resume_text = str((user.resume_text if user else None) or "").strip()
+        if not resume_text:
+            raise ValueError("Resume text is unavailable for career fact extraction")
+        raw_facts = await service.extract_facts(resume_text)
+        facts: list[CareerFactCreate] = []
+        warnings: list[dict[str, Any]] = []
+        for index, item in enumerate(raw_facts):
+            try:
+                facts.append(CareerFactCreate.model_validate(item))
+            except Exception as exc:
+                title = item.get("title", "") if isinstance(item, dict) else ""
+                warnings.append({
+                    "index": index,
+                    "title": str(title)[:255],
+                    "reason": str(exc).split("\n", 1)[0][:500],
+                })
+
+        if not facts and raw_facts:
+            status = "failed_validation"
+            message = "模型返回了事实，但没有任何一条通过字段校验。"
+        elif not facts:
+            status = "empty"
+            message = "模型没有从当前简历中提取到有效事实。"
+        elif warnings:
+            status = "partial"
+            message = f"已识别 {len(facts)} 条事实，另有 {len(warnings)} 条需要检查。"
+        else:
+            status = "completed"
+            message = f"已识别 {len(facts)} 条待确认事实。"
+        return {
+            "facts": [item.model_dump(mode="json") for item in facts],
+            "status": status,
+            "accepted_count": len(facts),
+            "rejected_count": len(warnings),
+            "warnings": warnings,
+            "message": message,
+        }
+
     fact_payload = await service.extract_fact_from_markdown(
         str(payload.get("content_text") or ""),
         str(payload.get("file_name") or "uploaded-document.md"),

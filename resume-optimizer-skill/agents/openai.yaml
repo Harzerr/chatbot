@@ -1,21 +1,6 @@
 interface:
-  display_name: resume project extractor
-  short_description: 'Extract structured project experience from uploaded resume/document
-    chunks. Use when a long resume,
-
-    project report, portfolio, or candidate document has already been split into chunks
-    and the caller
-
-    needs project-level key points with traceable evidence. Each key point may and
-    should reference
-
-    multiple supporting text chunks when the fact is distributed across chunk boundaries.
-    Never invent
-
-    unsupported project details; preserve chunk IDs for downstream interview-question
-    generation,
-
-    evidence review, and resume deep-dive workflows.'
+  display_name: Resume Project Extractor
+  short_description: Extract enterprise-ready project bullets with exact source evidence across technical roles.
   icon_small: assets/icon.svg
   icon_large: assets/icon.svg
 policy:

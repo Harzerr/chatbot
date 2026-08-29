@@ -7,6 +7,7 @@ from qdrant_client import QdrantClient, models
 
 from app.core.config import settings
 from app.services.embedding_provider import create_embeddings
+from app.services.qdrant_collection_contract import missing_payload_indexes, validate_vector_contract
 from app.services.interview_kit import normalize_interview_role
 from app.services.role_question_bank_loader import load_role_question_bank
 from app.utils.logger import setup_logger
@@ -110,6 +111,31 @@ class QdrantRoleKnowledgeStore:
             )
         else:
             logger.info("Role knowledge collection %s already exists", self.collection_name)
+        collection_info = self._run_with_reconnect(
+            "get_role_collection_contract",
+            lambda: self.client.get_collection(self.collection_name),
+        )
+        validate_vector_contract(
+            collection_info,
+            collection_name=self.collection_name,
+            expected_size=self.embedding_size,
+        )
+        for field_name in missing_payload_indexes(
+            collection_info,
+            ("metadata.role", "metadata.doc_type", "metadata.category"),
+        ):
+            try:
+                self._run_with_reconnect(
+                    f"create_role_payload_index:{field_name}",
+                    lambda field_name=field_name: self.client.create_payload_index(
+                        collection_name=self.collection_name,
+                        field_name=field_name,
+                        field_schema=models.PayloadSchemaType.KEYWORD,
+                        wait=True,
+                    ),
+                )
+            except Exception as exc:
+                logger.warning("Role knowledge payload index unavailable for %s: %s", field_name, exc)
 
     def get_document_count(self) -> int:
         return self._run_with_reconnect(

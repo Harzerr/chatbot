@@ -5,15 +5,25 @@ from typing import Any
 from app.services.career_resume_domain import _clean_resume_bullet, _is_resume_metadata_text
 
 
-_PROJECT_BOUNDARY = re.compile(r"(?:项目|系统|平台|服务|模块|工具|引擎|project|system|platform|service|tool)", re.IGNORECASE)
+_PROJECT_BOUNDARY = re.compile(
+    r"(?:项目|系统|平台|服务|模块|工具|引擎|应用|算法|模型|project|system|platform|service|tool|"
+    r"application|app|pipeline|library|framework|model|algorithm|firmware|infrastructure|dashboard)",
+    re.IGNORECASE,
+)
 _QUESTION_HEADING = re.compile(r"[?？]|如何|为什么|怎样|怎么|什么")
-_CONTEXT_HEADINGS = ("概述", "背景", "简介", "业务", "目标", "overview", "background")
-_TECH_HEADINGS = ("技术栈", "技术选型", "依赖", "开发环境", "运行环境", "tech stack", "stack")
-_ROLE_HEADINGS = ("角色", "职位", "岗位", "职责", "分工", "role", "responsibility")
-_NON_CONTENT_HEADINGS = ("文档目的", "资料来源", "版本", "目录", "附录", "面试", "faq")
+_CONTEXT_HEADINGS = ("概述", "背景", "简介", "业务", "目标", "overview", "background", "context", "objective")
+_TECH_HEADINGS = (
+    "技术栈", "技术选型", "依赖", "开发环境", "运行环境", "tech stack", "stack",
+    "technologies", "tools", "languages", "frameworks",
+)
+_ROLE_HEADINGS = ("角色", "职位", "岗位", "职责", "分工", "role", "responsibility", "contribution", "ownership")
+_NON_CONTENT_HEADINGS = ("文档目的", "资料来源", "版本", "目录", "附录", "面试", "faq", "table of contents", "appendix")
 _ACTION_PREFIX = re.compile(
     r"^(?:设计|实现|构建|开发|采用|使用|基于|通过|完成|优化|重构|处理|解析|提取|"
-    r"搭建|编写|支持|负责|参与|将|从|根据|计算|解决|定位|验证|测试)"
+    r"搭建|编写|支持|负责|参与|将|从|根据|计算|解决|定位|验证|测试|"
+    r"designed|implemented|built|developed|created|optimized|refactored|integrated|automated|"
+    r"deployed|migrated|configured|tested|validated|analyzed|reduced|improved|introduced|added|maintained|led|owned)",
+    re.IGNORECASE,
 )
 
 
@@ -31,6 +41,18 @@ def _plain_sentence(value: str) -> str:
     if not text:
         return ""
     return text if text.endswith(("。", "！", "？", ".", "!", "?")) else text + "。"
+
+
+def _line_claims(raw_line: str) -> list[tuple[str, bool]]:
+    """Return bullet/prose claims without assuming a document language or domain."""
+    stripped = raw_line.strip()
+    bullet = re.match(r"^(?:[-*+•]|\d+[.)])\s+(.+)$", stripped)
+    if bullet:
+        return [(bullet.group(1), True)]
+    if "|" in stripped:
+        return [(stripped, False)]
+    sentences = [item.strip() for item in re.split(r"(?<=[。！？.!?])\s*", stripped) if item.strip()]
+    return [(item, False) for item in sentences] or [(stripped, False)]
 
 
 def _parse_sections(markdown_text: str) -> tuple[str, list[dict[str, Any]]]:
@@ -121,32 +143,36 @@ def _extract_content(sections: list[dict[str, Any]]) -> tuple[str, list[str], li
                 continue
             stripped_line = raw_line.strip()
             evidence_lines.append(stripped_line)
-            bullet = re.match(r"^(?:[-*+•]|\d+[.)])\s+(.+)$", stripped_line)
-            source = bullet.group(1) if bullet else stripped_line
-            cleaned = _plain_sentence(source)
-            if not cleaned:
-                continue
-            if is_context and not bullet:
-                summary_lines.append(cleaned)
-                continue
-            if is_question and not bullet and not _ACTION_PREFIX.match(cleaned):
-                continue
-            if raw_line != raw_line.lstrip() and highlights and not bullet:
-                highlights[-1] = highlights[-1].rstrip("。") + "；" + cleaned
-                evidence_map[-1]["claim"] = highlights[-1]
-                evidence_map[-1]["source_quote"] = (evidence_map[-1]["source_quote"] + " " + source)[:240]
-            elif bullet or _ACTION_PREFIX.match(cleaned):
-                if cleaned not in highlights:
-                    highlights.append(cleaned)
-                    evidence_map.append({"claim": cleaned, "source_quote": source[:240], "confidence": 1.0})
-            elif not summary_lines:
-                summary_lines.append(cleaned)
+            for source, is_bullet in _line_claims(raw_line):
+                cleaned = _plain_sentence(source)
+                if not cleaned:
+                    continue
+                if is_context and not is_bullet:
+                    summary_lines.append(cleaned)
+                    continue
+                if is_question and not is_bullet and not _ACTION_PREFIX.match(cleaned):
+                    continue
+                if raw_line != raw_line.lstrip() and highlights and not is_bullet:
+                    highlights[-1] = highlights[-1].rstrip("。") + "；" + cleaned
+                    evidence_map[-1]["claim"] = highlights[-1]
+                    evidence_map[-1]["source_quote"] = (evidence_map[-1]["source_quote"] + " " + source)[:240]
+                elif is_bullet or _ACTION_PREFIX.match(cleaned):
+                    if cleaned not in highlights:
+                        highlights.append(cleaned)
+                        evidence_map.append({"claim": cleaned, "source_quote": source[:240], "confidence": 1.0})
+                elif not summary_lines:
+                    summary_lines.append(cleaned)
 
     summary = "".join(summary_lines[:2])[:260]
     return summary, highlights[:8], evidence_map[:8], "\n".join(evidence_lines)[:10000]
 
 
-def parse_markdown_project_facts(markdown_text: str, file_name: str) -> list[dict[str, Any]]:
+def parse_markdown_project_facts(
+    markdown_text: str,
+    file_name: str,
+    *,
+    single_project: bool = False,
+) -> list[dict[str, Any]]:
     """Create a conservative fallback from Markdown structure only.
 
     This parser intentionally knows nothing about a particular company, project,
@@ -155,7 +181,7 @@ def parse_markdown_project_facts(markdown_text: str, file_name: str) -> list[dic
     """
     document_title, sections = _parse_sections(markdown_text)
     default_title = document_title or Path(file_name).stem or "未命名项目"
-    groups = _project_groups(sections) or [(default_title, sections)]
+    groups = [(default_title, sections)] if single_project else (_project_groups(sections) or [(default_title, sections)])
     facts: list[dict[str, Any]] = []
     for title, project_sections in groups:
         summary, highlights, evidence_map, evidence = _extract_content(project_sections)

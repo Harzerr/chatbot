@@ -182,6 +182,19 @@ def _normalize_industrial_roles(value: Any) -> list[dict[str, Any]]:
     return normalized[:4]
 
 
+def _role_marker_present(source: str, marker: str) -> bool:
+    normalized_marker = marker.strip().lower()
+    if not normalized_marker:
+        return False
+    if re.search(r"[\u4e00-\u9fff]", normalized_marker):
+        return normalized_marker in source
+    return bool(re.search(
+        rf"(?<![a-z0-9]){re.escape(normalized_marker)}(?![a-z0-9])",
+        source,
+        flags=re.IGNORECASE,
+    ))
+
+
 def infer_industrial_roles(title: str, content: dict[str, Any] | None = None, evidence: str = "") -> list[dict[str, Any]]:
     """Infer likely enterprise role tracks from concrete project evidence."""
     content = content if isinstance(content, dict) else {}
@@ -199,9 +212,10 @@ def infer_industrial_roles(title: str, content: dict[str, Any] | None = None, ev
     for rule in _role_taxonomy():
         markers = [str(marker) for marker in rule.get("markers", []) if str(marker).strip()]
         strong_markers = [str(marker) for marker in rule.get("strong_markers", []) if str(marker).strip()]
-        matched = [marker for marker in markers if marker.lower() in normalized_source]
-        strong_matched = [marker for marker in strong_markers if marker.lower() in normalized_source]
-        if len(matched) < 2 or not strong_matched:
+        matched = [marker for marker in markers if _role_marker_present(normalized_source, marker)]
+        strong_matched = [marker for marker in strong_markers if _role_marker_present(normalized_source, marker)]
+        min_matches = max(1, int(rule.get("min_matches") or 2))
+        if len(matched) < min_matches or not strong_matched:
             continue
         confidence = min(0.9, 0.5 + len(matched) * 0.06)
         tracks.append({

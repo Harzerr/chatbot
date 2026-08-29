@@ -14,11 +14,11 @@ from app.services.interview_assessment import (
     is_non_answer,
     should_use_career_evidence,
 )
-from app.schemas.chat import AnswerEvaluation, LLMAnswerEvaluation, RubricScore
+from app.schemas.chat import AnswerEvaluation, InterviewReportResponse, LLMAnswerEvaluation, RubricScore
 from app.schemas.evaluation import EvaluationRequest
 from app.services.interview_evaluator import InterviewEvaluator
 from app.services.interview_report import InterviewReportBuilder
-from app.services.interview_report_pdf import InterviewReportPdfBuilder
+from app.services.interview_report_pdf import InterviewReportPdfBuilder, InterviewReportPdfError
 
 
 class InterviewAssessmentTests(unittest.TestCase):
@@ -225,6 +225,67 @@ class InterviewAssessmentTests(unittest.TestCase):
         block = InterviewReportPdfBuilder._code_block("```python\ndef solve():\n    return 1\n```")
         self.assertIn("\\begin{Verbatim}", block)
         self.assertNotIn("```", block)
+
+    def test_html_pdf_template_is_compact_and_escapes_user_content(self):
+        report = InterviewReportResponse(
+            chat_id="chat-pdf",
+            interview_role="后端 <工程师>",
+            total_answers=0,
+            overall_score=0,
+            summary="结论 & 建议",
+            strengths=[],
+            improvement_areas=[],
+            recommendations=[],
+            recommended_resources=[],
+        )
+        rendered = InterviewReportPdfBuilder._html_template(report, "2026-08-24 18:00")
+        self.assertIn("后端 &lt;工程师&gt;", rendered)
+        self.assertIn("<strong>0 分</strong>", rendered)
+        self.assertNotIn("参考答案", rendered)
+        self.assertIn("详细证据与 Rubric 请在在线报告中查看", rendered)
+
+    def test_pdf_builder_prefers_available_chromium_renderer(self):
+        report = InterviewReportResponse(
+            chat_id="chat-pdf",
+            total_answers=0,
+            summary="暂无有效作答。",
+            strengths=[],
+            improvement_areas=[],
+            recommendations=[],
+            recommended_resources=[],
+        )
+        with (
+            patch.object(InterviewReportPdfBuilder, "_find_chromium", return_value="/usr/bin/chrome"),
+            patch.object(InterviewReportPdfBuilder, "_build_with_chromium", return_value=b"%PDF-test") as render,
+        ):
+            output = InterviewReportPdfBuilder().build(report, "2026-08-24 18:00")
+        self.assertEqual(output, b"%PDF-test")
+        render.assert_called_once()
+
+    def test_pdf_builder_falls_back_to_xelatex_when_chromium_fails(self):
+        report = InterviewReportResponse(
+            chat_id="chat-pdf",
+            total_answers=0,
+            summary="暂无有效作答。",
+            strengths=[],
+            improvement_areas=[],
+            recommendations=[],
+            recommended_resources=[],
+        )
+        with (
+            patch.object(InterviewReportPdfBuilder, "_find_chromium", return_value="/usr/bin/chrome"),
+            patch.object(
+                InterviewReportPdfBuilder,
+                "_build_with_chromium",
+                side_effect=InterviewReportPdfError("chrome failed"),
+            ),
+            patch("app.services.interview_report_pdf.shutil.which", return_value="/usr/bin/xelatex"),
+            patch.object(InterviewReportPdfBuilder, "_build_with_xelatex", return_value=b"%PDF-tex") as render,
+        ):
+            output = InterviewReportPdfBuilder().build(report, "2026-08-24 18:00")
+
+        self.assertEqual(output, b"%PDF-tex")
+        render.assert_called_once()
 
     def test_fallback_evaluation_still_has_reference_points(self):
         builder = InterviewReportBuilder.__new__(InterviewReportBuilder)

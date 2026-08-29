@@ -84,6 +84,46 @@ async def ensure_career_knowledge_columns(async_engine: AsyncEngine) -> None:
             if chunk_columns and name not in chunk_columns:
                 await conn.execute(text(ddl))
 
+        if existing:
+            duplicate_groups = (await conn.execute(text("""
+                SELECT user_id, source_hash, COUNT(*) AS duplicate_count
+                FROM career_knowledge_documents
+                WHERE is_archived = 0
+                GROUP BY user_id, source_hash
+                HAVING COUNT(*) > 1
+            """))).fetchall()
+            for user_id, source_hash, duplicate_count in duplicate_groups:
+                rows = (await conn.execute(
+                    text("""
+                        SELECT id
+                        FROM career_knowledge_documents
+                        WHERE user_id = :user_id
+                          AND source_hash = :source_hash
+                          AND is_archived = 0
+                        ORDER BY updated_at DESC, id DESC
+                    """),
+                    {"user_id": user_id, "source_hash": source_hash},
+                )).fetchall()
+                duplicate_ids = [row[0] for row in rows[1:]]
+                if duplicate_ids:
+                    placeholders = ", ".join(f":duplicate_{index}" for index in range(len(duplicate_ids)))
+                    await conn.execute(
+                        text(f"UPDATE career_knowledge_documents SET is_archived = 1 WHERE id IN ({placeholders})"),
+                        {f"duplicate_{index}": document_id for index, document_id in enumerate(duplicate_ids)},
+                    )
+                    logger.warning(
+                        "Archived %s duplicate career documents for user_id=%s source_hash=%s",
+                        duplicate_count - 1,
+                        user_id,
+                        source_hash,
+                    )
+
+            await conn.execute(text("""
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_career_knowledge_documents_active_source
+                ON career_knowledge_documents (user_id, source_hash)
+                WHERE is_archived = 0
+            """))
+
 
 async def ensure_ai_metric_columns(async_engine: AsyncEngine) -> None:
     async with async_engine.begin() as conn:

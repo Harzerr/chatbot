@@ -234,6 +234,59 @@ def test_evidence_pack_contains_traceable_ids_and_bounded_context():
     assert len(pack["context"]) <= 300
 
 
+def test_project_scope_uses_distinctive_filename_alias_for_generic_title():
+    documents = [
+        {
+            "id": 4,
+            "fact_id": 39,
+            "title": "面面通 AI 模拟面试平台",
+            "file_name": "04-面面通-AI模拟面试平台-技术文档.md",
+            "content_text": "Qdrant 负责召回面试考点。",
+        },
+        {
+            "id": 6,
+            "fact_id": 44,
+            "title": "实习",
+            "file_name": "05-博世算法实习项目-技术文档.md",
+            "content_text": "路径学习使用状态机处理路径录制与异常退出。",
+        },
+    ]
+
+    chunks = retrieve_knowledge_chunks(
+        documents,
+        query="回到博世实习的路径学习状态机，为什么使用有限状态机？",
+        max_chunks=4,
+    )
+
+    assert chunks
+    assert {chunk["document_id"] for chunk in chunks} == {"6"}
+
+
+def test_generic_title_bigram_does_not_exclude_the_relevant_project():
+    documents = [
+        {
+            "id": 3,
+            "title": "医学图像原型网络",
+            "file_name": "医学图像原型网络技术文档.md",
+            "content_text": "原型用于匹配病灶图像区域。",
+        },
+        {
+            "id": 4,
+            "title": "超声视频分级模型",
+            "file_name": "超声视频分级模型技术文档.md",
+            "content_text": "图像外观和光流运动根据不确定性自适应融合。",
+        },
+    ]
+
+    chunks = retrieve_knowledge_chunks(
+        documents,
+        query="图像外观和光流运动信息如何根据不确定性融合？",
+        max_chunks=2,
+    )
+
+    assert chunks[0]["document_id"] == "4"
+
+
 def test_context_budget_does_not_include_unrelated_document_body():
     documents = [
         {

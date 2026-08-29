@@ -7,6 +7,7 @@ const careerService = {
   archiveFact: async (id) => (await axios.delete(`/api/v1/career/facts/${id}`)).data,
   deleteFact: async (id) => (await axios.delete(`/api/v1/career/facts/${id}/permanently`)).data,
   extractFacts: async () => (await axios.post('/api/v1/career/facts/extract')).data,
+  getFactExtractionJob: async (jobId) => (await axios.get(`/api/v1/career/facts/extraction-jobs/${jobId}`)).data,
   extractFactFromMarkdown: async ({ files, file, metadata = [] }) => {
     const formData = new FormData();
     const selectedFiles = files || (file ? [file] : []);

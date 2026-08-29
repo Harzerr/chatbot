@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import re
 import shutil
 import subprocess
@@ -14,7 +15,7 @@ class InterviewReportPdfError(RuntimeError):
 
 
 class InterviewReportPdfBuilder:
-    """Render a stable, selectable-text interview report with XeLaTeX."""
+    """Render a stable, selectable-text report with an available server renderer."""
 
     _score_fields = (
         ("technical_accuracy", "技术准确性"),
@@ -25,9 +26,183 @@ class InterviewReportPdfBuilder:
         ("job_match_score", "岗位匹配度"),
     )
 
+    _chromium_candidates = (
+        "google-chrome",
+        "google-chrome-stable",
+        "chromium",
+        "chromium-browser",
+    )
+
+    @staticmethod
+    def _html(value: object) -> str:
+        return html.escape("" if value is None else str(value), quote=True)
+
+    @classmethod
+    def _html_text(cls, value: object, fallback: str = "暂无内容。") -> str:
+        text = str(value or "").strip() or fallback
+        return cls._html(text).replace("\n", "<br>")
+
+    @classmethod
+    def _html_items(cls, values: list[str] | None, fallback: str) -> str:
+        items = [str(item).strip() for item in (values or []) if str(item).strip()]
+        return "".join(f"<li>{cls._html(item)}</li>" for item in (items or [fallback]))
+
+    @classmethod
+    def _html_score_cards(cls, report: InterviewReportResponse) -> str:
+        cards = []
+        for field, label in cls._score_fields:
+            value = getattr(report, field, None)
+            if value is not None:
+                cards.append(
+                    f'<div class="score"><span>{cls._html(label)}</span><strong>{cls._html(value)}</strong></div>'
+                )
+        return "".join(cards)
+
+    @classmethod
+    def _html_competencies(cls, report: InterviewReportResponse) -> str:
+        rows = []
+        for item in report.competency_assessments:
+            evidence = item.evidence[0] if item.evidence else "尚缺少独立材料"
+            rows.append(
+                "<tr>"
+                f"<td><strong>{cls._html(item.capability)}</strong></td>"
+                f"<td>{cls._html(item.score)}</td>"
+                f"<td>{cls._html(item.covered_questions)} 题 / {cls._html(item.confidence)}置信度</td>"
+                f"<td>{cls._html(evidence[:180])}</td>"
+                "</tr>"
+            )
+        return "".join(rows) or '<tr><td colspan="4">暂无有效能力覆盖数据。</td></tr>'
+
+    @classmethod
+    def _html_questions(cls, report: InterviewReportResponse) -> str:
+        blocks = []
+        for index, item in enumerate(report.interview_questions, start=1):
+            evaluation = item.evaluation
+            if item.evaluation_status in {"queued", "processing"}:
+                score = "评估中"
+                summary = "本题仍在评估，请稍后重新导出报告。"
+            elif item.evaluation_status == "failed":
+                score = "失败"
+                summary = item.evaluation_error or "评估服务暂时不可用。"
+            elif evaluation:
+                score = f"{evaluation.overall_score} 分"
+                summary = evaluation.summary or "暂无评估摘要。"
+            else:
+                score = "暂无"
+                summary = "暂无评估结果。"
+
+            consistency = ""
+            if evaluation and evaluation.question_type == "项目深挖题":
+                consistency = (
+                    '<div class="consistency"><strong>经历一致性：'
+                    f"{cls._html(evaluation.resume_consistency or '证据不足')}</strong> "
+                    f"{cls._html(evaluation.consistency_summary or '')}</div>"
+                )
+            improvement = ""
+            if evaluation and evaluation.correction_suggestion:
+                improvement = (
+                    '<div class="improvement"><strong>改进建议：</strong>'
+                    f"{cls._html(evaluation.correction_suggestion)}</div>"
+                )
+            grounding = ""
+            if item.question_evidence_items:
+                anchors = "；".join(
+                    f"{evidence.document_title or '技术文档'} / {evidence.section or '未标注章节'} / {evidence.evidence_id}"
+                    for evidence in item.question_evidence_items[:3]
+                )
+                grounding = (
+                    '<div class="grounding"><strong>本题项目深挖依据：</strong>'
+                    f"{cls._html(anchors)}</div>"
+                )
+            answer = str(item.candidate_answer or "未记录回答").strip()
+            if len(answer) > 700:
+                answer = f"{answer[:700].rstrip()}..."
+            blocks.append(
+                '<article class="question">'
+                f'<div class="question-head"><span>第 {index} 题</span><b>{cls._html(score)}</b></div>'
+                f'<h3>{cls._html_text(item.question, "未记录问题")}</h3>'
+                '<div class="label">候选人回答</div>'
+                f'<div class="answer">{cls._html_text(answer, "未记录回答")}</div>'
+                f"{grounding}"
+                '<div class="label">评估结论</div>'
+                f'<div class="summary">{cls._html_text(summary)}</div>'
+                f"{consistency}{improvement}"
+                "</article>"
+            )
+        return "".join(blocks) or '<p class="muted">暂无可展示的面试问答记录。</p>'
+
+    @classmethod
+    def _html_template(cls, report: InterviewReportResponse, generated_at: str) -> str:
+        role = cls._html(report.interview_role or "通用软件工程师")
+        overall = "待形成" if report.overall_score is None else cls._html(report.overall_score)
+        return f"""<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>{role} - 面试评估报告</title>
+<style>
+@page {{ size: A4; margin: 15mm 14mm 16mm; }}
+* {{ box-sizing: border-box; }}
+body {{ margin: 0; color: #172033; font: 10.5pt/1.62 "Noto Sans CJK SC", "Droid Sans Fallback", sans-serif; }}
+h1, h2, h3, p {{ margin: 0; }}
+h1 {{ font-size: 25pt; line-height: 1.2; }}
+h2 {{ margin: 22px 0 10px; padding-bottom: 5px; border-bottom: 2px solid #0e7490; font-size: 16pt; }}
+h3 {{ margin: 6px 0 10px; font-size: 11.5pt; line-height: 1.55; }}
+.hero {{ border-left: 6px solid #0e7490; padding: 4px 0 4px 13px; }}
+.hero p {{ color: #0e7490; font-weight: 700; }}
+.meta {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 15px; }}
+.meta div, .score {{ border: 1px solid #d9e2ec; border-radius: 7px; padding: 8px 10px; }}
+.meta span, .score span, .label, .muted {{ color: #64748b; font-size: 9pt; }}
+.meta strong, .score strong {{ display: block; margin-top: 2px; }}
+.overall {{ display: flex; align-items: center; gap: 18px; margin-top: 14px; padding: 13px; background: #eef8fa; border-radius: 9px; }}
+.overall strong {{ color: #0e7490; font-size: 24pt; white-space: nowrap; }}
+.scores {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }}
+.score {{ display: flex; align-items: center; justify-content: space-between; }}
+.score strong {{ color: #0e7490; font-size: 14pt; }}
+.columns {{ display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }}
+.panel {{ padding: 12px 14px; background: #f8fafc; border-radius: 8px; break-inside: avoid; }}
+ul {{ margin: 5px 0 0; padding-left: 18px; }}
+li {{ margin: 3px 0; }}
+table {{ width: 100%; border-collapse: collapse; font-size: 9.5pt; }}
+th {{ color: #475569; background: #f1f5f9; text-align: left; }}
+th, td {{ padding: 7px 8px; border-bottom: 1px solid #d9e2ec; vertical-align: top; }}
+.question {{ margin: 0 0 12px; padding: 12px 14px; border: 1px solid #d9e2ec; border-radius: 9px; break-inside: avoid; }}
+.question-head {{ display: flex; justify-content: space-between; color: #0e7490; font-weight: 700; }}
+.answer, .summary {{ margin: 3px 0 9px; overflow-wrap: anywhere; }}
+.consistency, .improvement, .grounding {{ margin-top: 8px; padding: 7px 9px; border-radius: 6px; background: #fff8e8; }}
+.grounding {{ background: #f0f9ff; }}
+.improvement {{ background: #f1f5f9; }}
+footer {{ margin-top: 18px; color: #64748b; font-size: 8.5pt; text-align: center; }}
+</style>
+</head>
+<body>
+<header class="hero"><h1>{role}</h1><p>面试评估报告</p></header>
+<section class="meta">
+  <div><span>面试级别</span><strong>{cls._html(report.interview_level or '未设置')}</strong></div>
+  <div><span>面试类型</span><strong>{cls._html(report.interview_type or '未设置')}</strong></div>
+  <div><span>目标公司</span><strong>{cls._html(report.target_company or '未设置')}</strong></div>
+  <div><span>有效作答</span><strong>{cls._html(report.total_answers)} 题</strong></div>
+</section>
+<section class="overall"><strong>{overall} 分</strong><div><b>综合结论</b><br>{cls._html_text(report.summary)}</div></section>
+<section class="scores">{cls._html_score_cards(report)}</section>
+<h2>关键反馈</h2>
+<section class="columns">
+  <div class="panel"><b>优势亮点</b><ul>{cls._html_items(report.strengths, '暂无明显优势项')}</ul></div>
+  <div class="panel"><b>优先改进</b><ul>{cls._html_items(report.improvement_areas, '暂无明显短板')}</ul></div>
+</section>
+<div class="panel" style="margin-top: 12px"><b>行动建议</b><ul>{cls._html_items(report.recommendations, '暂无建议')}</ul></div>
+<h2>能力覆盖</h2>
+<p class="muted">{cls._html(report.coverage_status)}</p>
+<table><thead><tr><th>能力</th><th>分数</th><th>覆盖</th><th>关键依据</th></tr></thead><tbody>{cls._html_competencies(report)}</tbody></table>
+<h2>逐题评估</h2>
+{cls._html_questions(report)}
+<footer>导出时间：{cls._html(generated_at)} · 评估版本：{cls._html(report.assessment_version)} · 详细证据与 Rubric 请在在线报告中查看</footer>
+</body>
+</html>"""
+
     @staticmethod
     def _tex(value: object) -> str:
-        text = str(value or "")
+        text = "" if value is None else str(value)
         replacements = {
             "\\": r"\textbackslash{}",
             "&": r"\&",
@@ -247,12 +422,60 @@ class InterviewReportPdfBuilder:
             raise InterviewReportPdfError("服务器未安装 XeLaTeX，暂时无法生成报告 PDF。")
         return executable
 
-    def build(self, report: InterviewReportResponse, generated_at: str) -> bytes:
-        executable = self._check_xelatex()
-        with tempfile.TemporaryDirectory(prefix="mianmiantong-report-") as temp_dir:
-            workdir = Path(temp_dir)
-            tex_file = workdir / "report.tex"
-            tex_file.write_text(self._template(report, generated_at), encoding="utf-8")
+    @classmethod
+    def _find_chromium(cls) -> str | None:
+        for candidate in cls._chromium_candidates:
+            executable = shutil.which(candidate)
+            if executable:
+                return executable
+        return None
+
+    @classmethod
+    def _build_with_chromium(
+        cls,
+        executable: str,
+        report: InterviewReportResponse,
+        generated_at: str,
+        workdir: Path,
+    ) -> bytes:
+        html_file = workdir / "report.html"
+        pdf_file = workdir / "report.pdf"
+        html_file.write_text(cls._html_template(report, generated_at), encoding="utf-8")
+        try:
+            result = subprocess.run(
+                [
+                    executable,
+                    "--headless",
+                    "--no-sandbox",
+                    "--disable-gpu",
+                    "--disable-dev-shm-usage",
+                    "--no-pdf-header-footer",
+                    f"--print-to-pdf={pdf_file}",
+                    html_file.resolve().as_uri(),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=45,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise InterviewReportPdfError(f"Chrome PDF 渲染器不可用：{exc}") from exc
+        if result.returncode != 0 or not pdf_file.exists():
+            diagnostic = (result.stdout + "\n" + result.stderr)[-2000:]
+            raise InterviewReportPdfError(f"Chrome PDF 渲染失败：{diagnostic}")
+        return pdf_file.read_bytes()
+
+    @classmethod
+    def _build_with_xelatex(
+        cls,
+        executable: str,
+        report: InterviewReportResponse,
+        generated_at: str,
+        workdir: Path,
+    ) -> bytes:
+        tex_file = workdir / "report.tex"
+        tex_file.write_text(cls._template(report, generated_at), encoding="utf-8")
+        try:
             result = subprocess.run(
                 [
                     executable,
@@ -268,8 +491,35 @@ class InterviewReportPdfBuilder:
                 timeout=45,
                 check=False,
             )
-            pdf_file = workdir / "report.pdf"
-            if result.returncode != 0 or not pdf_file.exists():
-                diagnostic = (result.stdout + "\n" + result.stderr)[-2000:]
-                raise InterviewReportPdfError(f"XeLaTeX 编译失败：{diagnostic}")
-            return pdf_file.read_bytes()
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise InterviewReportPdfError(f"XeLaTeX 渲染器不可用：{exc}") from exc
+        pdf_file = workdir / "report.pdf"
+        if result.returncode != 0 or not pdf_file.exists():
+            diagnostic = (result.stdout + "\n" + result.stderr)[-2000:]
+            raise InterviewReportPdfError(f"XeLaTeX 编译失败：{diagnostic}")
+        return pdf_file.read_bytes()
+
+    def build(self, report: InterviewReportResponse, generated_at: str) -> bytes:
+        with tempfile.TemporaryDirectory(prefix="mianmiantong-report-") as temp_dir:
+            workdir = Path(temp_dir)
+            renderer_errors = []
+            chromium = self._find_chromium()
+            if chromium:
+                try:
+                    return self._build_with_chromium(chromium, report, generated_at, workdir)
+                except InterviewReportPdfError as exc:
+                    renderer_errors.append(str(exc))
+
+            xelatex = shutil.which("xelatex")
+            if xelatex:
+                try:
+                    return self._build_with_xelatex(xelatex, report, generated_at, workdir)
+                except InterviewReportPdfError as exc:
+                    renderer_errors.append(str(exc))
+
+            if renderer_errors:
+                raise InterviewReportPdfError("；".join(renderer_errors))
+
+            raise InterviewReportPdfError(
+                "服务器未安装 Chrome/Chromium 或 XeLaTeX，暂时无法生成报告 PDF。"
+            )

@@ -296,21 +296,36 @@ def _scope_documents_to_query(documents: list[Any], query: str) -> list[Any]:
     title is mentioned we keep the full candidate set and let lexical scoring
     decide; callers can enforce an exact fact with ``fact_id``.
     """
-    normalized_query = re.sub(r"[\s_\-—:：/]+", "", (query or "").lower())
+    normalized_query = re.sub(r"[^a-z0-9\u4e00-\u9fff+#.]+", "", (query or "").lower())
     if not normalized_query:
         return documents
-    stopwords = {"技术文档", "项目经历", "实习经历", "项目", "实习", "文档", "说明", "报告", "技术", "ai"}
+    stopwords = {
+        "技术文档", "项目经历", "实习经历", "项目", "实习", "文档", "说明", "报告",
+        "技术", "系统", "平台", "算法", "智能", "开发", "设计", "模块", "工作", "经历", "ai",
+    }
     scored: list[tuple[int, Any]] = []
     for document in documents:
         title = str(_document_value(document, "title", "") or "")
         file_name = Path(str(_document_value(document, "file_name", "") or "")).stem
         raw_candidates = [part for value in (title, file_name) for part in re.split(r"[\s_\-—:：/|]+", value) if part]
-        candidates = [
-            re.sub(r"[^a-z0-9\u4e00-\u9fff+#.]+", "", value.lower())
-            for value in raw_candidates
-            if value.lower() not in stopwords and not value.isdigit()
-        ]
-        score = sum(1 for candidate in candidates if len(candidate) >= 2 and candidate in normalized_query)
+        candidates: set[str] = set()
+        for value in raw_candidates:
+            candidate = re.sub(r"[^a-z0-9\u4e00-\u9fff+#.]+", "", value.lower())
+            candidate = re.sub(r"^\d+|\d+$", "", candidate)
+            if not candidate or candidate in stopwords:
+                continue
+            candidates.add(candidate)
+            compact = candidate
+            for stopword in sorted(stopwords, key=len, reverse=True):
+                compact = compact.replace(stopword, "")
+            if len(compact) >= 2:
+                candidates.add(compact)
+        score = 0
+        for candidate in candidates:
+            if candidate not in normalized_query:
+                continue
+            # Full project aliases outrank incidental two-character title tokens.
+            score += 12 if len(candidate) >= 4 else 4
         if score:
             scored.append((score, document))
     if not scored:
@@ -464,7 +479,18 @@ def retrieve_knowledge_chunks(
 ) -> list[dict[str, Any]]:
     """Retrieve compact evidence with lexical ranking and source provenance."""
     documents = _scope_documents_to_query(list(documents), query)
-    query_terms = set(_search_terms(query))
+    per_document_limit = (
+        max_chunks
+        if len(documents) == 1
+        else getattr(settings, "EVIDENCE_MAX_CHUNKS_PER_DOCUMENT", 2)
+    )
+    scoring_query = str(query or "").lower()
+    for phrase in (
+        "为什么", "怎么", "如何", "请介绍", "请说明", "具体", "这个", "那个", "当时",
+        "选择", "使用", "采用", "觉得", "问题", "回答", "回到", "简历里", "项目中", "实习中",
+    ):
+        scoring_query = scoring_query.replace(phrase, " ")
+    query_terms = set(_search_terms(scoring_query))
     if not query_terms:
         return []
     minimum_score = float(getattr(settings, "EVIDENCE_MIN_RETRIEVAL_SCORE", 0.05))
@@ -495,7 +521,6 @@ def retrieve_knowledge_chunks(
                 chunk["title"],
                 chunk["section"],
                 chunk["text"],
-                " ".join(chunk.get("claim_texts", [])),
             )
         ).lower()
         tokens = _search_terms(searchable)
@@ -520,7 +545,11 @@ def retrieve_knowledge_chunks(
             )
             score += idf * normalized_tf
             if term in title_section:
-                score += 1.5
+                score += 3.0
+        if any(marker in str(chunk.get("section") or "").lower() for marker in (
+            "资料来源", "参考资料", "文档目的", "目录", "附录",
+        )):
+            score *= 0.15
         candidates.append((score, -(chunk["_document_index"] * 1000 + chunk["_chunk_index"]), chunk))
 
     candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
@@ -584,11 +613,7 @@ def retrieve_knowledge_chunks(
     per_document: dict[str, int] = {}
     for combined_score, _, chunk, method in ranked_candidates:
         document_id = chunk["document_id"]
-        if document_id not in allowed_documents or per_document.get(document_id, 0) >= getattr(
-            settings,
-            "EVIDENCE_MAX_CHUNKS_PER_DOCUMENT",
-            2,
-        ):
+        if document_id not in allowed_documents or per_document.get(document_id, 0) >= per_document_limit:
             continue
         selected.append({
             key: value for key, value in {
@@ -689,15 +714,31 @@ def build_evidence_pack(
         tenant_id=tenant_id,
         user_id=user_id,
     )
+    context = _render_knowledge_context(chunks, max_total_chars)
+    visible_chunks: list[dict[str, Any]] = []
+    for chunk in chunks:
+        marker = f"[证据ID：{chunk['evidence_id']}｜"
+        header_start = context.find(marker)
+        if header_start < 0:
+            continue
+        body_start = context.find("\n", header_start)
+        if body_start < 0:
+            continue
+        next_header = context.find("\n\n[证据ID：", body_start)
+        body_end = next_header if next_header >= 0 else len(context)
+        visible_text = context[body_start + 1:body_end].strip()
+        if visible_text:
+            visible_chunks.append({**chunk, "text": visible_text})
+
     return {
         "version": "evidence-pack-v2",
-        "retrieval_method": chunks[0].get("retrieval_method", "none") if chunks else "none",
+        "retrieval_method": visible_chunks[0].get("retrieval_method", "none") if visible_chunks else "none",
         "query": query,
         "fact_id": str(fact_id) if fact_id is not None else None,
-        "retrieval_count": len(chunks),
-        "evidence_ids": [chunk["evidence_id"] for chunk in chunks],
-        "chunks": chunks,
-        "context": _render_knowledge_context(chunks, max_total_chars),
+        "retrieval_count": len(visible_chunks),
+        "evidence_ids": [chunk["evidence_id"] for chunk in visible_chunks],
+        "chunks": visible_chunks,
+        "context": context,
     }
 
 
@@ -716,7 +757,7 @@ def _document_version(document: Any) -> tuple[str, ...]:
     )
 
 
-def build_cached_knowledge_context(
+def build_cached_evidence_pack(
     documents: Iterable[Any],
     query: str = "",
     *,
@@ -727,14 +768,14 @@ def build_cached_knowledge_context(
     max_document_chars: int | None = None,
     max_chunks: int | None = None,
     fact_id: int | str | None = None,
-) -> tuple[str, bool]:
-    """Build one bounded evidence pack per document version/query and reuse it briefly."""
+) -> tuple[dict[str, Any], bool]:
+    """Build and cache the complete evidence contract used by evaluation."""
     document_list = list(documents)
     total_chars = max_total_chars or settings.EVIDENCE_CONTEXT_MAX_CHARS
     chunk_chars = max_document_chars or settings.EVIDENCE_CHUNK_MAX_CHARS
     chunk_count = max_chunks or settings.EVIDENCE_MAX_CHUNKS
     key = stable_cache_key(
-        "evidence-pack",
+        "evidence-pack-structured-v3",
         [
             settings.EVIDENCE_RETRIEVER_VERSION,
             tenant_id,
@@ -757,9 +798,14 @@ def build_cached_knowledge_context(
     cache = cache or RedisCache()
     cached = cache.get_text(key)
     if cached is not None:
-        return cached, True
+        try:
+            parsed = json.loads(cached)
+            if isinstance(parsed, dict) and isinstance(parsed.get("chunks"), list):
+                return parsed, True
+        except json.JSONDecodeError:
+            logger.warning("Ignoring malformed structured evidence cache entry")
 
-    context = build_knowledge_context(
+    pack = build_evidence_pack(
         document_list,
         query=query,
         max_total_chars=total_chars,
@@ -769,8 +815,39 @@ def build_cached_knowledge_context(
         tenant_id=tenant_id,
         user_id=user_id,
     )
-    cache.set_text(key, context, settings.EVIDENCE_CACHE_TTL_SECONDS)
-    return context, False
+    cache.set_text(
+        key,
+        json.dumps(pack, ensure_ascii=False, separators=(",", ":")),
+        settings.EVIDENCE_CACHE_TTL_SECONDS,
+    )
+    return pack, False
+
+
+def build_cached_knowledge_context(
+    documents: Iterable[Any],
+    query: str = "",
+    *,
+    tenant_id: str,
+    user_id: str,
+    cache: RedisCache | None = None,
+    max_total_chars: int | None = None,
+    max_document_chars: int | None = None,
+    max_chunks: int | None = None,
+    fact_id: int | str | None = None,
+) -> tuple[str, bool]:
+    """Backward-compatible context view over the structured evidence pack."""
+    pack, cache_hit = build_cached_evidence_pack(
+        documents,
+        query=query,
+        tenant_id=tenant_id,
+        user_id=user_id,
+        cache=cache,
+        max_total_chars=max_total_chars,
+        max_document_chars=max_document_chars,
+        max_chunks=max_chunks,
+        fact_id=fact_id,
+    )
+    return str(pack.get("context") or ""), cache_hit
 
 
 def evidence_context_stats(context: str | None) -> dict[str, Any]:
