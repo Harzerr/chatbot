@@ -63,8 +63,15 @@ jobs:
               print("Skip WeChat notification until the required secrets are configured.")
               sys.exit(0)
 
-          app_id = os.environ["WECHAT_APP_ID"]
-          app_secret = os.environ["WECHAT_APP_SECRET"]
+          secrets = {name: os.environ[name].strip() for name in required_env}
+          blank = [name for name, value in secrets.items() if not value]
+          if blank:
+              print(f"::warning::Blank required GitHub Secrets after trimming: {', '.join(blank)}")
+              print("Skip WeChat notification until the required secrets are configured.")
+              sys.exit(0)
+
+          app_id = secrets["WECHAT_APP_ID"]
+          app_secret = secrets["WECHAT_APP_SECRET"]
           query = urllib.parse.urlencode(
               {
                   "grant_type": "client_credential",
@@ -77,7 +84,9 @@ jobs:
           )
           access_token = token_response.get("access_token")
           if not access_token:
-              print(f"Failed to get WeChat access_token: {token_response}")
+              errcode = token_response.get("errcode", "unknown")
+              errmsg = token_response.get("errmsg", token_response)
+              print(f"::error::Failed to get WeChat access_token: {errcode} {errmsg}")
               sys.exit(1)
 
           repository = os.environ["REPOSITORY_NAME"]
@@ -88,8 +97,8 @@ jobs:
           run_url = os.environ["RUN_URL"]
 
           message = {
-              "touser": os.environ["WECHAT_OPENID"],
-              "template_id": os.environ["WECHAT_TEMPLATE_ID"],
+              "touser": secrets["WECHAT_OPENID"],
+              "template_id": secrets["WECHAT_TEMPLATE_ID"],
               "url": run_url,
               "data": {
                   "first": {
@@ -121,7 +130,9 @@ jobs:
               message,
           )
           if send_response.get("errcode") != 0:
-              print(f"Failed to send WeChat template message: {send_response}")
+              errcode = send_response.get("errcode", "unknown")
+              errmsg = send_response.get("errmsg", send_response)
+              print(f"::error::Failed to send WeChat template message: {errcode} {errmsg}")
               sys.exit(1)
 
           print(f"WeChat notification sent: {send_response.get('msgid')}")
