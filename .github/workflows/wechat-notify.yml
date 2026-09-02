@@ -96,11 +96,15 @@ jobs:
           actor = os.environ["ACTOR_NAME"]
           short_sha = os.environ["COMMIT_SHA"][:7]
           run_url = os.environ["RUN_URL"]
-          openid_match = re.search(r"o[A-Za-z0-9_-]{20,}", secrets["WECHAT_OPENID"])
-          openid = openid_match.group(0) if openid_match else secrets["WECHAT_OPENID"]
+          openids = re.findall(r"o[A-Za-z0-9_-]{20,}", secrets["WECHAT_OPENID"])
+          if not openids:
+              openids = [
+                  item
+                  for item in re.split(r"[\s,;]+", secrets["WECHAT_OPENID"])
+                  if item
+              ]
 
           message = {
-              "touser": openid,
               "template_id": secrets["WECHAT_TEMPLATE_ID"],
               "url": run_url,
               "data": {
@@ -127,16 +131,22 @@ jobs:
                   },
               },
           }
-          send_response = request_json(
-              "https://api.weixin.qq.com/cgi-bin/message/template/send"
-              f"?access_token={urllib.parse.quote(access_token)}",
-              message,
-          )
-          if send_response.get("errcode") != 0:
-              errcode = send_response.get("errcode", "unknown")
-              errmsg = send_response.get("errmsg", send_response)
-              print(f"::error::Failed to send WeChat template message: {errcode} {errmsg}")
-              sys.exit(1)
+          failures = []
+          for openid in openids:
+              send_response = request_json(
+                  "https://api.weixin.qq.com/cgi-bin/message/template/send"
+                  f"?access_token={urllib.parse.quote(access_token)}",
+                  {**message, "touser": openid},
+              )
+              if send_response.get("errcode") != 0:
+                  errcode = send_response.get("errcode", "unknown")
+                  errmsg = send_response.get("errmsg", send_response)
+                  print(f"::error::Failed to send WeChat template message to {openid}: {errcode} {errmsg}")
+                  failures.append(openid)
+                  continue
 
-          print(f"WeChat notification sent: {send_response.get('msgid')}")
+              print(f"WeChat notification sent to {openid}: {send_response.get('msgid')}")
+
+          if failures:
+              sys.exit(1)
           PY
