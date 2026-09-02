@@ -33,6 +33,7 @@ jobs:
           python - <<'PY'
           import json
           import os
+          import re
           import sys
           import urllib.parse
           import urllib.request
@@ -95,9 +96,11 @@ jobs:
           actor = os.environ["ACTOR_NAME"]
           short_sha = os.environ["COMMIT_SHA"][:7]
           run_url = os.environ["RUN_URL"]
+          openid_match = re.search(r"o[A-Za-z0-9_-]{20,}", secrets["WECHAT_OPENID"])
+          openid = openid_match.group(0) if openid_match else secrets["WECHAT_OPENID"]
 
           message = {
-              "touser": secrets["WECHAT_OPENID"],
+              "touser": openid,
               "template_id": secrets["WECHAT_TEMPLATE_ID"],
               "url": run_url,
               "data": {
