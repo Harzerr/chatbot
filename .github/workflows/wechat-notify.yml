@@ -1,0 +1,128 @@
+name: WeChat Notify
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    name: Send repository event to WeChat
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send WeChat template message
+        env:
+          WECHAT_APP_ID: ${{ secrets.WECHAT_APP_ID }}
+          WECHAT_APP_SECRET: ${{ secrets.WECHAT_APP_SECRET }}
+          WECHAT_OPENID: ${{ secrets.WECHAT_OPENID }}
+          WECHAT_TEMPLATE_ID: ${{ secrets.WECHAT_TEMPLATE_ID }}
+          REPOSITORY_NAME: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          ACTOR_NAME: ${{ github.actor }}
+          COMMIT_SHA: ${{ github.sha }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.parse
+          import urllib.request
+
+
+          def request_json(url, payload=None):
+              data = None
+              headers = {}
+              if payload is not None:
+                  data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+                  headers["Content-Type"] = "application/json"
+
+              req = urllib.request.Request(url, data=data, headers=headers)
+              with urllib.request.urlopen(req, timeout=20) as resp:
+                  body = resp.read().decode("utf-8")
+              return json.loads(body)
+
+
+          required_env = [
+              "WECHAT_APP_ID",
+              "WECHAT_APP_SECRET",
+              "WECHAT_OPENID",
+              "WECHAT_TEMPLATE_ID",
+          ]
+          missing = [name for name in required_env if not os.environ.get(name)]
+          if missing:
+              print(f"::warning::Missing required GitHub Secrets: {', '.join(missing)}")
+              print("Skip WeChat notification until the required secrets are configured.")
+              sys.exit(0)
+
+          app_id = os.environ["WECHAT_APP_ID"]
+          app_secret = os.environ["WECHAT_APP_SECRET"]
+          query = urllib.parse.urlencode(
+              {
+                  "grant_type": "client_credential",
+                  "appid": app_id,
+                  "secret": app_secret,
+              }
+          )
+          token_response = request_json(
+              f"https://api.weixin.qq.com/cgi-bin/token?{query}"
+          )
+          access_token = token_response.get("access_token")
+          if not access_token:
+              print(f"Failed to get WeChat access_token: {token_response}")
+              sys.exit(1)
+
+          repository = os.environ["REPOSITORY_NAME"]
+          event_name = os.environ["EVENT_NAME"]
+          ref_name = os.environ["REF_NAME"]
+          actor = os.environ["ACTOR_NAME"]
+          short_sha = os.environ["COMMIT_SHA"][:7]
+          run_url = os.environ["RUN_URL"]
+
+          message = {
+              "touser": os.environ["WECHAT_OPENID"],
+              "template_id": os.environ["WECHAT_TEMPLATE_ID"],
+              "url": run_url,
+              "data": {
+                  "first": {
+                      "value": "GitHub repository update",
+                  },
+                  "keyword1": {
+                      "value": repository,
+                  },
+                  "keyword2": {
+                      "value": event_name,
+                  },
+                  "keyword3": {
+                      "value": ref_name,
+                  },
+                  "keyword4": {
+                      "value": actor,
+                  },
+                  "keyword5": {
+                      "value": short_sha,
+                  },
+                  "remark": {
+                      "value": f"Details: {run_url}",
+                  },
+              },
+          }
+          send_response = request_json(
+              "https://api.weixin.qq.com/cgi-bin/message/template/send"
+              f"?access_token={urllib.parse.quote(access_token)}",
+              message,
+          )
+          if send_response.get("errcode") != 0:
+              print(f"Failed to send WeChat template message: {send_response}")
+              sys.exit(1)
+
+          print(f"WeChat notification sent: {send_response.get('msgid')}")
+          PY
