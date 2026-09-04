@@ -43,8 +43,47 @@ class CareerFactRead(CareerFactBase):
     updated_at: datetime
 
 
+class FactExtractionWarning(BaseModel):
+    index: int
+    title: str = ""
+    reason: str
+
+
 class FactExtractionResponse(BaseModel):
     facts: list[CareerFactCreate]
+    status: str = "completed"
+    accepted_count: int = 0
+    rejected_count: int = 0
+    warnings: list[FactExtractionWarning] = Field(default_factory=list)
+    message: str = ""
+
+
+class FactExtractionJobResponse(FactExtractionResponse):
+    job_id: str | None = None
+
+
+class MarkdownFactExtractionResponse(BaseModel):
+    job_id: str | None = None
+    job_ids: list[str] = Field(default_factory=list)
+    fact: CareerFactCreate | None = None
+    facts: list[CareerFactCreate] = Field(default_factory=list)
+    source_document: dict[str, Any] = Field(default_factory=dict)
+    source_documents: list[dict[str, Any]] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    quality: dict[str, Any] = Field(default_factory=dict)
+    status: str = "draft"
+    message: str = ""
+
+
+class ResumeProfileImportRequest(BaseModel):
+    draft: dict[str, Any]
+
+
+class ResumeProfileImportResponse(BaseModel):
+    imported_facts: int
+    skipped_facts: int
+    updated_profile: bool
+    education_records: int
 
 
 class JobImportRequest(BaseModel):
@@ -98,3 +137,36 @@ class ResumeDocumentRead(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
+
+
+class ResumeDocumentUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    content: dict[str, Any] | None = None
+    status: str | None = Field(default=None, pattern=r"^[a-z_]{1,32}$")
+
+
+DocumentType = Literal["technical_doc", "code", "other"]
+
+
+class CareerKnowledgeDocumentRead(BaseModel):
+    id: int
+    fact_id: int | None = None
+    title: str
+    file_name: str
+    document_type: DocumentType
+    content_type: str
+    content_text: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    source_hash: str
+    is_archived: bool
+    deduplicated: bool = False
+    restored_from_archive: bool = False
+    created_at: datetime
+    updated_at: datetime
+
+
+class CareerKnowledgeDocumentUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    document_type: DocumentType | None = None
+    content_text: str | None = Field(default=None, min_length=1, max_length=100000)
+    is_archived: bool | None = None

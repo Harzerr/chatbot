@@ -32,6 +32,16 @@ const userService = {
     });
     return response.data;
   },
+
+  getResumeParseJob: async (jobId) => {
+    const response = await axios.get(`/api/v1/users/me/resume/jobs/${jobId}`);
+    return response.data;
+  },
+
+  retryResumeParseJob: async (jobId) => {
+    const response = await axios.post(`/api/v1/users/me/resume/jobs/${jobId}/retry`);
+    return response.data;
+  },
 };
 
 export default userService;

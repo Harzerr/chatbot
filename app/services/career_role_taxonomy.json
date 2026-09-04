@@ -1,0 +1,89 @@
+{
+  "version": 2,
+  "roles": [
+    {
+      "role": "前端 / Web 工程师",
+      "focus": "交互体验、组件工程、浏览器性能和前端交付质量",
+      "markers": ["前端", "web", "react", "vue", "angular", "typescript", "javascript", "css", "webpack", "vite", "微前端", "浏览器", "可访问性"],
+      "strong_markers": ["前端", "react", "vue", "angular", "typescript", "微前端"]
+    },
+    {
+      "role": "移动端 / 客户端工程师",
+      "focus": "客户端架构、端侧性能、平台能力和发布质量",
+      "markers": ["android", "ios", "swift", "kotlin", "flutter", "react native", "客户端", "移动端", "鸿蒙", "harmonyos", "jetpack", "端侧"],
+      "strong_markers": ["android", "ios", "swift", "kotlin", "flutter", "移动端", "鸿蒙", "harmonyos"]
+    },
+    {
+      "role": "后端 / 分布式系统工程师",
+      "focus": "服务接口、领域建模、并发一致性和分布式可靠性",
+      "markers": ["后端", "api", "微服务", "数据库", "消息队列", "缓存", "事务", "一致性", "并发", "django", "fastapi", "spring", "nestjs", "grpc", "redis", "postgresql", "mysql", "kafka"],
+      "strong_markers": ["后端", "api", "微服务", "django", "fastapi", "spring", "nestjs", "grpc"]
+    },
+    {
+      "role": "云平台 / DevOps / SRE 工程师",
+      "focus": "基础设施自动化、持续交付、可观测性和生产可靠性",
+      "markers": ["云平台", "devops", "sre", "docker", "kubernetes", "k8s", "terraform", "ansible", "ci/cd", "github actions", "jenkins", "prometheus", "grafana", "可观测性", "容器", "发布", "运维"],
+      "strong_markers": ["devops", "sre", "kubernetes", "k8s", "terraform", "ci/cd", "可观测性"]
+    },
+    {
+      "role": "数据工程 / 分析平台工程师",
+      "focus": "数据采集、批流处理、数据建模、质量治理和分析交付",
+      "markers": ["数据工程", "数据处理", "etl", "数仓", "数据湖", "spark", "flink", "hadoop", "airflow", "dbt", "数据管道", "批处理", "流处理", "数据质量", "日志", "解析", "结构化", "jsonb", "报表", "bi", "superset"],
+      "strong_markers": ["数据工程", "数据处理", "etl", "数仓", "数据湖", "spark", "flink", "airflow", "数据管道", "解析"]
+    },
+    {
+      "role": "机器学习 / AI 工程师",
+      "focus": "模型训练、推理服务、评估体系和机器学习工程化",
+      "markers": ["机器学习", "深度学习", "ai", "llm", "大模型", "pytorch", "tensorflow", "transformer", "训练", "推理", "微调", "embedding", "rag", "模型评估", "mlops"],
+      "strong_markers": ["机器学习", "深度学习", "llm", "大模型", "pytorch", "tensorflow", "训练", "推理", "mlops"]
+    },
+    {
+      "role": "算法 / 数据科学工程师",
+      "focus": "问题建模、算法设计、实验评估和效果优化",
+      "markers": ["算法", "数据科学", "推荐", "搜索", "排序", "召回", "计算机视觉", "cv", "nlp", "自然语言", "时序", "预测", "特征工程", "a/b", "实验", "准确率", "召回率"],
+      "strong_markers": ["算法", "数据科学", "推荐", "搜索", "计算机视觉", "nlp", "特征工程"]
+    },
+    {
+      "role": "安全工程师",
+      "focus": "威胁建模、身份权限、漏洞治理和安全运营",
+      "markers": ["安全", "网络安全", "应用安全", "渗透测试", "漏洞", "加密", "认证", "鉴权", "权限", "零信任", "siem", "威胁", "审计", "风控"],
+      "strong_markers": ["安全", "网络安全", "应用安全", "渗透测试", "漏洞", "零信任", "siem"]
+    },
+    {
+      "role": "嵌入式 / IoT / 机器人软件工程师",
+      "focus": "端侧运行时、硬件接口、实时控制和资源约束",
+      "markers": ["嵌入式", "iot", "机器人", "固件", "firmware", "rtos", "mcu", "arm", "驱动", "串口", "can", "传感器", "实时", "c++", "c语言", "ros"],
+      "strong_markers": ["嵌入式", "iot", "机器人", "firmware", "rtos", "mcu", "驱动", "ros"]
+    },
+    {
+      "role": "自动驾驶 / 定位规划工程师",
+      "focus": "感知定位、地图轨迹、规划控制和车载异常处理",
+      "markers": ["自动驾驶", "定位", "地图", "路径", "轨迹", "路径规划", "感知", "控制", "slam", "点云", "odometry", "车载", "ros", "坐标", "曲率"],
+      "strong_markers": ["自动驾驶", "定位", "路径规划", "感知", "slam", "点云", "车载"]
+    },
+    {
+      "role": "数据库 / 存储系统工程师",
+      "focus": "存储引擎、查询优化、数据一致性和高可用",
+      "markers": ["数据库内核", "存储引擎", "查询优化", "索引", "事务", "一致性", "复制", "分片", "高可用", "sql", "nosql", "rocksdb", "clickhouse", "elasticsearch"],
+      "strong_markers": ["数据库内核", "存储引擎", "查询优化", "rocksdb", "clickhouse", "elasticsearch"]
+    },
+    {
+      "role": "测试开发 / 质量工程师",
+      "focus": "测试架构、自动化验证、质量度量和缺陷闭环",
+      "markers": ["测试开发", "自动化测试", "单元测试", "集成测试", "端到端测试", "回归", "验证", "质量", "覆盖率", "pytest", "junit", "playwright", "selenium", "压测", "故障注入"],
+      "strong_markers": ["测试开发", "自动化测试", "端到端测试", "回归", "覆盖率", "playwright", "selenium", "压测"]
+    },
+    {
+      "role": "硬件 / FPGA / EDA 工程师",
+      "focus": "数字电路设计、硬件验证、时序与资源优化",
+      "markers": ["fpga", "verilog", "systemverilog", "vhdl", "eda", "芯片", "rtl", "时序", "电路", "pcb", "vivado", "quartus", "仿真", "综合"],
+      "strong_markers": ["fpga", "verilog", "systemverilog", "vhdl", "eda", "rtl", "pcb"]
+    },
+    {
+      "role": "图形 / 游戏 / 多媒体工程师",
+      "focus": "渲染管线、实时性能、媒体处理和交互系统",
+      "markers": ["图形学", "渲染", "游戏", "unity", "unreal", "opengl", "vulkan", "directx", "shader", "音视频", "ffmpeg", "编解码", "实时互动"],
+      "strong_markers": ["图形学", "渲染", "unity", "unreal", "opengl", "vulkan", "shader", "ffmpeg"]
+    }
+  ]
+}

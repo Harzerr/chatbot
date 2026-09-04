@@ -37,14 +37,35 @@ const chatService = {
     }
   },
 
-  getInterviewReport: async (chatId) => {
+  getInterviewReport: async (chatId, { partial = false } = {}) => {
     try {
-      const response = await axios.get(`/api/v1/history/chats/${chatId}/report`);
+      const suffix = partial ? '?partial=true' : '';
+      const response = await axios.get(`/api/v1/history/chats/${chatId}/report${suffix}`);
       return response.data;
     } catch (error) {
       console.error(`Error fetching report for chat ${chatId}:`, error);
       throw error;
     }
+  },
+
+  downloadInterviewReportPdf: async (chatId) => {
+    const response = await axios.get(`/api/v1/history/chats/${chatId}/report/pdf`, {
+      responseType: 'blob',
+    });
+    return response.data;
+  },
+
+  retryEvaluation: async (chatId, pointId) => {
+    const response = await axios.post(`/api/v1/history/chats/${chatId}/messages/${pointId}/evaluation/retry`);
+    return response.data;
+  },
+
+  submitEvidenceFeedback: async (chatId, pointId, feedback) => {
+    const response = await axios.post(
+      `/api/v1/history/chats/${chatId}/messages/${pointId}/evaluation/evidence-feedback`,
+      { feedback },
+    );
+    return response.data;
   },
 
   pauseInterview: async (chatId) => {
@@ -97,7 +118,7 @@ const chatService = {
     }
   },
 
-  runCode: async ({ language, sourceCode, stdin = '', expectedOutput = '' }) => {
+  runCode: async ({ language, sourceCode, stdin = '', expectedOutput = '', onProgress }) => {
     try {
       const response = await axios.post('/api/v1/code/run', {
         language,
@@ -105,7 +126,25 @@ const chatService = {
         stdin,
         expected_output: expectedOutput || null,
       });
-      return response.data;
+      const { job_id: jobId } = response.data;
+      const deadline = Date.now() + 90000;
+
+      while (Date.now() < deadline) {
+        const statusResponse = await axios.get(`/api/v1/code/run/${jobId}`);
+        const job = statusResponse.data;
+        onProgress?.(job.status);
+
+        if (job.status === 'finished') {
+          return job.result;
+        }
+        if (job.status === 'failed') {
+          throw new Error(job.error || '代码执行任务失败，请稍后重试。');
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+
+      throw new Error('代码执行时间过长，请稍后查看或重新运行。');
     } catch (error) {
       console.error('Error running code:', error);
       throw error;

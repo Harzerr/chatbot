@@ -11,7 +11,7 @@ from app.db.session import get_db
 from app.models.career import CareerFact, JobPosting
 from app.models.training import TrainingAttempt, TrainingItem
 from app.services.role_question_bank_loader import load_role_question_bank
-from app.services.interview_evaluator import InterviewEvaluator
+from app.agent.evaluation_agent import EvaluationAgent
 
 router = APIRouter()
 
@@ -174,7 +174,7 @@ async def answer_item(item_id: int, payload: AnswerRequest, db: AsyncSession = D
     focus = json.loads(item.focus_json or "[]")
     job = await db.scalar(select(JobPosting).where(JobPosting.id == item.job_id, JobPosting.user_id == current_user.id)) if item.job_id else None
     try:
-        evaluation = await InterviewEvaluator().evaluate_answer(item.question, payload.answer, current_user.target_role, None, "训练", job.company if job else None, job.raw_content if job else None)
+        evaluation = await EvaluationAgent().evaluate_answer(item.question, payload.answer, current_user.target_role, None, "训练", job.company if job else None, job.raw_content if job else None)
         evaluation_data = evaluation.model_dump()
         score = evaluation.overall_score
         feedback = f"{evaluation.correctness_summary} {evaluation.correction_suggestion or evaluation.summary}"

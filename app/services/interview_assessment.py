@@ -5,6 +5,68 @@ from dataclasses import dataclass
 
 
 ASSESSMENT_VERSION = "rubric-v2"
+CONSISTENCY_VERSION = "experience-consistency-v2"
+
+NON_ANSWER_MARKERS = (
+    "不知道",
+    "不清楚",
+    "不太清楚",
+    "不了解",
+    "不太知道",
+    "不太了解",
+    "没了解过",
+    "没接触过",
+    "没有接触过",
+    "没做过",
+    "没有做过",
+    "不熟悉",
+    "不太会",
+    "不会",
+    "答不上来",
+    "无法回答",
+    "不记得",
+    "想不起来",
+    "没有相关经验",
+    "无相关经验",
+)
+
+
+def is_non_answer(answer: str | None) -> bool:
+    """Return whether the candidate explicitly declines or cannot answer."""
+    normalized = "".join(str(answer or "").lower().split())
+    if not normalized:
+        return True
+    markers = [marker for marker in NON_ANSWER_MARKERS if marker in normalized]
+    if not markers:
+        return False
+    for marker in markers:
+        suffix = normalized[normalized.find(marker) + len(marker):]
+        if len(suffix) >= 8 and any(conjunction in suffix for conjunction in ("但是", "不过", "但我", "同时", "我会", "可以")):
+            continue
+        return True
+    return False
+
+
+def is_countable_answer(answer: str | None, *, has_previous_question: bool = True) -> bool:
+    """Use one deterministic rule for interview counters, evaluation and reports."""
+    normalized = "".join(str(answer or "").lower().split())
+    if not has_previous_question or not normalized:
+        return False
+    if normalized in {"开始面试", "开始", "继续", "开始吧", "可以开始了", "继续面试"}:
+        return False
+    return not is_non_answer(normalized)
+
+
+def count_countable_answers(chat_messages: list[dict]) -> int:
+    return sum(
+        1
+        for message in chat_messages
+        if (
+            is_countable_answer(message.get("user_message"))
+            if message.get("answer_counted") is None
+            else bool(message["answer_counted"]) and is_countable_answer(message.get("user_message"))
+        )
+    )
 
 
 @dataclass(frozen=True)
@@ -64,7 +126,10 @@ def classify_question_type(question: str, interview_type: str | None = None) -> 
     normalized = (question or "").lower()
     if any(marker in normalized for marker in ("手撕代码", "代码题", "实现一个", "时间复杂度", "空间复杂度", "```", "#include", "def ", "class ")):
         return "代码题"
-    if any(marker in normalized for marker in ("项目", "实习", "你负责", "你的职责", "你做过", "怎么优化", "遇到什么问题", "成果", "指标")):
+    if any(marker in normalized for marker in (
+        "项目", "实习", "工作经历", "项目经历", "项目中", "项目里", "实习中",
+        "你负责", "你的职责", "你做过", "怎么优化", "遇到什么问题", "成果", "指标",
+    )):
         return "项目深挖题"
     if any(marker in normalized for marker in ("设计一个", "系统设计", "架构", "如何设计", "高并发", "高可用", "扩展性", "容量")):
         return "系统设计题"
@@ -73,6 +138,16 @@ def classify_question_type(question: str, interview_type: str | None = None) -> 
     if any(marker in normalized for marker in ("原理", "区别", "为什么", "如何保证", "机制", "是什么", "怎么实现")):
         return "技术原理题"
     return "通用技术题"
+
+
+def should_use_career_evidence(question: str | None) -> bool:
+    """Only project or internship deep dives need career-fact evidence."""
+    normalized = (question or "").lower()
+    if any(marker in normalized for marker in ("手撕代码", "代码题", "实现一个", "时间复杂度", "空间复杂度", "```", "#include", "def ", "class ")):
+        return False
+    return any(marker in normalized for marker in (
+        "项目", "实习", "工作经历", "项目经历", "项目中", "项目里", "实习中", "实习经历",
+    ))
 
 
 def get_rubric(question_type: str) -> tuple[RubricDimensionSpec, ...]:

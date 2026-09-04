@@ -1,4 +1,7 @@
+import json
 import operator
+import re
+import uuid
 from typing import Annotated, TypedDict, Literal, Sequence, List, Optional, Dict
 
 try:
@@ -18,6 +21,7 @@ from pydantic import BaseModel
 from app.core.config import settings
 from app.mcp_client.client import get_mcp_client
 from app.services.skill_registry import SkillRegistry, create_default_skill_registry
+from app.services.tool_call_metrics import ToolCallMetricsCollector, record_tool_call_metrics
 from app.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -101,6 +105,7 @@ class AgentState(TypedDict):
     active_skill: Optional[str]
     previous_interviewer_question: Optional[str]
     relevant_docs: List[dict]
+    history_context_docs: List[dict]
     context: str
     interview_role: Optional[str]
     interview_level: Optional[str]
@@ -109,8 +114,25 @@ class AgentState(TypedDict):
     jd_content: Optional[str]
     resume_content: Optional[str]
     code_execution: Optional[dict]
+    knowledge_context: Optional[str]
+    evidence_pack: Optional[dict]
+    knowledge_context_cache_hit: bool
     evaluation: Optional[dict]
+    evaluation_request: Optional[dict]
     is_finished: bool
+    answer_counted: bool
+    interview_phase: Optional[str]
+    question_mode: Optional[str]
+    follow_up_count: int
+    max_follow_ups: int
+    question_grounded: bool
+    question_grounding_version: Optional[str]
+    question_evidence_ids: List[str]
+    question_evidence_items: List[dict]
+    user_id: Optional[str]
+    tenant_id: Optional[str]
+    chat_id: Optional[str]
+    model_usage: Optional[dict]
 
 
 class RouteResponse(BaseModel):
@@ -120,12 +142,46 @@ class RouteResponse(BaseModel):
     response: Optional[str] = None
 
 
+def _parse_route_response(raw_response) -> RouteResponse:
+    """Parse DeepSeek's JSON response while tolerating provider stop markers."""
+    content = getattr(raw_response, "content", raw_response)
+    if isinstance(content, list):
+        content = "".join(
+            part.get("text", "") if isinstance(part, dict) else str(part)
+            for part in content
+        )
+    text = str(content or "").strip()
+    start = text.find("{")
+    end = text.rfind("}")
+    if start >= 0 and end > start:
+        candidate = text[start:end + 1]
+        try:
+            return RouteResponse.model_validate(json.loads(candidate))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            pass
+
+    cleaned = re.sub(r"<\|[^|]+\|>", "", text).strip()
+    return RouteResponse(
+        next="FINISH",
+        reasoning="Supervisor 未返回可解析的路由 JSON，已安全降级为直接回复。",
+        response=cleaned or "暂时无法生成回复，请稍后重试。",
+    )
+
+
 async def agent_node(state, agent, name):
     """Process the state through an agent and return the updated state."""
     try:
         logger.info(f"Invoking {name} agent with state: {state.get('messages', [])[-1].content if state.get('messages') else 'No messages'}")
 
-        result = await agent.ainvoke(state)
+        collector = ToolCallMetricsCollector()
+        result = await agent.ainvoke(state, config={"callbacks": [collector]})
+        await record_tool_call_metrics(
+            collector.observations(),
+            trace_id=str(uuid.uuid4()),
+            agent_name=name,
+            user_id=int(state["user_id"]) if state.get("user_id") else None,
+            tenant_id=state.get("tenant_id"),
+        )
         logger.info(f"Agent {name} result: {result}")
 
         iterations = state.get("iterations", 0) + 1
@@ -262,15 +318,18 @@ async def supervisor_agent(state: AgentState) -> Dict:
         ),
     ]).partial(options=str(options), members=", ".join(members))
 
-    # llm = ChatOpenAI(model="gpt-4.1-mini", temperature=0, api_key=settings.OPENAI_API_KEY)
+    # llm = ChatOpenAI(model="deepseek/deepseek-v4-flash", temperature=0, api_key=settings.OPENAI_API_KEY)
     llm = ChatOpenAI(
         model=settings.LLM_MODEL,
         temperature=0,
+        max_tokens=256,
+        timeout=settings.LLM_TIMEOUT,
         api_key=settings.OPENROUTER_API_KEY,
         base_url=settings.OPENROUTER_API_BASE,
     )
-    supervisor_chain = prompt | llm.with_structured_output(RouteResponse)
-    result = await supervisor_chain.ainvoke(state)
+    supervisor_chain = prompt | llm
+    raw_result = await supervisor_chain.ainvoke(state)
+    result = _parse_route_response(raw_result)
 
     valid_routes = {"Researcher", "Scrapper", "FINISH"}
     next_route = result.next if result.next in valid_routes else None
@@ -308,10 +367,12 @@ async def create_graph():
     """Create the multi-agent workflow graph."""
     global _skill_registry
 
-    # llm = ChatOpenAI(model="gpt-4.1-mini", temperature=0, api_key=settings.OPENAI_API_KEY)
+    # llm = ChatOpenAI(model="deepseek/deepseek-v4-flash", temperature=0, api_key=settings.OPENAI_API_KEY)
     llm = ChatOpenAI(
         model=settings.LLM_MODEL,
         temperature=0,
+        max_tokens=settings.LLM_MAX_TOKENS,
+        timeout=settings.LLM_TIMEOUT,
         api_key=settings.OPENROUTER_API_KEY,
         base_url=settings.OPENROUTER_API_BASE,
     )
@@ -346,7 +407,9 @@ async def create_graph():
         - Be specific about what information you need
         - For weather queries, always specify the location and time period (today, tomorrow, etc.)
         - ALWAYS use your web_search tool when asked about weather, current events, or factual information
-        - Make multiple search queries if needed to get comprehensive information""")
+        - Make multiple search queries if needed to get comprehensive information
+        - If a tool reports a parameter or validation error, correct the arguments and retry at most once
+        - Do not repeat the same invalid tool call; if the retry fails, explain the failure safely""")
 
     researcher_tools = filter_mcp_tools(_mcp_tools, "Researcher")
     researcher_agent = create_react_agent(
@@ -380,7 +443,9 @@ async def create_graph():
         - Provide detailed extracted content
         - Structure the information clearly
         - Highlight key findings from the scraped data
-        - Mention the source URL and extraction timestamp""")
+        - Mention the source URL and extraction timestamp
+        - If a tool reports a parameter or validation error, correct the arguments and retry at most once
+        - Do not repeat the same invalid tool call; if the retry fails, explain the failure safely""")
 
     scrapper_tools = filter_mcp_tools(_mcp_tools, "Scrapper")
     scrapper_agent = create_react_agent(
@@ -395,10 +460,19 @@ async def create_graph():
     skill_llm = ChatOpenAI(
         model=settings.INTERVIEW_LLM_MODEL,
         temperature=0.35,
+        max_tokens=settings.INTERVIEW_LLM_MAX_TOKENS,
+        timeout=settings.INTERVIEW_LLM_TIMEOUT,
         api_key=settings.OPENROUTER_API_KEY,
         base_url=settings.OPENROUTER_API_BASE,
+        stream_usage=True,
     )
-    _skill_registry = create_default_skill_registry(skill_llm)
+    # New chat-enabled SKILL.md bundles become routable without rebuilding the
+    # graph; workflow-only skills opt out through their frontmatter.
+    _skill_registry = create_default_skill_registry(
+        skill_llm,
+        chat_only=True,
+        refresh_interval_seconds=settings.SKILL_DISCOVERY_INTERVAL_SECONDS,
+    )
 
     async def skill_node(state: AgentState):
         try:
@@ -414,7 +488,18 @@ async def create_graph():
                 "messages": [AIMessage(content=result.response, name=result.agent_name)],
                 "iterations": state.get("iterations", 0) + 1,
                 "evaluation": result.evaluation,
+                "evaluation_request": result.evaluation_request,
                 "is_finished": result.is_finished,
+                "answer_counted": result.answer_counted,
+                "model_usage": result.model_usage,
+                "interview_phase": (result.workflow_state or {}).get("phase"),
+                "question_mode": (result.workflow_state or {}).get("question_mode"),
+                "follow_up_count": (result.workflow_state or {}).get("follow_up_count", 0),
+                "max_follow_ups": (result.workflow_state or {}).get("max_follow_ups", 0),
+                "question_grounded": bool((result.workflow_state or {}).get("question_grounded", False)),
+                "question_grounding_version": (result.workflow_state or {}).get("question_grounding_version"),
+                "question_evidence_ids": (result.workflow_state or {}).get("question_evidence_ids", []),
+                "question_evidence_items": (result.workflow_state or {}).get("question_evidence_items", []),
                 "task_completed": True,
                 "active_skill": skill_definition.name,
             }
@@ -426,7 +511,9 @@ async def create_graph():
                 "messages": [AIMessage(content=f"Skill 执行时出现问题：{str(e)}", name="SkillRunner")],
                 "iterations": state.get("iterations", 0) + 1,
                 "evaluation": None,
+                "evaluation_request": None,
                 "is_finished": False,
+                "answer_counted": False,
                 "task_completed": True,
             }
 
@@ -466,6 +553,7 @@ def create_initial_state(messages: List[BaseMessage], max_iterations: int, **kwa
         "active_skill": kwargs.get("active_skill"),
         "previous_interviewer_question": kwargs.get("previous_interviewer_question"),
         "relevant_docs": kwargs.get("relevant_docs", []),
+        "history_context_docs": kwargs.get("history_context_docs", []),
         "context": kwargs.get("context", ""),
         "interview_role": kwargs.get("interview_role"),
         "interview_level": kwargs.get("interview_level"),
@@ -474,8 +562,24 @@ def create_initial_state(messages: List[BaseMessage], max_iterations: int, **kwa
         "jd_content": kwargs.get("jd_content"),
         "resume_content": kwargs.get("resume_content"),
         "code_execution": kwargs.get("code_execution"),
+        "knowledge_context": kwargs.get("knowledge_context"),
+        "evidence_pack": kwargs.get("evidence_pack"),
+        "knowledge_context_cache_hit": kwargs.get("knowledge_context_cache_hit", False),
         "evaluation": kwargs.get("evaluation"),
+        "evaluation_request": kwargs.get("evaluation_request"),
         "is_finished": kwargs.get("is_finished", False),
+        "answer_counted": kwargs.get("answer_counted", False),
+        "interview_phase": kwargs.get("interview_phase"),
+        "question_mode": kwargs.get("question_mode"),
+        "follow_up_count": kwargs.get("follow_up_count", 0),
+        "max_follow_ups": kwargs.get("max_follow_ups", 0),
+        "question_grounded": kwargs.get("question_grounded", False),
+        "question_grounding_version": kwargs.get("question_grounding_version"),
+        "question_evidence_ids": kwargs.get("question_evidence_ids", []),
+        "question_evidence_items": kwargs.get("question_evidence_items", []),
+        "user_id": kwargs.get("user_id"),
+        "tenant_id": kwargs.get("tenant_id"),
+        "chat_id": kwargs.get("chat_id"),
     }
 
 

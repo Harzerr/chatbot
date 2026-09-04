@@ -1,4 +1,5 @@
 import os
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -11,10 +12,16 @@ from fastapi.staticfiles import StaticFiles
 from app.agent.langgraph_agent import initialize_graph, close_graph
 from app.api.api import api_router
 from app.core.config import settings
-from app.db.bootstrap import ensure_training_columns, ensure_user_profile_columns
+from app.db.bootstrap import (
+    ensure_ai_metric_columns,
+    ensure_career_knowledge_columns,
+    ensure_training_columns,
+    ensure_user_profile_columns,
+)
 from app.db.base import Base
 from app.db.session import async_engine
 from app.services.role_knowledge_store import QdrantRoleKnowledgeStore
+from app.services.resume_jobs import recover_pending_resume_parse_jobs
 from app.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -42,6 +49,9 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
     await ensure_user_profile_columns(async_engine)
     await ensure_training_columns(async_engine)
+    await ensure_career_knowledge_columns(async_engine)
+    await ensure_ai_metric_columns(async_engine)
+    resume_recovery_task = asyncio.create_task(recover_pending_resume_parse_jobs())
 
     logger.info(f"LANGCHAIN_TRACING_V2: {os.getenv('LANGCHAIN_TRACING_V2')}")
     logger.info(f"LANGSMITH_PROJECT: {os.getenv('LANGSMITH_PROJECT')}")
@@ -49,6 +59,11 @@ async def lifespan(app: FastAPI):
     yield
 
     await async_engine.dispose()
+    resume_recovery_task.cancel()
+    try:
+        await resume_recovery_task
+    except asyncio.CancelledError:
+        pass
     try:
         await close_graph()
     except Exception:
@@ -75,6 +90,10 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 AVATAR_UPLOAD_DIR = Path(__file__).resolve().parents[1] / "uploads" / "avatars"
 AVATAR_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/media/avatars", StaticFiles(directory=str(AVATAR_UPLOAD_DIR)), name="avatar-media")
+
+FONT_DIR = Path(__file__).resolve().parents[1] / "assets" / "fonts"
+if FONT_DIR.is_dir():
+    app.mount(f"{settings.API_V1_STR}/fonts", StaticFiles(directory=str(FONT_DIR)), name="font-media")
 
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)

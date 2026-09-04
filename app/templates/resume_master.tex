@@ -1,29 +1,28 @@
 % Abstracted from E:\offer\example.tex. Compile with XeLaTeX.
 \documentclass[UTF8,a4paper,10pt,fontset=none]{ctexart}
 
-\usepackage[left=9.52mm,right=9.64mm,top=7.93mm,bottom=8mm,headheight=0pt,headsep=0pt,footskip=0pt]{geometry}
+%%GEOMETRY%%
 \usepackage{array}
 \usepackage{enumitem}
 \usepackage{eso-pic}
 \usepackage{fontspec}
 \usepackage{graphicx}
 \usepackage[hidelinks]{hyperref}
+\usepackage{needspace}
 \usepackage{tabularx}
 \usepackage{xcolor}
 
 \newif\ifresumeicons
 \IfFileExists{fontawesome5.sty}{\resumeiconstrue\usepackage{fontawesome5}}{\resumeiconsfalse}
-% Linux server fallbacks; visually close to the Windows fonts in the supplied master.
-\setmainfont{Nimbus Sans}
-\setsansfont{Nimbus Sans}
-\setCJKmainfont{Noto Sans CJK SC}
-\setCJKsansfont{Noto Sans CJK SC}
+%%FONT_CONFIG%%
 
 \definecolor{ResumeText}{HTML}{1A1A1A}
-\definecolor{ResumeSecondary}{HTML}{333333}
-\definecolor{ResumeRule}{HTML}{6B7280}
+\definecolor{ResumeSecondary}{HTML}{4B5563}
+\definecolor{ResumeRule}{HTML}{CBD5E1}
+\definecolor{ResumeAccent}{HTML}{B21F35}
 \definecolor{ResumeBorder}{HTML}{E5E7EB}
 \pagestyle{empty}
+\pagecolor{white}
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{0pt}
 \setlength{\tabcolsep}{0pt}
@@ -31,49 +30,75 @@
 \hyphenpenalty=10000
 \exhyphenpenalty=10000
 \emergencystretch=1em
-\renewcommand{\familydefault}{\sfdefault}
+\renewcommand{\familydefault}{\rmdefault}
 \renewcommand{\labelitemi}{\textbullet}
 \linespread{1}
 
-\newcommand{\ResumeBodyFont}{\fontsize{10.5pt}{15.73pt}\selectfont}
+\newcommand{\ResumeBodyFont}{%%BODY_FONT%%}
 \newcommand{\ResumeIcon}[2]{\ifresumeicons#1\hspace{0.55em}\fi#2}
 \newcommand{\ResumeName}{%%NAME%%}
 \newcommand{\ResumeContact}{%%CONTACT%%}
-\newcommand{\ResumeTargetRole}{%%TARGET_ROLE%%}
+\newcommand{\ResumeTargetRole}{求职意向：%%TARGET_ROLE%%}
 \newcommand{\ResumePhoto}{%%PHOTO_BLOCK%%}
+\newcommand{\ResumeSectionFont}{%%SECTION_TITLE_FONT%%}
 
-% Header geometry and visual treatment follow the supplied example.tex master.
-\newcommand{\PlaceResumeHeader}{%
-  \AddToShipoutPictureFG*{%
-    \AtPageUpperLeft{%
-      \setlength{\unitlength}{1pt}%
-      \put(0,-32.1){\raisebox{-\height}{\makebox[\paperwidth][c]{\fontsize{24pt}{24pt}\selectfont\bfseries \ResumeName}}}%
-      \put(0,-70.2){\raisebox{-\height}{\makebox[\paperwidth][c]{\ResumeBodyFont \ResumeContact}}}%
-      \put(0,-90.4){\raisebox{-\height}{\makebox[\paperwidth][c]{\hspace{1.25em}\ResumeIcon{\faBullseye}{\ResumeTargetRole}}}}%
-      \ResumePhoto
-    }%
-  }%
+% Header follows the supplied resume reference: accent rule, rectangular photo, and contact block.
+\newcommand{\ResumeHeader}{%
+  \noindent
+  \begin{minipage}[t][75pt][t]{2.2pt}
+    \vspace{-75pt}%
+    {\color{ResumeAccent}\rule{\linewidth}{75pt}}
+  \end{minipage}\hspace{12pt}%
+  \begin{minipage}[t][75pt][t]{57pt}
+    \vspace{0pt}%
+    \setlength{\fboxsep}{0pt}\setlength{\fboxrule}{0.6pt}%
+    \fcolorbox{ResumeBorder}{white}{\ResumePhoto}
+  \end{minipage}\hspace{12pt}%
+  \begin{minipage}[t][75pt][t]{\dimexpr\linewidth-83.2pt\relax}
+    \vspace{0pt}%
+    {%%NAME_FONT%%\bfseries \ResumeName\par}
+    \vspace{2pt}
+    {\ResumeBodyFont\color{ResumeAccent}\bfseries \ResumeTargetRole\par}
+    \vspace{7pt}
+    {\ResumeBodyFont \ResumeContact\par}
+  \end{minipage}
+  \par\vspace{4mm}%
 }
 
-\newcommand{\ResumeSection}[2][2.8mm]{%
+\newcommand{\ResumeSection}[2][1.8mm]{%
   \par\vspace{#1}%
-  {\fontsize{12pt}{14.5pt}\selectfont\bfseries #2\par}%
-  \vspace{1.55mm}%
-  {\color{ResumeRule}\hrule height 1.5pt}%
-  \vspace{3.35mm}%
+  \noindent{\color{ResumeAccent}\rule{2.2pt}{12pt}}\hspace{5pt}%
+  {\ResumeSectionFont\bfseries\color{ResumeText} #2}\par%
+  \vspace{1.1mm}%
+  {\color{ResumeRule}\hrule height 0.5pt}%
+  \vspace{1.5mm}%
 }
 \newcommand{\ResumeEntry}[3]{%
-  \noindent\parbox[t]{0.4\linewidth}{\raggedright\strut #1}%
-  \parbox[t]{0.3\linewidth}{\centering\strut #2}%
-  \parbox[t]{0.3\linewidth}{\raggedleft\strut\color{ResumeSecondary}#3}\par
+  \Needspace{5\baselineskip}%
+  \noindent\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}X>{\centering\arraybackslash}p{0.23\linewidth}>{\raggedleft\arraybackslash}p{0.24\linewidth}@{}}%
+    #1 & \mbox{\strut #2} & {\color{ResumeSecondary}\strut #3}\\
+  \end{tabularx}%
+  \par\vspace{0.5mm}%
 }
-\newenvironment{ResumeItems}{\begin{itemize}[leftmargin=5.29mm,labelwidth=1.4mm,labelsep=1.75mm,itemindent=0pt,topsep=0pt,partopsep=0pt,parsep=0pt,itemsep=3pt]}{\end{itemize}}
+\newcommand{\ResumeEducationEntry}[2]{%
+  \noindent\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}X>{\raggedleft\arraybackslash}p{0.24\linewidth}@{}}%
+    #1 & {\color{ResumeSecondary}\strut #2}\\
+  \end{tabularx}%
+  \par\vspace{0.2mm}%
+}
+\newcommand{\ResumeMeta}[2]{%
+  \par\vspace{0.15mm}{\color{ResumeAccent}\bfseries #1：}{\color{ResumeSecondary} #2}\par
+}
+\newcommand{\ResumeBullet}[1]{%
+  \par\noindent\hangindent=3.6mm\hangafter=1%
+  \makebox[3.6mm][l]{\textcolor{ResumeAccent}{\scriptsize\textbullet}}#1\par\vspace{0.8pt}%
+}
+\newenvironment{ResumeItems}{\begingroup\setlength{\parindent}{0pt}\setlength{\parskip}{0pt}}{\endgroup}
 
 \begin{document}
-\sffamily
+\rmfamily
 \ResumeBodyFont
 \color{ResumeText}
-\PlaceResumeHeader
-\vspace*{32.1mm}
+\ResumeHeader
 %%CONTENT%%
 \end{document}

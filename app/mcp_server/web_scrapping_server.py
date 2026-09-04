@@ -3,6 +3,7 @@ MCP Server component that provides web scrapping tools via FastMCP.
 """
 import os
 import sys
+from urllib.parse import urlparse
 from typing import Literal
 
 from fastmcp import FastMCP
@@ -31,6 +32,10 @@ def web_scrapping(url: str) -> ScrapeResponse:
     Returns:
         Dictionary containing web scrapping results
     """
+    parsed_url = urlparse((url or "").strip())
+    if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
+        raise ValueError("business validation: invalid url")
+
     logger.info(f"Web scrapping related to the url {url}")
 
     app = FirecrawlApp(api_key=settings.FIRECRAWL_API_KEY)

@@ -26,6 +26,7 @@ const streamingService = {
       jd_content: interviewConfig.jdContent,
       resume_content: interviewConfig.resumeContent,
       code_execution: interviewConfig.codeExecution || null,
+      knowledge_fact_id: interviewConfig.knowledgeFactId || null,
     });
 
     const token = localStorage.getItem('token');
@@ -63,65 +64,70 @@ const streamingService = {
         const reader = response.body.getReader();
         const decoder = new TextDecoder('utf-8');
         let buffer = '';
+        let completed = false;
 
-        function processText({ done, value }) {
-          if (done) {
-            console.log('Stream complete, final content:', accumulatedContent);
-            callbacks.onComplete();
+        const processEvent = (event) => {
+          const dataLines = event
+            .replace(/\r\n/g, '\n')
+            .split('\n')
+            .filter((line) => line.startsWith('data:'))
+            .map((line) => line.slice(5).replace(/^ /, ''));
+          if (!dataLines.length) return;
+
+          const data = dataLines.join('\n');
+          if (data === '[DONE]') {
+            console.log('Received [DONE] message');
             return;
           }
 
-          const chunk = decoder.decode(value, { stream: true });
-          buffer += chunk;
-
-          const messages = buffer.split('\n\n');
-
-          for (let i = 0; i < messages.length - 1; i++) {
-            const message = messages[i].trim();
-
-            const lines = message.split('\n');
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const data = line.substring(6);
-
-                if (data === '[DONE]') {
-                  console.log('Received [DONE] message');
-                  continue;
-                }
-                
-                try {
-                  const parsedData = JSON.parse(data);
-
-                  if (parsedData.choices && 
-                      parsedData.choices[0] && 
-                      parsedData.choices[0].delta) {
-                    
-                    const delta = parsedData.choices[0].delta;
-
-                    if (delta.content) {
-                      const content = delta.content;
-                      accumulatedContent += content;
-                      console.log('Received content chunk:', content);
-                      callbacks.onChunk(content);
-                    }
-
-                    if (parsedData.choices[0].finish_reason) {
-                      console.log('Finish reason:', parsedData.choices[0].finish_reason);
-                    }
-                  }
-                } catch (e) {
-                  console.error('Error parsing JSON:', e, data);
-                }
-              }
+          try {
+            const parsedData = JSON.parse(data);
+            const delta = parsedData?.choices?.[0]?.delta;
+            if (delta?.content) {
+              accumulatedContent += delta.content;
+              callbacks.onChunk(delta.content);
             }
+            if (parsedData?.choices?.[0]?.finish_reason) {
+              console.log('Finish reason:', parsedData.choices[0].finish_reason);
+            }
+          } catch (error) {
+            console.error('Error parsing SSE JSON:', error, data);
           }
+        };
 
-          buffer = messages[messages.length - 1];
+        const processBuffer = (flush = false) => {
+          buffer = buffer.replace(/\r\n/g, '\n');
+          const events = buffer.split('\n\n');
+          buffer = events.pop() || '';
+          events.forEach(processEvent);
+          if (flush && buffer.trim()) {
+            processEvent(buffer.trim());
+            buffer = '';
+          }
+        };
 
-          return reader.read().then(processText);
-        }
+        const complete = () => {
+          if (completed) return;
+          completed = true;
+          buffer += decoder.decode();
+          processBuffer(true);
+          console.log('Stream complete, final content:', accumulatedContent);
+          callbacks.onComplete();
+        };
 
-        return reader.read().then(processText);
+        const readStream = async () => {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+              complete();
+              return;
+            }
+            buffer += decoder.decode(value, { stream: true });
+            processBuffer(false);
+          }
+        };
+
+        return readStream();
       })
       .catch(error => {
         if (error.name === 'AbortError') {

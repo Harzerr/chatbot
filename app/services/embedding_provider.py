@@ -98,6 +98,9 @@ def create_embeddings() -> ResilientOpenAIEmbeddings:
         api_key=config.api_key,
         base_url=config.base_url,
         dimensions=config.dimensions,
+        timeout=settings.EMBEDDING_TIMEOUT,
+        max_retries=0,
+        check_embedding_ctx_length=False,
     )
 
 
@@ -112,4 +115,3 @@ def get_mem0_embedder_config() -> dict:
             "openai_base_url": config.base_url,
         },
     }
-

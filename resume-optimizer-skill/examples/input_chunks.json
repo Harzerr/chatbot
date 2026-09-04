@@ -1,0 +1,42 @@
+{
+  "document_id": "resume_demo_001",
+  "source_type": "pdf",
+  "project_mode": "single_project",
+  "chunks": [
+    {
+      "chunk_id": "c01",
+      "chunk_index": 0,
+      "page": 1,
+      "section_hint": "项目经历",
+      "text": "AI Agent 技术面试平台。面向技术岗位面试训练场景，负责 AI Agent 后端与 Harness 工程化建设。"
+    },
+    {
+      "chunk_id": "c02",
+      "chunk_index": 1,
+      "page": 1,
+      "section_hint": "项目经历",
+      "text": "基于 FastAPI + LangGraph 串联岗位理解、简历深挖、动态追问、在线编程和能力评估。"
+    },
+    {
+      "chunk_id": "c03",
+      "chunk_index": 2,
+      "page": 1,
+      "section_hint": "项目经历",
+      "text": "结合 Qdrant、Mem0、Redis、RQ、Judge0 与 SSE，实现从面试执行、异步评分到证据复核和报告生成的完整链路。"
+    },
+    {
+      "chunk_id": "c04",
+      "chunk_index": 3,
+      "page": 1,
+      "section_hint": "项目经历",
+      "text": "设计结构化 AgentState，统一承载岗位、简历、历史问答、代码执行结果和结束状态。"
+    },
+    {
+      "chunk_id": "c05",
+      "chunk_index": 4,
+      "page": 1,
+      "section_hint": "项目经历",
+      "text": "结合 Pydantic Schema、分题型 Rubric 和 Judge0 运行结果完成结构化评分，并为模型超时、JSON 异常和任务失败提供重试、规则降级及重新入队机制。"
+    }
+  ]
+}

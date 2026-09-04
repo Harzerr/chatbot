@@ -94,6 +94,7 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
   const [expectedOutput, setExpectedOutput] = useState('');
   const [runResult, setRunResult] = useState(null);
   const [isRunningCode, setIsRunningCode] = useState(false);
+  const [runStatus, setRunStatus] = useState('');
 
   const suggestedTestCase = useMemo(
     () => parseCodingExample(latestCodingPrompt),
@@ -159,6 +160,7 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
 
     setIsRunningCode(true);
     setRunResult(null);
+    setRunStatus('queued');
 
     try {
       const result = await onRunCode({
@@ -166,6 +168,7 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
         sourceCode: codeValue,
         stdin: codeStdin,
         expectedOutput,
+        onProgress: setRunStatus,
       });
       setRunResult(result);
     } catch (error) {
@@ -179,6 +182,7 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
       });
     } finally {
       setIsRunningCode(false);
+      setRunStatus('');
     }
   };
 
@@ -221,16 +225,16 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
         minHeight: 0,
         borderRadius: 1.0,
         overflow: 'hidden',
-        border: '1px solid rgba(125, 211, 252, 0.18)',
-        backgroundColor: 'rgba(8, 15, 28, 0.98)',
-        boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.03)',
+        border: '1px solid rgba(148, 163, 184, 0.26)',
+        backgroundColor: '#ffffff',
+        boxShadow: 'none',
         ...sx,
       }}
     >
       <Editor
         height={height}
         language={codeLanguage}
-        theme="vs-dark"
+        theme="vs"
         value={codeValue}
         onChange={(value) => setCodeValue(value || '')}
         options={monacoOptions}
@@ -246,7 +250,7 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
       ? '#34d399'
       : runResult.status === 'Failed'
         ? '#f87171'
-        : '#fbbf24';
+        : '#b45309';
 
     return (
       <Paper
@@ -255,8 +259,8 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
           mt: 1.2,
           p: 1.5,
           borderRadius: 1.2,
-          bgcolor: 'rgba(15, 23, 42, 0.92)',
-          border: '1px solid rgba(125, 211, 252, 0.14)',
+          bgcolor: '#ffffff',
+          border: '1px solid rgba(148, 163, 184, 0.24)',
         }}
       >
         <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center" sx={{ mb: 1 }}>
@@ -264,7 +268,7 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
             size="small"
             label={`状态：${runResult.status || 'Unknown'}`}
             sx={{
-              bgcolor: 'rgba(15, 23, 42, 0.88)',
+              bgcolor: '#0f172a',
               color: statusColor,
               border: `1px solid ${statusColor}33`,
             }}
@@ -275,8 +279,8 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
               label={runResult.passed ? '样例通过' : '样例未通过'}
               sx={{
                 bgcolor: runResult.passed ? 'rgba(52,211,153,0.12)' : 'rgba(248,113,113,0.12)',
-                color: runResult.passed ? '#34d399' : '#f87171',
-                border: '1px solid rgba(255,255,255,0.06)',
+                color: runResult.passed ? '#059669' : '#dc2626',
+                border: '1px solid rgba(148,163,184,0.22)',
               }}
             />
           )}
@@ -286,7 +290,7 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
               label={`耗时 ${runResult.time}s`}
               sx={{
                 bgcolor: 'rgba(148,163,184,0.12)',
-                color: '#cbd5e1',
+                color: '#475569',
               }}
             />
           )}
@@ -296,13 +300,13 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
               label={`内存 ${runResult.memory} KB`}
               sx={{
                 bgcolor: 'rgba(148,163,184,0.12)',
-                color: '#cbd5e1',
+                color: '#475569',
               }}
             />
           )}
         </Stack>
 
-        <Typography variant="caption" sx={{ display: 'block', mb: 0.8, color: 'rgba(226,232,240,0.72)' }}>
+        <Typography variant="caption" sx={{ display: 'block', mb: 0.8, color: '#64748b' }}>
           运行输出
         </Typography>
         <Box
@@ -311,14 +315,14 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
             m: 0,
             p: 1.4,
             borderRadius: 1,
-            bgcolor: 'rgba(2, 6, 23, 0.96)',
-            color: '#e2e8f0',
+            bgcolor: '#f8fafc',
+            color: '#1e293b',
             fontSize: '0.85rem',
             lineHeight: 1.65,
             overflowX: 'auto',
             whiteSpace: 'pre-wrap',
             wordBreak: 'break-word',
-            border: '1px solid rgba(255,255,255,0.04)',
+            border: '1px solid rgba(148,163,184,0.22)',
           }}
         >
           {outputText}
@@ -334,11 +338,11 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
         mt: 1.2,
         p: 1.2,
         borderRadius: 1.2,
-        bgcolor: 'rgba(8, 15, 28, 0.88)',
-        border: '1px solid rgba(125, 211, 252, 0.12)',
+        bgcolor: '#ffffff',
+        border: '1px solid rgba(148, 163, 184, 0.22)',
       }}
     >
-      <Typography variant="subtitle2" sx={{ color: '#f8fafc', mb: 1 }}>
+      <Typography variant="subtitle2" sx={{ color: '#0f172a', mb: 1 }}>
         代码调试区
       </Typography>
 
@@ -350,17 +354,17 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
             p: 1.2,
             borderRadius: 1.2,
             bgcolor: 'rgba(14, 165, 233, 0.08)',
-            border: '1px solid rgba(125, 211, 252, 0.18)',
+            border: '1px solid rgba(148, 163, 184, 0.26)',
           }}
         >
-          <Typography variant="subtitle2" sx={{ color: '#7dd3fc', mb: 0.6 }}>
+          <Typography variant="subtitle2" sx={{ color: '#0284c7', mb: 0.6 }}>
             {suggestedTestCase.title}
           </Typography>
           {suggestedTestCase.sourceText && (
             <Typography
               variant="body2"
               sx={{
-                color: 'rgba(226,232,240,0.82)',
+                color: '#475569',
                 lineHeight: 1.7,
                 mb: 1,
                 wordBreak: 'keep-all',
@@ -376,8 +380,8 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
               size="small"
               onClick={() => suggestedTestCase.stdin && setCodeStdin(suggestedTestCase.stdin)}
               sx={{
-                borderColor: 'rgba(125, 211, 252, 0.28)',
-                color: '#7dd3fc',
+                borderColor: 'rgba(14, 165, 233, 0.36)',
+                color: '#0284c7',
               }}
             >
               填入样例输入
@@ -387,8 +391,8 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
               size="small"
               onClick={() => suggestedTestCase.expectedOutput && setExpectedOutput(suggestedTestCase.expectedOutput)}
               sx={{
-                borderColor: 'rgba(52,211,153,0.28)',
-                color: '#34d399',
+                borderColor: 'rgba(5, 150, 105, 0.36)',
+                color: '#059669',
               }}
             >
               填入期望输出
@@ -411,8 +415,8 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
           sx={{
             '& .MuiOutlinedInput-root': {
               borderRadius: 1.0,
-              backgroundColor: 'rgba(15, 23, 42, 0.88)',
-              color: '#f8fafc',
+              backgroundColor: '#ffffff',
+              color: '#0f172a',
               alignItems: 'flex-start',
             },
             '& .MuiOutlinedInput-input': {
@@ -421,7 +425,7 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
               overflow: 'auto !important',
             },
             '& .MuiOutlinedInput-notchedOutline': {
-              borderColor: 'rgba(125, 211, 252, 0.14)',
+              borderColor: 'rgba(148, 163, 184, 0.28)',
             },
           }}
         />
@@ -438,8 +442,8 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
           sx={{
             '& .MuiOutlinedInput-root': {
               borderRadius: 1.0,
-              backgroundColor: 'rgba(15, 23, 42, 0.88)',
-              color: '#f8fafc',
+              backgroundColor: '#ffffff',
+              color: '#0f172a',
               alignItems: 'flex-start',
             },
             '& .MuiOutlinedInput-input': {
@@ -448,7 +452,7 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
               overflow: 'auto !important',
             },
             '& .MuiOutlinedInput-notchedOutline': {
-              borderColor: 'rgba(125, 211, 252, 0.14)',
+              borderColor: 'rgba(148, 163, 184, 0.28)',
             },
           }}
         />
@@ -464,8 +468,8 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
       onSubmit={handleSubmit}
       sx={{
         p: 2.5,
-        borderTop: '1px solid rgba(125, 211, 252, 0.08)',
-        background: 'rgba(8, 15, 28, 0.92)',
+        borderTop: '1px solid rgba(148, 163, 184, 0.18)',
+        background: 'rgba(255, 255, 255, 0.94)',
         backdropFilter: 'blur(12px)',
       }}
     >
@@ -498,8 +502,8 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
             label="普通作答"
             sx={{
               minHeight: 40,
-              color: 'rgba(226,232,240,0.72)',
-              '&.Mui-selected': { color: '#f8fafc' },
+              color: '#64748b',
+              '&.Mui-selected': { color: '#0f172a' },
             }}
           />
           <Tab
@@ -509,8 +513,8 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
             label="代码作答"
             sx={{
               minHeight: 40,
-              color: 'rgba(226,232,240,0.72)',
-              '&.Mui-selected': { color: '#f8fafc' },
+              color: '#64748b',
+              '&.Mui-selected': { color: '#0f172a' },
             }}
           />
         </Tabs>
@@ -521,8 +525,8 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
             label={mode === 'code' ? '支持粘贴代码块' : '支持自然语言回答'}
             sx={{
               bgcolor: 'rgba(125, 211, 252, 0.10)',
-              color: '#7dd3fc',
-              border: '1px solid rgba(125, 211, 252, 0.18)',
+              color: '#0284c7',
+              border: '1px solid rgba(148, 163, 184, 0.26)',
             }}
           />
           {mode === 'code' && (
@@ -531,7 +535,7 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
               label="建议先讲思路再贴代码"
               sx={{
                 bgcolor: 'rgba(245, 158, 11, 0.10)',
-                color: '#fbbf24',
+                color: '#b45309',
                 border: '1px solid rgba(245, 158, 11, 0.18)',
               }}
             />
@@ -555,16 +559,16 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
               '& .MuiOutlinedInput-root': {
                 minHeight: 52,
                 borderRadius: 1,
-                backgroundColor: 'rgba(15, 23, 42, 0.88)',
+                backgroundColor: '#ffffff',
                 alignItems: 'center',
-                color: '#f8fafc',
+                color: '#0f172a',
               },
               '& .MuiOutlinedInput-input': {
                 padding: '14px 16px',
                 lineHeight: 1.6,
               },
               '& .MuiOutlinedInput-notchedOutline': {
-                borderColor: 'rgba(125, 211, 252, 0.14)',
+                borderColor: 'rgba(148, 163, 184, 0.28)',
               },
             }}
             onKeyDown={(e) => {
@@ -586,7 +590,7 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
               borderRadius: 1,
               bgcolor: 'rgba(125, 211, 252, 0.14)',
               border: '1px solid rgba(125, 211, 252, 0.32)',
-              boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.04)',
+              boxShadow: 'none',
             }}
           >
             <SendRoundedIcon />
@@ -621,11 +625,11 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
               sx={{
                 '& .MuiOutlinedInput-root': {
                   borderRadius: 1.0,
-                  bgcolor: 'rgba(15, 23, 42, 0.88)',
-                  color: '#f8fafc',
+                  bgcolor: '#ffffff',
+                  color: '#0f172a',
                 },
                 '& .MuiOutlinedInput-notchedOutline': {
-                  borderColor: 'rgba(125, 211, 252, 0.14)',
+                  borderColor: 'rgba(148, 163, 184, 0.28)',
                 },
               }}
             >
@@ -644,8 +648,8 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
                 onClick={handleClearCode}
                 disabled={disabled || !codeValue.trim()}
                 sx={{
-                  borderColor: 'rgba(248, 113, 113, 0.28)',
-                  color: '#fca5a5',
+                  borderColor: 'rgba(220, 38, 38, 0.28)',
+                  color: '#dc2626',
                 }}
               >
                 清空代码
@@ -657,8 +661,8 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
                 onClick={handleInsertTemplate}
                 disabled={disabled}
                 sx={{
-                  borderColor: 'rgba(125, 211, 252, 0.28)',
-                  color: '#7dd3fc',
+                  borderColor: 'rgba(14, 165, 233, 0.36)',
+                  color: '#0284c7',
                 }}
               >
                 插入模板
@@ -670,8 +674,8 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
                 onClick={() => setEditorFullscreen(true)}
                 disabled={disabled}
                 sx={{
-                  borderColor: 'rgba(196, 181, 253, 0.28)',
-                  color: '#c4b5fd',
+                  borderColor: 'rgba(124, 58, 237, 0.28)',
+                  color: '#7c3aed',
                 }}
               >
                 全屏写代码
@@ -683,14 +687,14 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
                 onClick={handleRunCode}
                 disabled={disabled || isRunningCode || !codeValue.trim()}
                 sx={{
-                  bgcolor: '#0ea5e9',
-                  color: '#04101c',
+                  bgcolor: '#0284c7',
+                  color: '#ffffff',
                   '&:hover': {
-                    bgcolor: '#0284c7',
+                    bgcolor: '#0369a1',
                   },
                 }}
               >
-                {isRunningCode ? '运行中...' : '运行代码'}
+                {isRunningCode ? (runStatus === 'queued' ? '排队中...' : '运行中...') : '运行代码'}
               </Button>
             </Stack>
 
@@ -710,7 +714,7 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
               borderRadius: 1.0,
               bgcolor: 'rgba(125, 211, 252, 0.14)',
               border: '1px solid rgba(125, 211, 252, 0.32)',
-              boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.04)',
+              boxShadow: 'none',
               alignSelf: 'stretch',
             }}
           >
@@ -725,7 +729,7 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
           sx={{
             mt: 1,
             display: 'block',
-            color: 'rgba(226,232,240,0.62)',
+            color: '#64748b',
             lineHeight: 1.7,
           }}
         >
@@ -739,8 +743,8 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
         fullScreen
         PaperProps={{
           sx: {
-            bgcolor: '#020617',
-            backgroundImage: 'linear-gradient(180deg, rgba(8,15,28,0.96) 0%, rgba(2,6,23,1) 100%)',
+            bgcolor: '#ffffff',
+            backgroundImage: 'linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)',
           },
         }}
       >
@@ -752,14 +756,14 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: 1.5,
-            borderBottom: '1px solid rgba(125, 211, 252, 0.12)',
+            borderBottom: '1px solid rgba(148, 163, 184, 0.18)',
           }}
         >
           <Box>
-            <Typography variant="h6" sx={{ color: '#f8fafc', fontWeight: 700 }}>
+            <Typography variant="h6" sx={{ color: '#0f172a', fontWeight: 700 }}>
               代码作答工作区
             </Typography>
-            <Typography variant="body2" sx={{ color: 'rgba(226,232,240,0.68)' }}>
+            <Typography variant="body2" sx={{ color: '#64748b' }}>
               直接写代码并运行调试，发送时会自动保留语言标记。
             </Typography>
           </Box>
@@ -772,8 +776,8 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
               onClick={handleClearCode}
               disabled={disabled || !codeValue.trim()}
               sx={{
-                borderColor: 'rgba(248, 113, 113, 0.28)',
-                color: '#fca5a5',
+                borderColor: 'rgba(220, 38, 38, 0.28)',
+                color: '#dc2626',
               }}
             >
               清空代码
@@ -785,8 +789,8 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
               onClick={handleInsertTemplate}
               disabled={disabled}
               sx={{
-                borderColor: 'rgba(125, 211, 252, 0.28)',
-                color: '#7dd3fc',
+                borderColor: 'rgba(14, 165, 233, 0.36)',
+                color: '#0284c7',
               }}
             >
               插入模板
@@ -797,8 +801,8 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
               startIcon={<CloseFullscreenRoundedIcon />}
               onClick={() => setEditorFullscreen(false)}
               sx={{
-                borderColor: 'rgba(196, 181, 253, 0.28)',
-                color: '#c4b5fd',
+                borderColor: 'rgba(124, 58, 237, 0.28)',
+                color: '#7c3aed',
               }}
             >
               退出全屏
@@ -810,14 +814,14 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
               onClick={handleRunCode}
               disabled={disabled || isRunningCode || !codeValue.trim()}
               sx={{
-                bgcolor: '#0ea5e9',
-                color: '#04101c',
+                bgcolor: '#0284c7',
+                color: '#ffffff',
                 '&:hover': {
-                  bgcolor: '#0284c7',
-                },
+                  bgcolor: '#0369a1',
+                  },
               }}
             >
-              {isRunningCode ? '运行中...' : '运行代码'}
+              {isRunningCode ? (runStatus === 'queued' ? '排队中...' : '运行中...') : '运行代码'}
             </Button>
           </Stack>
         </Box>
@@ -844,11 +848,11 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
               sx={{
                 '& .MuiOutlinedInput-root': {
                   borderRadius: 1.0,
-                  bgcolor: 'rgba(15, 23, 42, 0.88)',
-                  color: '#f8fafc',
+                  bgcolor: '#ffffff',
+                  color: '#0f172a',
                 },
                 '& .MuiOutlinedInput-notchedOutline': {
-                  borderColor: 'rgba(125, 211, 252, 0.14)',
+                  borderColor: 'rgba(148, 163, 184, 0.28)',
                 },
               }}
             >
@@ -872,13 +876,13 @@ const ChatInput = ({ onSendMessage, onRunCode, latestCodingPrompt = '', disabled
                 bgcolor: '#0284c7',
                 '&:hover': {
                   bgcolor: '#0369a1',
-                },
+                  },
               }}
             >
               发送代码作答
             </Button>
 
-            <Divider sx={{ borderColor: 'rgba(125, 211, 252, 0.10)' }} />
+            <Divider sx={{ borderColor: 'rgba(148, 163, 184, 0.18)' }} />
 
             {renderCodeRunPanel()}
           </Box>

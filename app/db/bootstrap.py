@@ -25,6 +25,18 @@ USER_PROFILE_COLUMNS = {
     "education_json": "ALTER TABLE users ADD COLUMN education_json TEXT NOT NULL DEFAULT '[]'",
 }
 
+AI_METRIC_COLUMNS = {
+    "model_latency_ms": "ALTER TABLE ai_request_metrics ADD COLUMN model_latency_ms FLOAT NOT NULL DEFAULT 0",
+    "queue_wait_ms": "ALTER TABLE ai_request_metrics ADD COLUMN queue_wait_ms FLOAT NOT NULL DEFAULT 0",
+    "total_tokens": "ALTER TABLE ai_request_metrics ADD COLUMN total_tokens INTEGER NOT NULL DEFAULT 0",
+    "cache_hit": "ALTER TABLE ai_request_metrics ADD COLUMN cache_hit INTEGER NOT NULL DEFAULT 0",
+    "attempt": "ALTER TABLE ai_request_metrics ADD COLUMN attempt INTEGER NOT NULL DEFAULT 1",
+    "evidence_retrieval_count": "ALTER TABLE ai_request_metrics ADD COLUMN evidence_retrieval_count INTEGER NOT NULL DEFAULT 0",
+    "evidence_context_chars": "ALTER TABLE ai_request_metrics ADD COLUMN evidence_context_chars INTEGER NOT NULL DEFAULT 0",
+    "evidence_cache_hit": "ALTER TABLE ai_request_metrics ADD COLUMN evidence_cache_hit INTEGER NOT NULL DEFAULT 0",
+    "evidence_retrieval_method": "ALTER TABLE ai_request_metrics ADD COLUMN evidence_retrieval_method VARCHAR(64) NOT NULL DEFAULT 'none'",
+}
+
 
 async def ensure_user_profile_columns(async_engine: AsyncEngine) -> None:
     async with async_engine.begin() as conn:
@@ -53,3 +65,71 @@ async def ensure_training_columns(async_engine: AsyncEngine) -> None:
         existing = {row[1] for row in result.fetchall()}
         if "evaluation_json" not in existing:
             await conn.execute(text("ALTER TABLE training_attempts ADD COLUMN evaluation_json TEXT NOT NULL DEFAULT '{}'"))
+
+
+async def ensure_career_knowledge_columns(async_engine: AsyncEngine) -> None:
+    async with async_engine.begin() as conn:
+        result = await conn.execute(text("PRAGMA table_info(career_knowledge_documents)"))
+        existing = {row[1] for row in result.fetchall()}
+        if existing and "fact_id" not in existing:
+            await conn.execute(text("ALTER TABLE career_knowledge_documents ADD COLUMN fact_id INTEGER"))
+
+        result = await conn.execute(text("PRAGMA table_info(career_knowledge_chunks)"))
+        chunk_columns = {row[1] for row in result.fetchall()}
+        for name, ddl in {
+            "project_key": "ALTER TABLE career_knowledge_chunks ADD COLUMN project_key VARCHAR(128) NOT NULL DEFAULT ''",
+            "claim_ids_json": "ALTER TABLE career_knowledge_chunks ADD COLUMN claim_ids_json TEXT NOT NULL DEFAULT '[]'",
+            "claim_texts_json": "ALTER TABLE career_knowledge_chunks ADD COLUMN claim_texts_json TEXT NOT NULL DEFAULT '[]'",
+        }.items():
+            if chunk_columns and name not in chunk_columns:
+                await conn.execute(text(ddl))
+
+        if existing:
+            duplicate_groups = (await conn.execute(text("""
+                SELECT user_id, source_hash, COUNT(*) AS duplicate_count
+                FROM career_knowledge_documents
+                WHERE is_archived = 0
+                GROUP BY user_id, source_hash
+                HAVING COUNT(*) > 1
+            """))).fetchall()
+            for user_id, source_hash, duplicate_count in duplicate_groups:
+                rows = (await conn.execute(
+                    text("""
+                        SELECT id
+                        FROM career_knowledge_documents
+                        WHERE user_id = :user_id
+                          AND source_hash = :source_hash
+                          AND is_archived = 0
+                        ORDER BY updated_at DESC, id DESC
+                    """),
+                    {"user_id": user_id, "source_hash": source_hash},
+                )).fetchall()
+                duplicate_ids = [row[0] for row in rows[1:]]
+                if duplicate_ids:
+                    placeholders = ", ".join(f":duplicate_{index}" for index in range(len(duplicate_ids)))
+                    await conn.execute(
+                        text(f"UPDATE career_knowledge_documents SET is_archived = 1 WHERE id IN ({placeholders})"),
+                        {f"duplicate_{index}": document_id for index, document_id in enumerate(duplicate_ids)},
+                    )
+                    logger.warning(
+                        "Archived %s duplicate career documents for user_id=%s source_hash=%s",
+                        duplicate_count - 1,
+                        user_id,
+                        source_hash,
+                    )
+
+            await conn.execute(text("""
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_career_knowledge_documents_active_source
+                ON career_knowledge_documents (user_id, source_hash)
+                WHERE is_archived = 0
+            """))
+
+
+async def ensure_ai_metric_columns(async_engine: AsyncEngine) -> None:
+    async with async_engine.begin() as conn:
+        result = await conn.execute(text("PRAGMA table_info(ai_request_metrics)"))
+        existing = {row[1] for row in result.fetchall()}
+        for name, ddl in AI_METRIC_COLUMNS.items():
+            if name not in existing:
+                logger.info("Adding missing ai_request_metrics.%s column", name)
+                await conn.execute(text(ddl))

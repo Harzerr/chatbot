@@ -11,12 +11,12 @@ import {
 } from '@mui/material';
 
 const DIMENSIONS = [
-  { key: 'technical_accuracy', label: '技术准确性', color: '#7dd3fc' },
-  { key: 'knowledge_depth', label: '知识深度', color: '#fbbf24' },
-  { key: 'communication_clarity', label: '表达清晰度', color: '#34d399' },
-  { key: 'logical_structure', label: '逻辑结构', color: '#c084fc' },
-  { key: 'problem_solving', label: '问题解决', color: '#f472b6' },
-  { key: 'job_match_score', label: '岗位匹配', color: '#2dd4bf' },
+  { key: 'technical_accuracy', label: '技术准确性', color: '#0369a1' },
+  { key: 'knowledge_depth', label: '知识深度', color: '#b45309' },
+  { key: 'communication_clarity', label: '表达清晰度', color: '#047857' },
+  { key: 'logical_structure', label: '逻辑结构', color: '#7e22ce' },
+  { key: 'problem_solving', label: '问题解决', color: '#be185d' },
+  { key: 'job_match_score', label: '岗位匹配', color: '#0f766e' },
 ];
 
 const RECOMMENDATION_MAP = {
@@ -177,7 +177,7 @@ const buildReport = (messages = []) => {
 const GrowthLineChart = ({ points = [] }) => {
   if (!points.length) {
     return (
-      <Typography variant="body2" sx={{ color: '#94a3b8' }}>
+        <Typography variant="body2" sx={{ color: '#64748b' }}>
         暂无曲线数据
       </Typography>
     );
@@ -223,7 +223,7 @@ const GrowthLineChart = ({ points = [] }) => {
               x={margin.left - 8}
               y={getY(tick) + 4}
               textAnchor="end"
-              fill="#94a3b8"
+            fill="#64748b"
               fontSize="11"
             >
               {tick}
@@ -231,16 +231,16 @@ const GrowthLineChart = ({ points = [] }) => {
           </g>
         ))}
 
-        <path d={path} fill="none" stroke="#38bdf8" strokeWidth="3" strokeLinecap="round" />
+        <path d={path} fill="none" stroke="#0284c7" strokeWidth="3" strokeLinecap="round" />
 
         {points.map((point, index) => (
           <g key={`${point.dateLabel}-${point.index}`}>
-            <circle cx={getX(index)} cy={getY(point.score)} r="4.5" fill="#38bdf8" />
+            <circle cx={getX(index)} cy={getY(point.score)} r="4.5" fill="#0284c7" />
             <text
               x={getX(index)}
               y={height - 18}
               textAnchor="middle"
-              fill="#94a3b8"
+            fill="#64748b"
               fontSize="11"
             >
               {point.dateLabel}
@@ -322,7 +322,7 @@ const RadarChart = ({ data = [] }) => {
                 y={labelPoint.y}
                 textAnchor="middle"
                 dominantBaseline="middle"
-                fill="#cbd5e1"
+                fill="#475569"
                 fontSize="11"
               >
                 {item.label}
@@ -346,9 +346,9 @@ const RadarChart = ({ data = [] }) => {
 
         <g transform="translate(22, 312)">
           <rect x="0" y="-9" width="12" height="12" fill="rgba(125,211,252,0.20)" stroke="#7dd3fc" />
-          <text x="18" y="1" fill="#cbd5e1" fontSize="12">近 5 场均值</text>
+          <text x="18" y="1" fill="#475569" fontSize="12">近 5 场均值</text>
           <rect x="112" y="-9" width="12" height="12" fill="rgba(245,158,11,0.16)" stroke="#fbbf24" />
-          <text x="130" y="1" fill="#cbd5e1" fontSize="12">最近 1 场</text>
+          <text x="130" y="1" fill="#475569" fontSize="12">最近 1 场</text>
         </g>
       </Box>
     </Box>
@@ -371,12 +371,12 @@ const ProfileGrowthReport = ({
     {
       label: '成长幅度',
       value: formatSigned(report.improvement),
-      tone: report.improvement >= 0 ? '#34d399' : '#f87171',
+      tone: report.improvement >= 0 ? '#047857' : '#b91c1c',
     },
     {
       label: '稳定性(近5场σ)',
       value: Number(report.stability || 0).toFixed(1),
-      tone: '#cbd5e1',
+      tone: '#334155',
     },
   ];
 
@@ -387,7 +387,7 @@ const ProfileGrowthReport = ({
           <Typography variant="h6" sx={{ fontWeight: 700 }}>
             面试成长分析
           </Typography>
-          <Typography variant="body2" sx={{ color: '#94a3b8', mt: 0.8 }}>
+          <Typography variant="body2" sx={{ color: '#475569', mt: 0.8 }}>
             基于历史面试评分生成成长曲线、能力分布与改进建议。
           </Typography>
         </Box>
@@ -421,9 +421,9 @@ const ProfileGrowthReport = ({
                   key={card.label}
                   label={`${card.label}：${card.value}`}
                   sx={{
-                    bgcolor: 'rgba(148,163,184,0.12)',
-                    color: card.tone || '#e2e8f0',
-                    border: '1px solid rgba(148,163,184,0.20)',
+                    bgcolor: '#f1f5f9',
+                    color: card.tone || '#1e293b',
+                    border: '1px solid rgba(71,85,105,0.18)',
                   }}
                 />
               ))}
@@ -436,14 +436,14 @@ const ProfileGrowthReport = ({
                   p: 2,
                   borderRadius: 2,
                   flex: 1.18,
-                  bgcolor: 'rgba(15,23,42,0.5)',
-                  border: '1px solid rgba(125,211,252,0.14)',
+                  bgcolor: '#f8fafc',
+                  border: '1px solid rgba(71,85,105,0.18)',
                 }}
               >
                 <Typography variant="subtitle1" sx={{ mb: 0.6, fontWeight: 600 }}>
                   综合分成长曲线（近 10 场）
                 </Typography>
-                <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mb: 0.8 }}>
+                <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mb: 0.8 }}>
                   趋势越平滑，说明发挥越稳定。
                 </Typography>
                 <GrowthLineChart points={report.trendPoints} />
@@ -455,14 +455,14 @@ const ProfileGrowthReport = ({
                   p: 2,
                   borderRadius: 2,
                   flex: 1,
-                  bgcolor: 'rgba(15,23,42,0.5)',
-                  border: '1px solid rgba(125,211,252,0.14)',
+                  bgcolor: '#f8fafc',
+                  border: '1px solid rgba(71,85,105,0.18)',
                 }}
               >
                 <Typography variant="subtitle1" sx={{ mb: 0.6, fontWeight: 600 }}>
                   能力分布雷达图
                 </Typography>
-                <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mb: 2 ,mt:0.2}}>
+                <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mb: 2 ,mt:0.2}}>
                   对比“最近 1 场”与“近 5 场均值”。
                 </Typography>
                 <RadarChart data={report.radar} />
@@ -474,22 +474,22 @@ const ProfileGrowthReport = ({
               sx={{
                 p: 2,
                 borderRadius: 2,
-                bgcolor: 'rgba(15,23,42,0.5)',
-                border: '1px solid rgba(125,211,252,0.14)',
+                bgcolor: '#f8fafc',
+                border: '1px solid rgba(71,85,105,0.18)',
               }}
             >
               <Stack spacing={1.2}>
                 <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
                   分析结论
                 </Typography>
-                <Typography variant="body2" sx={{ color: '#e2e8f0' }}>
+                <Typography variant="body2" sx={{ color: '#1e293b' }}>
                   优势维度：{report.strengths.join('、') || '暂无'}
                 </Typography>
-                <Typography variant="body2" sx={{ color: '#e2e8f0' }}>
+                <Typography variant="body2" sx={{ color: '#1e293b' }}>
                   待提升维度：{report.weaknesses.join('、') || '暂无'}
                 </Typography>
                 {report.recommendations.map((item) => (
-                  <Typography key={item} variant="body2" sx={{ color: '#94a3b8', lineHeight: 1.7 }}>
+                  <Typography key={item} variant="body2" sx={{ color: '#475569', lineHeight: 1.7 }}>
                     • {item}
                   </Typography>
                 ))}
